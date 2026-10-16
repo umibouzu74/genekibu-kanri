@@ -91,6 +91,11 @@ export const SIDEBAR_MENU = [
   { key: VIEWS.SUBS, icon: "🔄", label: "授業管理", badge: true },
   { key: VIEWS.CONFIRMED_SUBS, icon: "✅", label: "代行確定一覧" },
   { key: VIEWS.STAFF, icon: "👥", label: "バイト管理" },
+  // 講師を現役部 常勤 / 現役部 非常勤 / 予備校部に分ける (年度ごと)。
+  // 有給・半休を記録する人はここで決める
+  { key: VIEWS.AFFILIATION, icon: "🏷", label: "講師の所属" },
+  // 現役部 常勤の有給・半休。人事の記録なので閲覧者には読めない (adminData)
+  { key: VIEWS.LEAVE, icon: "🌴", label: "有給・半休", adminData: true },
   // 講師の月間予定を何人分もまとめて印刷 / 画像にする (バイトに LINE で送る)。
   // 講師を選んだ後の月間のツールバーにしか無かったので名前を出す。開き方は
   // App の openMonthBatch (今の画面の状態を巻き添えにしない)。印刷・画像は

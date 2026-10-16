@@ -34,6 +34,7 @@ export const SHORTCUTS = [
       { keys: ["g", "j"], sequential: true, label: "授業時間の集計" },
       { keys: ["g", "y"], sequential: true, label: "予定表チェック" },
       { keys: ["g", "n"], sequential: true, label: "引継ぎメモ (管理者)" },
+      { keys: ["g", "l"], sequential: true, label: "有給・半休 (管理者)" },
       {
         keys: ["g", "w"],
         sequential: true,

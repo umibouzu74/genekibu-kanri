@@ -26,6 +26,8 @@ import { LS } from "../constants/storageKeys";
 import { isConfigured } from "../firebase/config";
 import { migrateHandoverNotes } from "../utils/handoverNotes";
 import { migrateOffsiteLessons } from "../utils/offsiteLessons";
+import { migrateTeacherAffiliations } from "../utils/teacherAffiliations";
+import { EMPTY_STAFF_LEAVE, migrateStaffLeave } from "../utils/staffLeave";
 
 // fuzokuPlan の既定値。useSyncedStorage の初期値は参照が変わらない方がよい
 // (毎描画で新しいオブジェクトを渡さない)
@@ -39,7 +41,7 @@ const EMPTY_LIST = Object.freeze([]);
 export const canUseAdminData = (isAdmin) => Boolean(isAdmin) || !isConfigured;
 
 // ─── 本体の永続 state をまとめて持つフック ────────────────────────
-// App.jsx にあった 20 本 (現在は 23 本) の useSyncedStorage (+ 端末限定の eventVisibility) と
+// App.jsx にあった 20 本 (現在は 25 本) の useSyncedStorage (+ 端末限定の eventVisibility) と
 // 保存エラーの通知をここへ移した (2026-09-04)。宣言の中身・キー・migrate は
 // 移動前と同じ。App は返り値を分割代入して使う。
 //
@@ -196,8 +198,15 @@ export function useAppData({ toasts, isAdmin }) {
     EMPTY_LIST,
     { migrate: migrateOffsiteLessons, onError: onStorageError }
   );
+  // 講師の所属 (年度ごとの区分の変更)。組織の区分なので閲覧者も読める appData/
+  const [teacherAffiliations, saveTeacherAffiliations] = useSyncedStorage(
+    LS.teacherAffiliations,
+    EMPTY_LIST,
+    { migrate: migrateTeacherAffiliations, onError: onStorageError }
+  );
   // 引継ぎメモ (責任者 → 後任)。閲覧者 (匿名ログイン) は appData/ を全部
-  // 読めるので、管理者だけが読める adminData/ に置き、管理者のときだけ購読する
+  // 読めるので、管理者だけが読める adminData/ に置き、管理者のときだけ購読する。
+  // 有給・半休も同じ (人事の記録)。handoverEnabled = 管理者だけのデータを扱えるか
   const handoverEnabled = canUseAdminData(isAdmin);
   const [handoverNotes, saveHandoverNotes] = useSyncedStorage(
     LS.handoverNotes,
@@ -209,6 +218,12 @@ export function useAppData({ toasts, isAdmin }) {
       enabled: handoverEnabled,
     }
   );
+  const [staffLeave, saveStaffLeave] = useSyncedStorage(LS.staffLeave, EMPTY_STAFF_LEAVE, {
+    migrate: migrateStaffLeave,
+    onError: onStorageError,
+    root: "adminData",
+    enabled: handoverEnabled,
+  });
   // 表示トグルは「人 (端末) 単位の見え方」が望ましいので、Firebase 同期せず
   // localStorage 限定にする (高校部担当 / 担当外で初期表示が違うのを許容)。
   const [eventVisibility, saveEventVisibility] = useLocalStorage(
@@ -266,6 +281,10 @@ export function useAppData({ toasts, isAdmin }) {
     handoverNotes,
     saveHandoverNotes,
     handoverEnabled,
+    teacherAffiliations,
+    saveTeacherAffiliations,
+    staffLeave,
+    saveStaffLeave,
     eventVisibility,
     saveEventVisibility,
   };

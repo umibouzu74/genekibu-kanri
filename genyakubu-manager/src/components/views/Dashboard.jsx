@@ -11,6 +11,7 @@ import { SubSummaryCards } from "./dashboard/SubSummaryCards";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { useToday } from "../../hooks/useToday";
 import { PrintButton } from "../PrintButton";
+import { upcomingLeave } from "../../utils/staffLeave";
 
 // 印刷系統: PrintButton (window.print() 直接呼び) を使う。
 // ヘッダ/凡例の動的注入は不要、App.jsx 末尾のグローバル @media print +
@@ -101,6 +102,9 @@ export function Dashboard({
   onSelectTeacher,
   // 追加授業バナーの行クリックで編集へ (日別・時間割モードの両方)
   onEditExtraLesson,
+  // 有給・半休 (管理者だけが読める。読めないときは null)。今後 7 日の休暇を出す
+  staffLeave = null,
+  onOpenLeave,
 }) {
   // 「今日」は useToday (タブを開いたまま日付を跨いでも翌 0 時に更新される)
   const todayStr = useToday();
@@ -143,6 +147,10 @@ export function Dashboard({
   );
 
   const isToday = startDate === todayStr;
+  const leaveSoon = useMemo(
+    () => (staffLeave ? upcomingLeave(staffLeave, todayStr, 7) : []),
+    [staffLeave, todayStr]
+  );
 
   // Session count 用の共通 ctx + ホリデーヘルパをまとめて取得。
   const {
@@ -241,6 +249,8 @@ export function Dashboard({
         examPeriods={examPeriods}
         specialEvents={specialEvents}
         onJumpToEventCalendar={onJumpToEventCalendar}
+        leaveSoon={leaveSoon}
+        onOpenLeave={onOpenLeave}
       />
 
       {isSundayInTimetable ? (

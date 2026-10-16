@@ -38,6 +38,7 @@
       "genyakubu-day-schedules": { ".validate": "newData.hasChildren()" },
       "genyakubu-fuzoku-plan": { ".validate": "newData.hasChildren()" },
       "genyakubu-offsite-lessons": { ".validate": "newData.hasChildren()" },
+      "genyakubu-teacher-affiliations": { ".validate": "newData.hasChildren()" },
       "genyakubu-regular-builder-project": { ".validate": "newData.hasChildren()" },
 
       "builder": {
@@ -53,6 +54,7 @@
       ".write": "auth != null && auth.provider === 'password' && root.child('admins').child(auth.uid).val() === true",
 
       "genyakubu-handover-notes": { ".validate": "newData.hasChildren()" },
+      "genyakubu-staff-leave": { ".validate": "newData.hasChildren()" },
 
       "$other": { ".validate": false }
     }

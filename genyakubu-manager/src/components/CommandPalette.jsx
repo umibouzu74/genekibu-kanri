@@ -314,9 +314,11 @@ export function CommandPalette({
       // 画面名からは辿れない中身 (確認テストの科目・バス時刻) でも引けるように
       { key: views.FUZOKU_PLAN, label: "附属の授業予定 (確認テスト・バス時刻)" },
       { key: views.OFFSITE, label: "他校舎の授業 (講師の出講予定)" },
+      { key: views.AFFILIATION, label: "講師の所属 (現役部 常勤・非常勤 / 予備校部)" },
     ];
     if (canUseAdminData) {
       viewNames.push({ key: views.HANDOVER, label: "引継ぎメモ (申し送り・毎年のこと)" });
+      viewNames.push({ key: views.LEAVE, label: "有給・半休 (休暇・半休・代休)" });
     }
     // 週間 / 月間は講師選択中にだけ意味があるビューなので、講師が
     // 選択されているときだけ候補に出す。空のビューに飛ばさないため。

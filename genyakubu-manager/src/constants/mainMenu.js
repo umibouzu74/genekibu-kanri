@@ -123,6 +123,8 @@ export const MAIN_MENU = Object.freeze([
       navItem(VIEWS.ALL, "講師ごとの週のコマ数"),
       navItem(VIEWS.MINUTES, "期間内に講師ごとに教えた時間 (給与計算用)"),
       navItem(VIEWS.STAFF, "バイトの登録、講師の担当教科、教科マスター"),
+      navItem(VIEWS.AFFILIATION, "講師を現役部 常勤 / 現役部 非常勤 / 予備校部に分ける (年度ごと)"),
+      navItem(VIEWS.LEAVE, "現役部 常勤の有給・半休を月の表で入れる / 年度の日数を見る"),
       navItem(
         "month-batch",
         "バイト・講師の月間予定を何人分もまとめて印刷 / 1 人 1 枚の画像にして LINE などで送る"

@@ -154,6 +154,12 @@ const OffsiteLessonView = lazy(() =>
 const YoteihyoCheckView = lazy(() =>
   import("./components/views/YoteihyoCheckView").then((m) => ({ default: m.YoteihyoCheckView }))
 );
+const AffiliationView = lazy(() =>
+  import("./components/views/AffiliationView").then((m) => ({ default: m.AffiliationView }))
+);
+const LeaveView = lazy(() =>
+  import("./components/views/LeaveView").then((m) => ({ default: m.LeaveView }))
+);
 const DataManager = lazy(() =>
   import("./components/DataManager").then((m) => ({ default: m.DataManager }))
 );
@@ -211,6 +217,8 @@ const VIEW_TITLES = {
   [VIEWS.HANDOVER]: "引継ぎメモ",
   [VIEWS.OFFSITE]: "他校舎の授業",
   [VIEWS.YOTEIHYO]: "予定表チェック",
+  [VIEWS.AFFILIATION]: "講師の所属",
+  [VIEWS.LEAVE]: "有給・半休",
 };
 
 export default function App() {
@@ -269,6 +277,10 @@ export default function App() {
     handoverNotes,
     saveHandoverNotes,
     handoverEnabled,
+    teacherAffiliations,
+    saveTeacherAffiliations,
+    staffLeave,
+    saveStaffLeave,
     eventVisibility,
     saveEventVisibility,
   } = appData;
@@ -1280,6 +1292,8 @@ export default function App() {
               onConsumeInitDate={() => setDashInitDate(null)}
               onSelectTeacher={selectTeacher}
               onEditExtraLesson={openExtraLessonEditor}
+              staffLeave={handoverEnabled ? staffLeave : null}
+              onOpenLeave={() => selectView(VIEWS.LEAVE)}
             />
           )}
           {/* ダッシュボードの下のメニュー (メインメニューの小さい版)。紙面には
@@ -1615,6 +1629,45 @@ export default function App() {
               onConsumeFocus={() => setHandoverFocus(null)}
             />
           )}
+          {view === VIEWS.AFFILIATION && !selected && (
+            <AffiliationView
+              affiliations={teacherAffiliations}
+              onSave={saveTeacherAffiliations}
+              slots={slots}
+              timetables={timetables}
+              partTimeStaff={partTimeStaff}
+              teacherKana={teacherKana}
+              isAdmin={isAdmin}
+              onOpenLeave={handoverEnabled ? () => selectView(VIEWS.LEAVE) : undefined}
+            />
+          )}
+          {view === VIEWS.LEAVE && !selected && (
+            // 授業がある日の「代行・欠勤の登録なし」を数えるために本体のデータも渡す
+            // (日付ベースなので時間割セレクタでは絞らない)
+            <LeaveView
+              staffLeave={staffLeave}
+              onSave={saveStaffLeave}
+              enabled={handoverEnabled}
+              affiliations={teacherAffiliations}
+              partTimeStaff={partTimeStaff}
+              teacherKana={teacherKana}
+              slots={slots}
+              subs={subs}
+              adjustments={adjustments}
+              holidays={holidays}
+              examPeriods={examPeriods}
+              specialEvents={specialEvents}
+              timetables={timetables}
+              displayCutoff={displayCutoff}
+              classSets={classSets}
+              biweeklyAnchors={biweeklyAnchors}
+              sessionOverrides={sessionOverrides}
+              daySchedules={daySchedules}
+              onRegisterAbsence={isAdmin ? (init) => setMultiDayAbsence(init) : undefined}
+              onOpenAffiliation={() => selectView(VIEWS.AFFILIATION)}
+              onSelectTeacher={selectTeacher}
+            />
+          )}
           {view === VIEWS.BUILDER && !selected && (
             // 他校舎の授業を講習の「講師不在」へ取り込む・出勤可能調査をバイトで
             // 絞るための読み取り専用データ
@@ -1818,6 +1871,8 @@ export default function App() {
               onEditExtraLesson={openExtraLessonEditor}
               offsiteLessons={offsiteLessons}
               onOpenOffsite={openOffsite}
+              staffLeave={handoverEnabled ? staffLeave : null}
+              onOpenLeave={handoverEnabled ? () => selectView(VIEWS.LEAVE) : undefined}
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}

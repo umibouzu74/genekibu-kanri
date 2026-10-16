@@ -258,6 +258,36 @@ export interface HandoverNote {
   updatedAt?: string;
 }
 
+// ─── 講師の所属 (TeacherAffiliationChange) ───────────────────────
+// 「この講師はこの年度 (4 月始まり) からこの区分」という変更だけを持つ
+// (utils/teacherAffiliations.js)。何もしなければ前の年度の区分を引き継ぐ。
+// 登録の無い講師は予備校部、バイト一覧の人は現役部 非常勤が既定。
+export interface TeacherAffiliationChange {
+  name: string;
+  fromYear: number; // 年度 (2026 = 2026/4〜2027/3)
+  category: string; // AFFILIATION_CATEGORIES の key ("genyaku-fulltime" など)
+}
+
+// ─── 有給・半休 (StaffLeave) ─────────────────────────────────────
+// 現役部 常勤の休暇の記録 (utils/staffLeave.js)。Firebase では adminData/
+// (管理者だけが読める) に置く。
+export interface StaffLeaveRecord {
+  id: number;
+  name: string;
+  date: string; // "YYYY-MM-DD"
+  kind: "full" | "am" | "pm" | "other" | string;
+  memo?: string;
+}
+export interface StaffLeaveGrant {
+  name: string;
+  year: number; // 年度
+  days: number; // その年度に使える日数 (付与 + 繰越)
+}
+export interface StaffLeave {
+  records: StaffLeaveRecord[];
+  grants: StaffLeaveGrant[];
+}
+
 // ─── Extra lesson (追加授業) ─────────────────────────────────────
 // 週次 Slot と異なり「特定日付にのみ実施する単発コマ」。
 // 例: プレップの夏期講習 4 回分、テスト対策の特別授業。
@@ -423,6 +453,9 @@ export interface ExportBundle {
   offsiteLessons?: OffsiteLesson[];
   /** 管理者が書き出したときだけ含まれる */
   handoverNotes?: HandoverNote[];
+  teacherAffiliations?: TeacherAffiliationChange[];
+  /** 管理者が書き出したときだけ含まれる */
+  staffLeave?: StaffLeave;
 }
 
 export interface ValidationResult<T> {
