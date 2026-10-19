@@ -14,7 +14,10 @@ import { leaveKindMeta } from "../../../utils/staffLeave";
 //
 // leaveSoon (staffLeave.upcomingLeave の戻り値) を渡すと「今後7日の休暇」
 // (現役部 常勤の有給・半休) も並べる。管理者だけが読めるデータなので、読める
-// 人のときだけ Dashboard が渡す。クリックで有給・半休の画面 (onOpenLeave)。
+// 人のときだけ Dashboard が渡す。休暇の 1 行を押すとその人・その日を直す欄を
+// 開いた有給・半休の画面へ、「＋ 入れる」で人と日を選んで入れる欄へ
+// (onOpenLeave({name, date}) / onOpenLeave({}))。カード全体はボタンにしない
+// (中にボタンを並べるため)。
 export function EventSummaryCards({
   todayStr,
   holidays = [],
@@ -179,21 +182,108 @@ export function EventSummaryCards({
           }}
         />
       )}
-      {leaveItems.length > 0 && (
-        <Card
-          label="今後7日の休暇 (有給・半休)"
-          count={leaveItems.length}
-          color="#1f6a3a"
-          bg="#eef7f0"
-          accent="#7cc08e55"
-          items={leaveItems}
-          formatItem={(r) =>
-            `${fmtMDWeekday(r.date)} ${r.name} ${leaveKindMeta(r.kind).label}${r.memo ? ` (${r.memo})` : ""}`
-          }
-          onOpen={onOpenLeave}
-          openTitle="クリックで有給・半休を開く"
-        />
-      )}
+      {leaveItems.length > 0 && <LeaveSoonCard items={leaveItems} onOpenLeave={onOpenLeave} />}
+    </div>
+  );
+}
+
+// 「今後7日の休暇 (有給・半休)」。1 行ずつ押せる (その人・その日を直す欄へ) +
+// 「＋ 入れる」(人と日を選んで入れる欄へ)
+function LeaveSoonCard({ items, onOpenLeave }) {
+  const color = "#1f6a3a";
+  const rowBtn = {
+    display: "block",
+    width: "100%",
+    textAlign: "left",
+    border: "none",
+    background: "none",
+    padding: 0,
+    margin: 0,
+    fontSize: 10,
+    lineHeight: 1.3,
+    color: "#444",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    cursor: onOpenLeave ? "pointer" : "default",
+  };
+  return (
+    <div
+      style={{
+        background: "#eef7f0",
+        borderRadius: 10,
+        padding: "10px 14px",
+        border: "1px solid #7cc08e55",
+        minWidth: 150,
+        maxWidth: 360,
+        flex: "1 1 150px",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color }}>今後7日の休暇 (有給・半休)</span>
+        {onOpenLeave && (
+          <button
+            type="button"
+            className="inline-activate"
+            onClick={() => onOpenLeave({})}
+            title="人と日を選んで有給・半休を入れる"
+            style={{
+              marginLeft: "auto",
+              border: `1px solid ${color}66`,
+              background: "#fff",
+              color,
+              borderRadius: 6,
+              padding: "1px 8px",
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            ＋ 入れる
+          </button>
+        )}
+      </div>
+      <div style={{ fontSize: 26, fontWeight: 800, color, lineHeight: 1 }}>
+        {items.length}
+        <span style={{ fontSize: 12, fontWeight: 600, marginLeft: 4 }}>件</span>
+      </div>
+      <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 2 }}>
+        {items.slice(0, 3).map((r) => {
+          const text = `${fmtMDWeekday(r.date)} ${r.name} ${leaveKindMeta(r.kind).label}${
+            r.memo ? ` (${r.memo})` : ""
+          }`;
+          return onOpenLeave ? (
+            <button
+              key={`${r.name}|${r.date}`}
+              type="button"
+              className="inline-activate"
+              onClick={() => onOpenLeave({ name: r.name, date: r.date })}
+              title={`${text} を有給・半休の画面で直す`}
+              style={rowBtn}
+            >
+              {text}
+            </button>
+          ) : (
+            <div key={`${r.name}|${r.date}`} style={rowBtn}>
+              {text}
+            </div>
+          );
+        })}
+        {items.length > 3 &&
+          (onOpenLeave ? (
+            <button
+              type="button"
+              className="inline-activate"
+              onClick={() => onOpenLeave(null)}
+              title="有給・半休の画面を開く"
+              style={{ ...rowBtn, fontSize: 9, color: "#888" }}
+            >
+              他 {items.length - 3} 件 →
+            </button>
+          ) : (
+            <div style={{ fontSize: 9, color: "#888" }}>他 {items.length - 3} 件</div>
+          ))}
+      </div>
     </div>
   );
 }

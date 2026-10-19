@@ -18,21 +18,29 @@ import {
   resolveAffiliation,
 } from "../../utils/teacherAffiliations";
 import {
+  CALENDAR_DAY_KINDS,
   EMPTY_STAFF_LEAVE,
   FISCAL_MONTHS,
   LEAVE_KINDS,
+  NO_WORK_PATTERN,
+  calendarFor,
+  calendarIndex,
   countLeave,
   fmtLeaveDays,
   grantFor,
   indexLeaveRecords,
   leaveKey,
   leaveKindMeta,
+  publicOffCount,
   recordsInRange,
   setGrant,
+  setWorkPattern,
   summarizeYear,
+  workPatternFor,
 } from "../../utils/staffLeave";
 import { leaveClassCheck, leaveClassSeverity } from "../../utils/leaveClassCheck";
 import { LeaveEditor } from "../LeaveEditor";
+import { LeaveCalendarPanel } from "./leave/LeaveCalendarPanel";
 import {
   LEAVE_SEVERITY_TONE as SEVERITY_TONE,
   leaveKindChip as kindChip,
@@ -42,8 +50,13 @@ import {
 // 「講師の所属」で現役部 常勤にした人の有給・半休を記録して見る画面
 // (utils/staffLeave)。管理者だけが読める adminData/ に置く。
 //
-//   - 月の表: 行 = 人、列 = 日。マスを押すと下の欄でその日の休暇を入れる
-//     (種類のボタンを押せば保存。期間にチェックを入れると何日もまとめて)
+//   - 月の表: 行 = 人、列 = 日。マスを押すか「＋ 有給・半休を入れる」で、下の欄で
+//     その日の休暇を入れる (欄の上で人と日を選び直せる。種類のボタンを押せば保存。
+//     期間にチェックを入れると何日もまとめて)。ダッシュボードの「今後7日の休暇」・
+//     Cmd+K からは focusRequest ({name?, date?}) で欄を開いた状態で来る
+//   - 年間カレンダー (予定表の Excel の教員用カレンダー) を取り込むと、人ごとの
+//     休みの型 (土日 休み / 日月 休み) に合わせて公休の日を薄く出し、日付の見出しに
+//     祝日・塾の休み・教員半休・行事を出す (LeaveCalendarPanel)
 //   - その日に担当のコマがあって代行・欠勤の登録が無ければ「!」を出し、
 //     複数日の欠勤登録を開けるようにする (休暇の記録は代行レコードを作らない)
 //   - 年度のまとめ: 月ごとの有給の日数・合計・持ち日数 (任意)・残り
@@ -90,12 +103,16 @@ export function LeaveView({
   onRegisterAbsence,
   onOpenAffiliation,
   onSelectTeacher,
+  // 入れる欄を開いた状態で来る要求 ({name?, date?, token})。受け取ったら onConsumeFocus
+  focusRequest = null,
+  onConsumeFocus,
 }) {
   const today = useToday();
   const toasts = useToasts();
   const [ym, setYm] = useState(() => ymOf(today));
-  const [cell, setCell] = useState(null); // { name, date }
+  const [cell, setCell] = useState(null); // { name: string|null, date }
   const editorRef = useRef(null);
+  const calendarAnchorId = "leave-calendar-panel";
 
   const leave = staffLeave || EMPTY_STAFF_LEAVE;
   const latestRef = useRef(leave);
@@ -158,6 +175,17 @@ export function LeaveView({
   const summaryByName = useMemo(() => new Map(summary.map((s) => [s.name, s])), [summary]);
 
   const recIndex = useMemo(() => indexLeaveRecords(leave.records), [leave.records]);
+  // 年間カレンダー (この年度のもの) と、人ごとの公休の日
+  const cal = calendarFor(leave, year);
+  const calIdx = calendarIndex(cal);
+  const patternOf = (name) => {
+    const key = cal ? workPatternFor(leave, name, year) : null;
+    return key && calIdx.patternByKey.has(key) ? calIdx.patternByKey.get(key) : null;
+  };
+  const isPublicOff = (name, d) => {
+    const p = patternOf(name);
+    return !!p && calIdx.offByPattern.get(p.key).has(d);
+  };
   const fullHolidayByDate = useMemo(() => {
     const m = new Map();
     for (const h of holidays || []) if (isFullDayHoliday(h)) m.set(h.date, h.label || "休講");
@@ -176,13 +204,35 @@ export function LeaveView({
     return m;
   }, [monthRecords, slots, subs, adjustments, sessionCtx]);
 
-  // 選んだマス (月を変えたら外す)
+  // 入れる欄を開く (name が null なら欄の上で人を選ぶ)。違う月の日なら月も移る
+  const selectCell = (name, date) => {
+    setCell({ name, date });
+    if (ymOf(date) !== ym) setYm(ymOf(date));
+    // 狭い画面では表の下の欄が見えないので寄せる
+    setTimeout(() => {
+      const el = editorRef.current;
+      if (el && typeof el.scrollIntoView === "function") {
+        el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    }, 0);
+  };
+
+  // 選んだマス (月を変えたら外す。欄の日付で月を変えたときは selectCell が月も合わせる)
   useEffect(() => {
     if (cell && ymOf(cell.date) !== ym) setCell(null);
   }, [ym, cell]);
-  const cellRecord = cell ? recIndex.get(leaveKey(cell.name, cell.date)) : null;
+
+  // ダッシュボード・Cmd+K から「入れる欄を開いて」の要求
+  useEffect(() => {
+    if (!focusRequest || !enabled) return;
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(focusRequest.date || "") ? focusRequest.date : today;
+    selectCell(focusRequest.name || null, date);
+    onConsumeFocus?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 要求が来たときだけ
+  }, [focusRequest, enabled]);
+  const cellRecord = cell?.name ? recIndex.get(leaveKey(cell.name, cell.date)) : null;
   const cellCheck = useMemo(() => {
-    if (!cell) return null;
+    if (!cell?.name) return null;
     return (
       checkByKey.get(leaveKey(cell.name, cell.date)) ||
       leaveClassCheck({
@@ -204,15 +254,12 @@ export function LeaveView({
     );
   }
 
-  const selectCell = (name, date) => {
-    setCell({ name, date });
-    // 狭い画面では表の下の欄が見えないので寄せる
-    setTimeout(() => {
-      const el = editorRef.current;
-      if (el && typeof el.scrollIntoView === "function") {
-        el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      }
-    }, 0);
+  // 「＋ 有給・半休を入れる」の既定の日: 表示中の月なら今日、それ以外は月の 1 日
+  const defaultEntryDate = () => (ymOf(today) === ym ? today : `${ym}-01`);
+  const openEntry = (name = null) => selectCell(name ?? (rows.length === 1 ? rows[0] : null), defaultEntryDate());
+
+  const savePattern = (name, value) => {
+    onSave((prev) => setWorkPattern(prev, name, year, value || NO_WORK_PATTERN));
   };
 
   const saveGrant = (name, value) => {
@@ -233,9 +280,13 @@ export function LeaveView({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <style>{`
+        .leave-cell-empty:hover::after,
+        .leave-cell-empty:focus-visible::after { content: "+"; color: #6b7280; font-weight: 700; }
+        .leave-cell-empty:hover { border-color: #b8c4d6 !important; }
         @media print {
           .leave-grid-wrap { overflow: visible !important; }
           .leave-cell-btn { border: none !important; }
+          .leave-cell-empty::after { content: none !important; }
         }
       `}</style>
 
@@ -254,15 +305,38 @@ export function LeaveView({
           style={{ display: "flex", gap: 8, alignItems: "center" }}
         />
         <span style={{ fontSize: 12, color: colors.inkMuted }}>{fmtFiscalYear(year)}</span>
-        {onOpenAffiliation && (
+        {rows.length > 0 && (
           <button
             type="button"
-            onClick={onOpenAffiliation}
-            style={{ ...S.btn(false), padding: "5px 12px", fontSize: 12, marginLeft: "auto" }}
+            onClick={() => openEntry()}
+            style={{ ...S.btn(true), padding: "6px 14px", fontSize: 13 }}
           >
-            🏷 講師の所属 (誰を載せるか)
+            ＋ 有給・半休を入れる
           </button>
         )}
+        <span style={{ display: "flex", gap: 8, marginLeft: "auto", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={() => {
+              const el = document.getElementById(calendarAnchorId);
+              if (el && typeof el.scrollIntoView === "function") {
+                el.scrollIntoView({ behavior: "smooth", block: "start" });
+              }
+            }}
+            style={{ ...S.btn(false), padding: "5px 12px", fontSize: 12 }}
+          >
+            📅 年間カレンダー{cal ? "" : " (未取り込み)"}
+          </button>
+          {onOpenAffiliation && (
+            <button
+              type="button"
+              onClick={onOpenAffiliation}
+              style={{ ...S.btn(false), padding: "5px 12px", fontSize: 12 }}
+            >
+              🏷 講師の所属 (誰を載せるか)
+            </button>
+          )}
+        </span>
       </div>
 
       <h2 data-print-title={`有給・半休 ${ymLabel}`} style={{ margin: 0, fontSize: 16 }}>
@@ -317,11 +391,16 @@ export function LeaveView({
                 {dates.map((d) => {
                   const dow = parseLocalDate(d).getDay();
                   const hol = fullHolidayByDate.get(d);
+                  // 年間カレンダーの日 (祝日・塾の休み・教員半休・行事)
+                  const cd = calIdx?.dayByDate.get(d) || null;
+                  const red = dow === 0 || hol || cd?.holiday;
+                  const calText = calendarDayText(cd);
+                  const mark = calendarDayMark(cd);
                   return (
                     <th
                       key={d}
                       scope="col"
-                      title={hol ? `${d} ${hol}` : d}
+                      title={[d, hol, calText].filter(Boolean).join("\n")}
                       style={{
                         padding: "2px 0",
                         width: 26,
@@ -329,19 +408,33 @@ export function LeaveView({
                         fontWeight: 700,
                         fontSize: 11,
                         lineHeight: 1.2,
+                        verticalAlign: "top",
                         borderBottom: `1px solid ${colors.border}`,
-                        color: dow === 0 || hol ? "#c44" : dow === 6 ? "#44c" : colors.ink,
+                        color: red ? "#c44" : dow === 6 ? "#44c" : colors.ink,
                         background:
                           d === today
                             ? "#fff3c4"
-                            : dow === 0 || hol
-                              ? "#fdf2f2"
-                              : colors.surfaceAlt,
+                            : cd?.kind === "closed"
+                              ? "#fff6d6"
+                              : red
+                                ? "#fdf2f2"
+                                : colors.surfaceAlt,
                       }}
                     >
                       {Number(d.slice(8))}
                       <br />
                       <span style={{ fontWeight: 400, fontSize: 10 }}>{WEEKDAYS[dow]}</span>
+                      {mark && (
+                        <>
+                          <br />
+                          <span
+                            aria-hidden="true"
+                            style={{ fontWeight: 700, fontSize: 9, color: mark.color }}
+                          >
+                            {mark.text}
+                          </span>
+                        </>
+                      )}
                     </th>
                   );
                 })}
@@ -361,6 +454,7 @@ export function LeaveView({
                 const monthCount = countLeave(monthRecords.filter((r) => r.name === name));
                 const ys = summaryByName.get(name);
                 const outside = !tracksLeave(name, year);
+                const pattern = patternOf(name);
                 return (
                   <tr key={name}>
                     <th
@@ -397,6 +491,14 @@ export function LeaveView({
                           区分外
                         </span>
                       )}
+                      {pattern && (
+                        <span
+                          title={`休みの型: ${pattern.label}`}
+                          style={{ fontSize: 9, color: colors.inkMuted, marginLeft: 4, fontWeight: 400 }}
+                        >
+                          {pattern.key}
+                        </span>
+                      )}
                     </th>
                     {dates.map((d) => {
                       const rec = recIndex.get(leaveKey(name, d));
@@ -406,23 +508,31 @@ export function LeaveView({
                         : null;
                       const dow = parseLocalDate(d).getDay();
                       const hol = fullHolidayByDate.get(d);
+                      const off = isPublicOff(name, d);
                       const isSel = cell && cell.name === name && cell.date === d;
-                      const label = `${fmtMDWeekday(d)} ${name}: ${k ? k.label : "記録なし"}${
-                        rec?.memo ? ` (${rec.memo})` : ""
-                      }${sev === "warn" ? " — 授業に代行・欠勤の登録なし" : ""}`;
+                      const label = `${fmtMDWeekday(d)} ${name}: ${
+                        k ? k.label : off ? `公休 (${pattern.label})` : "記録なし"
+                      }${rec?.memo ? ` (${rec.memo})` : ""}${k && off ? " — 公休の日" : ""}${
+                        sev === "warn" ? " — 授業に代行・欠勤の登録なし" : ""
+                      }`;
                       return (
                         <td
                           key={d}
                           style={{
                             padding: 1,
                             borderBottom: `1px solid ${colors.border}`,
-                            background:
-                              dow === 0 || hol ? "#fdf6f6" : d === today ? "#fffbe6" : "#fff",
+                            background: off
+                              ? "#eceef2"
+                              : dow === 0 || hol
+                                ? "#fdf6f6"
+                                : d === today
+                                  ? "#fffbe6"
+                                  : "#fff",
                           }}
                         >
                           <button
                             type="button"
-                            className="leave-cell-btn"
+                            className={`leave-cell-btn${!k && !off ? " leave-cell-empty" : ""}`}
                             aria-label={label}
                             aria-pressed={isSel || undefined}
                             title={`${label}${hol ? `\n${hol}` : ""}`}
@@ -439,14 +549,14 @@ export function LeaveView({
                                   : "1px solid transparent",
                               borderRadius: 4,
                               background: k ? k.tone.bg : "transparent",
-                              color: k ? k.tone.fg : colors.inkGhost,
+                              color: k ? k.tone.fg : off ? "#9aa1ad" : colors.inkGhost,
                               fontWeight: 800,
                               fontSize: 12,
                               cursor: "pointer",
                               lineHeight: 1,
                             }}
                           >
-                            {k ? k.short : ""}
+                            {k ? k.short : off ? "休" : ""}
                             {sev && (
                               <span
                                 aria-hidden="true"
@@ -512,8 +622,27 @@ export function LeaveView({
             <span>
               <b style={{ color: SEVERITY_TONE.warn.fg }}>!</b> 授業に代行・欠勤の登録なし
             </span>
+            {cal && (
+              <>
+                <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                  <span
+                    style={{
+                      background: "#eceef2",
+                      color: "#9aa1ad",
+                      borderRadius: 4,
+                      padding: "0 5px",
+                      fontWeight: 800,
+                    }}
+                  >
+                    休
+                  </span>
+                  公休 (年間カレンダー × 休みの型)
+                </span>
+                <span>日付の下: 祝=祝日 休=塾の休み 半=教員半休 ・=行事</span>
+              </>
+            )}
             <span className="no-print" style={{ marginLeft: "auto" }}>
-              マスを押して入れる (← → で月を移動)
+              空いているマスを押すか「＋ 有給・半休を入れる」から (← → で月を移動)
             </span>
           </div>
         </div>
@@ -523,26 +652,77 @@ export function LeaveView({
         <section
           ref={editorRef}
           className="no-print"
-          aria-label={`${fmtMDWeekday(cell.date)} ${cell.name} の休暇`}
+          aria-label={cell.name ? `${fmtMDWeekday(cell.date)} ${cell.name} の休暇` : "有給・半休を入れる"}
           style={{
             ...S.panel,
             padding: "10px 14px",
             borderColor: colors.infoBorder,
             background: colors.infoSoft,
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
           }}
         >
-          <LeaveEditor
-            key={`${cell.name}|${cell.date}`}
-            name={cell.name}
-            date={cell.date}
-            record={cellRecord}
-            leave={leave}
-            onSave={onSave}
-            classCheck={cellCheck}
-            holidayLabel={fullHolidayByDate.get(cell.date)}
-            onRegisterAbsence={onRegisterAbsence}
-            onClose={() => setCell(null)}
-          />
+          {/* 人と日を選び直す (マスを探さなくても入れられるように) */}
+          <div
+            role="group"
+            aria-label="入れる人と日"
+            style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", fontSize: 12 }}
+          >
+            <b>講師</b>
+            {(cell.name && !rows.includes(cell.name) ? [...rows, cell.name] : rows).map((n) => (
+              <button
+                key={n}
+                type="button"
+                aria-pressed={cell.name === n}
+                onClick={() => selectCell(n, cell.date)}
+                style={{ ...S.btn(cell.name === n), padding: "3px 10px", fontSize: 12 }}
+              >
+                {n}
+              </button>
+            ))}
+            <label style={{ display: "inline-flex", gap: 4, alignItems: "center", marginLeft: 8 }}>
+              <b>日付</b>
+              <input
+                type="date"
+                value={cell.date}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) selectCell(cell.name, v);
+                }}
+                aria-label="入れる日"
+                style={{ ...S.input, width: "auto", padding: "3px 6px", fontSize: 12, background: "#fff" }}
+              />
+            </label>
+            {!cell.name && (
+              <button
+                type="button"
+                onClick={() => setCell(null)}
+                style={{ ...S.btn(false), padding: "2px 10px", fontSize: 12, marginLeft: "auto" }}
+              >
+                ✕ 閉じる
+              </button>
+            )}
+          </div>
+          {cell.name ? (
+            <LeaveEditor
+              key={`${cell.name}|${cell.date}`}
+              name={cell.name}
+              date={cell.date}
+              record={cellRecord}
+              leave={leave}
+              onSave={onSave}
+              classCheck={cellCheck}
+              holidayLabel={fullHolidayByDate.get(cell.date)}
+              onRegisterAbsence={onRegisterAbsence}
+              onClose={() => setCell(null)}
+            />
+          ) : (
+            <p style={{ margin: 0, fontSize: 13, color: colors.inkMuted }}>
+              {"誰の休暇かを選ぶと、種類 (有給・午前半休・午後半休・その他の休み) のボタンが出ます。" +
+                "押すとすぐ保存されます。"}
+            </p>
+          )}
         </section>
       )}
 
@@ -588,6 +768,21 @@ export function LeaveView({
                   <b>{r.name}</b>
                   <span style={kindChip(k)}>{k.label}</span>
                   {r.memo && <span style={{ color: colors.inkMuted }}>{r.memo}</span>}
+                  {isPublicOff(r.name, r.date) && (
+                    <span
+                      title="年間カレンダーでは、この人の公休の日です"
+                      style={{
+                        fontSize: 11,
+                        color: "#555",
+                        background: "#eceef2",
+                        border: `1px solid ${colors.border}`,
+                        borderRadius: 4,
+                        padding: "0 6px",
+                      }}
+                    >
+                      公休の日
+                    </span>
+                  )}
                   {sev && (
                     <span
                       style={{
@@ -642,7 +837,15 @@ export function LeaveView({
                       background: `${m === vm ? "#fff3c4" : colors.surfaceAlt}`,
                     }}
                   >
-                    {m}月
+                    <button
+                      type="button"
+                      className="inline-activate"
+                      onClick={() => setYm(`${m <= 3 ? year + 1 : year}-${pad2(m)}`)}
+                      title={`${m}月の表を開く`}
+                      style={{ ...nameBtn, fontSize: 11 }}
+                    >
+                      {m}月
+                    </button>
                   </th>
                 ))}
                 <th scope="col" style={sumHead}>
@@ -656,6 +859,19 @@ export function LeaveView({
                 </th>
                 <th scope="col" style={sumHead} title="代休・特別休暇など (有給に数えない)">
                   その他
+                </th>
+                {cal && (
+                  <>
+                    <th scope="col" style={sumHead} title="年間カレンダーのどの列の公休か">
+                      休みの型
+                    </th>
+                    <th scope="col" style={sumHead} title="年間カレンダーの年間の休日数">
+                      公休
+                    </th>
+                  </>
+                )}
+                <th scope="col" className="no-print" style={sumHead}>
+                  入れる
                 </th>
               </tr>
             </thead>
@@ -689,6 +905,36 @@ export function LeaveView({
                     {s.remaining != null ? fmtLeaveDays(s.remaining) : "—"}
                   </td>
                   <td style={sumCell}>{s.counts.other || ""}</td>
+                  {cal && (
+                    <>
+                      <td style={sumCell}>
+                        <select
+                          value={workPatternFor(leave, s.name, year) || ""}
+                          onChange={(e) => savePattern(s.name, e.target.value)}
+                          aria-label={`${s.name} の休みの型`}
+                          style={{ fontSize: 12, padding: "1px 2px" }}
+                        >
+                          <option value="">—</option>
+                          {cal.patterns.map((p) => (
+                            <option key={p.key} value={p.key}>
+                              {p.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={sumCell}>{publicOffCount(leave, s.name, year) ?? "—"}</td>
+                    </>
+                  )}
+                  <td className="no-print" style={sumCell}>
+                    <button
+                      type="button"
+                      onClick={() => openEntry(s.name)}
+                      aria-label={`${s.name} の有給・半休を入れる`}
+                      style={{ ...S.btn(false), padding: "1px 8px", fontSize: 11 }}
+                    >
+                      ＋ 入れる
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -696,11 +942,42 @@ export function LeaveView({
           <div className="no-print" style={{ fontSize: 11, color: colors.inkMuted, marginTop: 4 }}>
             持ち日数 (その年度に使える日数 = 付与 + 繰越)
             を入れると残りが出ます。空にすると消えます。
+            {cal && " 休みの型を選ぶと、その人の公休が月の表に出ます (前の年度の型を引き継ぎます)。"}
           </div>
         </section>
       )}
+
+      <LeaveCalendarPanel
+        id={calendarAnchorId}
+        leave={leave}
+        year={year}
+        onSave={onSave}
+        today={today}
+        noPatternCount={cal ? yearRows.filter((n) => tracksLeave(n, year) && !patternOf(n)).length : 0}
+      />
     </div>
   );
+}
+
+// 年間カレンダーの日の説明 (見出しの title)
+function calendarDayText(cd) {
+  if (!cd) return "";
+  return [
+    cd.holiday ? `祝日${cd.event ? ` ${cd.event}` : ""}` : cd.event,
+    cd.kind ? CALENDAR_DAY_KINDS[cd.kind] : "",
+  ]
+    .filter(Boolean)
+    .join(" / ");
+}
+
+// 日付の見出しの 3 段目に出す 1 文字
+function calendarDayMark(cd) {
+  if (!cd) return null;
+  if (cd.kind === "closed") return { text: "休", color: "#9a6a00" };
+  if (cd.holiday) return { text: "祝", color: "#c44" };
+  if (cd.kind === "half") return { text: "半", color: "#5a6a8a" };
+  if (cd.event) return { text: "・", color: colors.inkMuted };
+  return null;
 }
 
 const sumHead = {

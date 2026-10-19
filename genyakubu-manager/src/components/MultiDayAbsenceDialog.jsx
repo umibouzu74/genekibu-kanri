@@ -45,6 +45,8 @@ export function MultiDayAbsenceDialog({
   // 管理者だけが読めるデータなので、書ける人のときだけ App が渡す
   isLeaveTracked = null,
   onRecordLeave = null,
+  // (name, from, to) → 除く日の判定 (年間カレンダーの公休) か null (日曜を除く)
+  leaveOffDay = null,
 }) {
   const todayStr = useToday();
   const { sessionCtx: builtCtx } = useSessionCtx({
@@ -133,11 +135,23 @@ export function MultiDayAbsenceDialog({
         : [],
     [onRecordLeave, isLeaveTracked, teachers, fromDate]
   );
-  const leaveDates = useMemo(
-    () => (leaveNames.length > 0 ? leaveRangeDates(fromDate, toDate).dates : []),
-    [leaveNames, fromDate, toDate]
+  // 人ごとの入れる日 (年間カレンダーと休みの型がそろう人は公休を除く。それ以外は日曜を除く)
+  const leaveEntries = useMemo(
+    () =>
+      leaveNames.map((name) => {
+        const isOff = leaveOffDay ? leaveOffDay(name, fromDate, toDate) : null;
+        return { name, byCalendar: !!isOff, dates: leaveRangeDates(fromDate, toDate, { isOff }).dates };
+      }),
+    [leaveNames, fromDate, toDate, leaveOffDay]
   );
-  const recordsLeave = Boolean(leaveKind) && leaveNames.length > 0 && leaveDates.length > 0;
+  const leaveDayCount = leaveEntries.reduce((n, e) => Math.max(n, e.dates.length), 0);
+  const recordsLeave = Boolean(leaveKind) && leaveNames.length > 0 && leaveDayCount > 0;
+  const sameLeaveDays = leaveEntries.every((e) => e.dates.length === leaveDayCount);
+  const leaveRule = leaveEntries.some((e) => e.byCalendar)
+    ? leaveEntries.every((e) => e.byCalendar)
+      ? "期間の公休以外"
+      : "公休 (年間カレンダー)・日曜を除く"
+    : "期間の日曜以外";
 
   const canApply =
     isAdmin && plan.errors.length === 0 && (selectedCount > 0 || recordsLeave);
@@ -155,11 +169,19 @@ export function MultiDayAbsenceDialog({
           })
         : 0;
     const leave = recordsLeave
-      ? { kind: leaveKind, names: leaveNames, days: leaveDates.length }
+      ? {
+          kind: leaveKind,
+          names: leaveNames,
+          days: leaveDayCount,
+          // 人によって日数が違う (休みの型が違う) ときの内訳
+          ...(sameLeaveDays ? {} : { perName: leaveEntries.map((e) => ({ name: e.name, days: e.dates.length })) }),
+        }
       : null;
     if (leave) {
       onRecordLeave(
-        leaveNames.map((name) => ({ name, dates: leaveDates, kind: leaveKind, memo: memo.trim() }))
+        leaveEntries
+          .filter((e) => e.dates.length > 0)
+          .map((e) => ({ name: e.name, dates: e.dates, kind: leaveKind, memo: memo.trim() }))
       );
     }
     onSaved?.({ count: n, mode, fromDate, toDate, teachers, leave });
@@ -313,7 +335,11 @@ export function MultiDayAbsenceDialog({
         onChange={setLeaveKind}
         detail={
           leaveKind
-            ? `${leaveDates.length} 日 (期間の日曜以外) を「${leaveKindMeta(leaveKind).label}」として記録します。日ごとの直しは「有給・半休」の画面で`
+            ? `${
+                sameLeaveDays
+                  ? `${leaveDayCount} 日`
+                  : leaveEntries.map((e) => `${e.name} ${e.dates.length} 日`).join("・")
+              } (${leaveRule}) を「${leaveKindMeta(leaveKind).label}」として記録します。日ごとの直しは「有給・半休」の画面で`
             : null
         }
       />

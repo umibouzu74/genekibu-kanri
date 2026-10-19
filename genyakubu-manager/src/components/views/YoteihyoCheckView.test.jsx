@@ -13,7 +13,13 @@ import { ToastProvider } from "../../hooks/useToasts";
 import { ConfirmProvider } from "../../hooks/useConfirm";
 import { LS } from "../../constants/storageKeys";
 import { readWorkbookFile } from "../../utils/yoteihyo/workbookFile";
-import { SMALL_SLOTS, makeSheet, smallH12Sheet, smallT1T2Sheet } from "../../utils/yoteihyo/testUtils";
+import {
+  SMALL_SLOTS,
+  makeSheet,
+  smallCalendarSheet,
+  smallH12Sheet,
+  smallT1T2Sheet,
+} from "../../utils/yoteihyo/testUtils";
 
 vi.mock("../../utils/yoteihyo/workbookFile", () => ({ readWorkbookFile: vi.fn() }));
 
@@ -44,6 +50,8 @@ function Harness({
   altSlots = null,
   holidays: initHolidays = HOLIDAYS,
   displayCutoff: initCutoff = { groups: [], cohorts: [] },
+  onImportLeaveCalendar,
+  leaveCalendarFor,
 }) {
   const [slots, saveSlots] = useState(initSlots);
   const [holidays, saveHolidays] = useState(initHolidays);
@@ -84,6 +92,8 @@ function Harness({
           session={session}
           onSessionChange={setSession}
           onOpenDayReschedule={onOpenDayReschedule}
+          onImportLeaveCalendar={onImportLeaveCalendar}
+          leaveCalendarFor={leaveCalendarFor}
         />
       )}
     </>
@@ -181,7 +191,7 @@ describe("YoteihyoCheckView — 読み込みと食い違い", () => {
     await loadWorkbook();
     expect(screen.getByLabelText("「T3」を使う").disabled).toBe(true);
     expect(screen.getByText("表の形が読めません")).toBeTruthy();
-    expect(screen.getByRole("note").textContent).toMatch(/読み込める高校部・中学部の予定表のシートがありません/);
+    expect(screen.getByRole("note").textContent).toMatch(/読み込める高校部・中学部の予定表・年間カレンダーのシートがありません/);
   });
 
   it("読めないファイルは理由を出し、前に読み込んだ結果は消さない", async () => {
@@ -630,5 +640,52 @@ describe("YoteihyoCheckView — 中学部の予定表", () => {
     expect(panel.textContent).toMatch(/中学 ☆ プレップ\(個別指導\)/);
     expect(panel.textContent).toMatch(/予定表 ☆1、システム 第1・2回/);
     expect(panel.textContent).toMatch(/日数カウント/);
+  });
+});
+
+describe("YoteihyoCheckView — 年間カレンダー", () => {
+  it("今年度のカレンダーを選び、塾の休みにシステムの授業がある日を全日休講にできる (元に戻せる)", async () => {
+    readWorkbookFile.mockResolvedValue({ sheets: [smallCalendarSheet().sheet] });
+    let state = null;
+    renderView({ onState: (s) => (state = s) });
+    await loadWorkbook();
+    expect(screen.getByLabelText("「2026年度カレンダー」を使う").checked).toBe(true);
+    expect(screen.queryByText("比べるシートにチェックを入れてください。")).toBeNull();
+    const panel = screen.getByRole("region", { name: "年間カレンダー「2026年度カレンダー」(2026年度)" });
+    // 12/31 (木) は塾の休みで、木曜のコマがある (10/12 は休講日が登録済み)
+    expect(within(panel).getByText(/12\/31 \(木\)/)).toBeInTheDocument();
+    expect(within(panel).queryByText(/10\/12 \(月\)/)).toBeNull();
+    fireEvent.click(within(panel).getByRole("button", { name: "全日休講「休講 (年間カレンダー)」を登録" }));
+    await waitFor(() =>
+      expect(state.holidays.map((h) => [h.date, h.label, h.scope])).toContainEqual([
+        "2026-12-31",
+        "休講 (年間カレンダー)",
+        ["全部"],
+      ])
+    );
+    expect(within(panel).queryByText(/12\/31 \(木\)/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "元に戻す" }));
+    await waitFor(() => expect(state.holidays.map((h) => h.date)).toEqual(["2026-10-12"]));
+  });
+
+  it("有給・半休に取り込む (常勤の公休)", async () => {
+    readWorkbookFile.mockResolvedValue({ sheets: [smallCalendarSheet().sheet] });
+    const onImportLeaveCalendar = vi.fn();
+    renderView({ onImportLeaveCalendar, leaveCalendarFor: () => null });
+    await loadWorkbook("予定表.xls");
+    fireEvent.click(screen.getByRole("button", { name: "有給・半休に取り込む (常勤の公休)" }));
+    expect(onImportLeaveCalendar).toHaveBeenCalledTimes(1);
+    const cal = onImportLeaveCalendar.mock.calls[0][0];
+    expect(cal).toMatchObject({ year: 2026, source: "予定表.xls / 2026年度カレンダー", importedAt: "2026-10-09" });
+    expect(cal.patterns.map((p) => p.key)).toEqual(["土日", "日月"]);
+  });
+
+  it("閲覧者には登録・取り込みのボタンを出さない", async () => {
+    readWorkbookFile.mockResolvedValue({ sheets: [smallCalendarSheet().sheet] });
+    renderView({ isAdmin: false, onImportLeaveCalendar: vi.fn() });
+    await loadWorkbook();
+    expect(screen.getByText(/12\/31 \(木\)/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /全日休講/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /有給・半休に取り込む/ })).toBeNull();
   });
 });
