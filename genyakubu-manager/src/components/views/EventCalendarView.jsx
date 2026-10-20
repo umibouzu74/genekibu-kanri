@@ -46,7 +46,7 @@ import {
   EventVisibilityToggles,
   isEventKindVisible,
   isExamPeriodVisible,
-  isSpecialEventVisible,
+  isSpecialEventVisibleInCalendar,
 } from "../EventVisibilityToggles";
 
 // イベントカレンダー (休講・テスト期間・特別イベント・追加授業を統合表示)
@@ -303,7 +303,7 @@ export function EventCalendarView({
     }
     if (showSpecial) {
       for (const ev of specialEvents) {
-        if (!isSpecialEventVisible(ev, visibility)) continue;
+        if (!isSpecialEventVisibleInCalendar(ev, visibility)) continue;
         if (!overlapsRange(ev.startDate, ev.endDate, monthStart, monthEnd)) continue;
         all.push({
           kind: EVENT_KIND.SPECIAL,
@@ -508,6 +508,7 @@ export function EventCalendarView({
           onChange={onChangeVisibility}
           availableTags={availableTags}
           includeExtraLessons
+          includeSpecialTypes
         />
         {/* 日付の数字 / 🚑 が何かの凡例 (導線を渡したときだけ) */}
         <DayNumberLegend

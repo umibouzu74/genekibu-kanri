@@ -128,6 +128,11 @@ function monthHeaderCss() {
 function monthPaperCss() {
   return `
       .month-print-root{margin-top:0 !important}
+      .month-print-band{
+        margin:0 0 4px !important;
+        break-inside:avoid;
+        page-break-inside:avoid;
+      }
       .month-print-grid{
         gap:0 !important;
         background:#fff !important;

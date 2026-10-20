@@ -6,6 +6,8 @@ import {
   TAG_META,
 } from "../constants/eventKinds";
 import { TOGGLE_LABEL_CLASS, VISUALLY_HIDDEN } from "../styles/common";
+import { isTypeShownInTeacherMonth } from "../utils/specialEventDisplay";
+import { SPECIAL_EVENT_TYPES } from "../constants/specialEvents";
 
 // 月次ビュー / イベントカレンダーで共有する「表示種別フィルタ」のチップ。
 // 休講は常時表示なのでトグル対象外。
@@ -55,39 +57,93 @@ export const isExamPeriodVisible = (period, visibility) =>
 export const isSpecialEventVisible = (event, visibility) =>
   isTaggedEventVisible(event, EVENT_KIND.SPECIAL, visibility);
 
+// 講師の月間予定 (講師別の月間・週間 → まとめて印刷・画像) での判定。
+// 全員共通の「講師の月間予定に出す種別」(utils/specialEventDisplay) に絞った
+// うえで、閲覧者の表示トグル・タグの絞り込みを掛ける。イベントカレンダー・
+// ダッシュボードは全種別を出すので isSpecialEventVisible のまま。
+// **この判定を各ビューで書き起こさないこと。**
+export const isSpecialEventVisibleInTeacherView = (event, visibility, display) =>
+  isTypeShownInTeacherMonth(display, event?.eventType) &&
+  isSpecialEventVisible(event, visibility);
+
+// イベントカレンダーの「種別」チップ (specialTypeFilters: キー無し = ON /
+// false = OFF。タグと同じ形)。講師の月間予定は全員共通の設定で種別を決める
+// ので、このチップはイベントカレンダーだけが読む
+export const isSpecialEventVisibleInCalendar = (event, visibility) =>
+  visibility?.specialTypeFilters?.[event?.eventType] !== false &&
+  isSpecialEventVisible(event, visibility);
+
+const ROW = { display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" };
+
 export function EventVisibilityToggles({
   visibility,
   onChange,
   availableTags = [],
   includeExtraLessons = false,
+  // イベントカレンダーだけ: 特別イベントの種別チップを出し、種別・タグを
+  // それぞれ別の行に分ける (学校名タグと種別を混ぜない)
+  includeSpecialTypes = false,
 }) {
   const examOn = isEventKindVisible(visibility, EVENT_KIND.EXAM);
   const specialOn = isEventKindVisible(visibility, EVENT_KIND.SPECIAL);
   const tagFilters = getTagFilters(visibility);
+  const typeFilters = visibility?.specialTypeFilters || {};
   const toggleDefs = includeExtraLessons
     ? [...TOGGLE_DEFS, EXTRA_LESSON_TOGGLE]
     : TOGGLE_DEFS;
 
+  // 既定で ON 扱いなので、最初のクリックは OFF (false 明示)、再クリックで
+  // delete して ON に戻す
+  const flipOff = (map, key) => {
+    const next = { ...map };
+    if (next[key] === false) delete next[key];
+    else next[key] = false;
+    return next;
+  };
   const toggleTag = (tag) => {
-    onChange((p) => {
-      const cur = getTagFilters(p);
-      // 既定で ON 扱いなので、最初のクリックは OFF (false 明示)、再クリックで
-      // delete して ON に戻す。書き込みは常に新キー `tagFilters` 側のみ。
-      const next = { ...cur };
-      if (next[tag] === false) delete next[tag];
-      else next[tag] = false;
-      return { ...(p || {}), tagFilters: next };
-    });
+    // 書き込みは常に新キー `tagFilters` 側のみ。
+    onChange((p) => ({ ...(p || {}), tagFilters: flipOff(getTagFilters(p), tag) }));
+  };
+  const toggleType = (key) => {
+    onChange((p) => ({
+      ...(p || {}),
+      specialTypeFilters: flipOff(p?.specialTypeFilters || {}, key),
+    }));
   };
 
-  return (
-    // no-print: 操作チップは紙面に不要 (印刷時のフィルタ状態は月次 popup 側が
-    // describeMonthVisibility でテキスト表示し、window.print() 系は表示結果
-    // そのものが紙面に出る)
-    <div
-      className="no-print"
-      style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}
-    >
+  const showTags = (examOn || specialOn) && availableTags.length > 0;
+  const tagChips = showTags && (
+    <>
+      {!includeSpecialTypes && <span style={{ fontSize: 11, color: "#aaa" }}>|</span>}
+      <span style={{ fontSize: 11, color: "#888" }}>タグ:</span>
+      {availableTags.map((tag) => {
+        const on = tagFilters[tag] !== false;
+        return (
+          <button
+            key={tag}
+            type="button"
+            onClick={() => toggleTag(tag)}
+            aria-pressed={on}
+            style={{
+              fontSize: 11,
+              padding: "2px 8px",
+              borderRadius: 10,
+              cursor: "pointer",
+              background: on ? TAG_META.bg : "#f5f5f5",
+              color: on ? TAG_META.fg : "#aaa",
+              border: `1px solid ${on ? TAG_META.accent : "#ddd"}`,
+              fontWeight: on ? 700 : 400,
+            }}
+          >
+            {tag}
+          </button>
+        );
+      })}
+    </>
+  );
+
+  const kindRow = (
+    <>
       <span style={{ fontSize: 12, fontWeight: 700, color: "#666" }}>表示:</span>
       {toggleDefs.map((t) => {
         const on = isEventKindVisible(visibility, t.key);
@@ -133,35 +189,53 @@ export function EventVisibilityToggles({
           </label>
         );
       })}
-      {(examOn || specialOn) && availableTags.length > 0 && (
-        <>
-          <span style={{ fontSize: 11, color: "#aaa" }}>|</span>
-          <span style={{ fontSize: 11, color: "#888" }}>タグ:</span>
-          {availableTags.map((tag) => {
-            const on = tagFilters[tag] !== false;
+    </>
+  );
+
+  // no-print: 操作チップは紙面に不要 (印刷時のフィルタ状態は月次 popup 側が
+  // describeMonthVisibility でテキスト表示し、window.print() 系は表示結果
+  // そのものが紙面に出る)
+  if (!includeSpecialTypes) {
+    return (
+      <div className="no-print" style={ROW}>
+        {kindRow}
+        {tagChips}
+      </div>
+    );
+  }
+  return (
+    <div className="no-print" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={ROW}>{kindRow}</div>
+      {specialOn && (
+        <div style={ROW} role="group" aria-label="特別イベントの種別">
+          <span style={{ fontSize: 11, color: "#888" }}>種別:</span>
+          {SPECIAL_EVENT_TYPES.map((t) => {
+            const on = typeFilters[t.key] !== false;
             return (
               <button
-                key={tag}
+                key={t.key}
                 type="button"
-                onClick={() => toggleTag(tag)}
+                onClick={() => toggleType(t.key)}
                 aria-pressed={on}
                 style={{
                   fontSize: 11,
                   padding: "2px 8px",
                   borderRadius: 10,
                   cursor: "pointer",
-                  background: on ? TAG_META.bg : "#f5f5f5",
-                  color: on ? TAG_META.fg : "#aaa",
-                  border: `1px solid ${on ? TAG_META.accent : "#ddd"}`,
+                  background: on ? t.bg : "#f5f5f5",
+                  color: on ? t.fg : "#aaa",
+                  border: `1px solid ${on ? t.accent : "#ddd"}`,
                   fontWeight: on ? 700 : 400,
                 }}
               >
-                {tag}
+                <span aria-hidden="true">{t.icon}</span>
+                {t.label}
               </button>
             );
           })}
-        </>
+        </div>
       )}
+      {showTags && <div style={ROW}>{tagChips}</div>}
     </div>
   );
 }

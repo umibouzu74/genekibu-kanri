@@ -28,6 +28,10 @@ import { migrateTeacherAffiliations } from "../utils/teacherAffiliations";
 import { migrateStaffLeave } from "../utils/staffLeave";
 import { migrateCourseMapping } from "../utils/yoteihyo/courseMapping";
 import { migrateYoteihyoConfirmed } from "../utils/yoteihyo/confirmations";
+import {
+  DEFAULT_SPECIAL_EVENT_DISPLAY,
+  normalizeSpecialEventDisplay,
+} from "../utils/specialEventDisplay";
 
 // Export / Import / Reset のロジック。
 export function useDataIO({
@@ -49,6 +53,7 @@ export function useDataIO({
   teacherSubjects,
   teacherKana,
   specialEvents,
+  specialEventDisplay,
   extraLessons,
   daySchedules,
   fuzokuPlan,
@@ -78,6 +83,7 @@ export function useDataIO({
   saveTeacherSubjects,
   saveTeacherKana,
   saveSpecialEvents,
+  saveSpecialEventDisplay,
   saveExtraLessons,
   saveDaySchedules,
   saveFuzokuPlan,
@@ -122,6 +128,8 @@ export function useDataIO({
           teacherSubjects,
           teacherKana,
           specialEvents,
+          // 講師の月間予定に出す種別 (全員共通の表示設定)
+          specialEventDisplay,
           extraLessons,
           daySchedules,
           fuzokuPlan,
@@ -154,7 +162,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, extraLessons, daySchedules, fuzokuPlan, offsiteLessons, handoverNotes, handoverEnabled, teacherAffiliations, staffLeave, yoteihyoCourseMapping, yoteihyoConfirmed, activeTimetableId, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, specialEventDisplay, extraLessons, daySchedules, fuzokuPlan, offsiteLessons, handoverNotes, handoverEnabled, teacherAffiliations, staffLeave, yoteihyoCourseMapping, yoteihyoConfirmed, activeTimetableId, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -225,6 +233,11 @@ export function useDataIO({
           if (Array.isArray(d.sessionOverrides)) saveSessionOverrides(d.sessionOverrides);
           if (Array.isArray(d.specialEvents) && saveSpecialEvents) {
             saveSpecialEvents(migrateSpecialEvents(d.specialEvents));
+          }
+          // 表示設定も旧バックアップには無い (v24 より前) ので、欠けているときは
+          // 現状維持 — 既定値で上書きしない
+          if (d.specialEventDisplay && typeof d.specialEventDisplay === "object" && saveSpecialEventDisplay) {
+            saveSpecialEventDisplay(normalizeSpecialEventDisplay(d.specialEventDisplay));
           }
           if (Array.isArray(d.extraLessons) && saveExtraLessons) {
             saveExtraLessons(d.extraLessons);
@@ -345,6 +358,7 @@ export function useDataIO({
       saveTeacherSubjects,
       saveTeacherKana,
       saveSpecialEvents,
+      saveSpecialEventDisplay,
       saveExtraLessons,
       saveDaySchedules,
       saveFuzokuPlan,
@@ -392,6 +406,7 @@ export function useDataIO({
     saveClassSets([]);
     saveSessionOverrides([]);
     if (saveSpecialEvents) saveSpecialEvents([]);
+    if (saveSpecialEventDisplay) saveSpecialEventDisplay(DEFAULT_SPECIAL_EVENT_DISPLAY);
     if (saveExtraLessons) saveExtraLessons([]);
     if (saveDaySchedules) saveDaySchedules([]);
     if (saveFuzokuPlan) saveFuzokuPlan({ notes: {}, tests: {} });
@@ -432,6 +447,7 @@ export function useDataIO({
     saveTeacherSubjects,
     saveTeacherKana,
     saveSpecialEvents,
+    saveSpecialEventDisplay,
     saveExtraLessons,
     saveDaySchedules,
     saveFuzokuPlan,

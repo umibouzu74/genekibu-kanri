@@ -278,6 +278,8 @@ export default function App() {
     saveTeacherKana,
     specialEvents,
     saveSpecialEvents,
+    specialEventDisplay,
+    saveSpecialEventDisplay,
     extraLessons,
     saveExtraLessons,
     daySchedules,
@@ -1582,6 +1584,8 @@ export default function App() {
               <SpecialEventManager
                 specialEvents={specialEvents}
                 onSave={saveSpecialEvents}
+                display={specialEventDisplay}
+                onSaveDisplay={saveSpecialEventDisplay}
                 isAdmin={isAdmin}
                 knownTags={availableTags}
                 editTargetId={
@@ -1972,6 +1976,7 @@ export default function App() {
               examPeriods={examPeriods}
               examPrepSchedules={examPrepSchedules}
               specialEvents={specialEvents}
+              specialEventDisplay={specialEventDisplay}
               extraLessons={extraLessons}
               daySchedules={daySchedules}
               onEditExtraLesson={openExtraLessonEditor}
@@ -2001,6 +2006,7 @@ export default function App() {
               examPeriods={examPeriods}
               examPrepSchedules={examPrepSchedules}
               specialEvents={specialEvents}
+              specialEventDisplay={specialEventDisplay}
               extraLessons={extraLessons}
               koshuLessons={koshuLessons}
               daySchedules={daySchedules}

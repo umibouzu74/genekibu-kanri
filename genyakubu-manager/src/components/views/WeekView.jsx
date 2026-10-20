@@ -58,7 +58,7 @@ import {
   EventVisibilityToggles,
   isEventKindVisible,
   isExamPeriodVisible,
-  isSpecialEventVisible,
+  isSpecialEventVisibleInTeacherView,
 } from "../EventVisibilityToggles";
 
 // 印刷系統: PrintButton (window.print() 直接呼び) を使う。
@@ -249,6 +249,9 @@ export function WeekView({
   examPeriods = [],
   examPrepSchedules = [],
   specialEvents = [],
+  // 講師の月間予定に出す種別 (全員共通の設定、utils/specialEventDisplay)。
+  // 週間はイベントを 1 件ずつ期間付きで並べるので、長い期間の帯は要らない
+  specialEventDisplay,
   extraLessons = [],
   daySchedules = [],
   onEditExtraLesson,
@@ -671,7 +674,7 @@ export function WeekView({
     }
     if (showSpecial) {
       for (const ev of specialEvents) {
-        if (!isSpecialEventVisible(ev, visibility)) continue;
+        if (!isSpecialEventVisibleInTeacherView(ev, visibility, specialEventDisplay)) continue;
         if (!overlapsRange(ev.startDate, ev.endDate, winStartStr, winEndStr)) continue;
         out.push({
           kind: EVENT_KIND.SPECIAL,
@@ -685,7 +688,7 @@ export function WeekView({
       }
     }
     return out.sort((a, b) => a.startDate.localeCompare(b.startDate));
-  }, [upcomingHolidays, examPeriods, specialEvents, showExam, showSpecial, visibility, winStart, winEnd]);
+  }, [upcomingHolidays, examPeriods, specialEvents, specialEventDisplay, showExam, showSpecial, visibility, winStart, winEnd]);
 
   return (
     <div style={{ marginTop: 12 }}>

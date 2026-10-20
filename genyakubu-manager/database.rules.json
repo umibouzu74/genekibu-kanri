@@ -34,6 +34,7 @@
       "genyakubu-teacher-subjects": { ".validate": "newData.hasChildren()" },
       "genyakubu-teacher-kana": { ".validate": "newData.hasChildren()" },
       "genyakubu-special-events": { ".validate": "newData.hasChildren()" },
+      "genyakubu-special-event-display": { ".validate": "newData.hasChildren()" },
       "genyakubu-extra-lessons": { ".validate": "newData.hasChildren()" },
       "genyakubu-day-schedules": { ".validate": "newData.hasChildren()" },
       "genyakubu-fuzoku-plan": { ".validate": "newData.hasChildren()" },

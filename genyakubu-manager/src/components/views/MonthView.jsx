@@ -63,8 +63,9 @@ import {
   EventVisibilityToggles,
   isEventKindVisible,
   isExamPeriodVisible,
-  isSpecialEventVisible,
+  isSpecialEventVisibleInTeacherView,
 } from "../EventVisibilityToggles";
+import { bandSpecialEventsInRange, isBandSpecialEvent } from "../../utils/specialEventDisplay";
 
 // 印刷系統: App.jsx の handlePrint (popup 経由でヘッダ/凡例を注入する方式)。
 // トップバー右の 🖨 ボタンから起動。ヘッダ HTML 生成は
@@ -138,6 +139,8 @@ export function MonthView({
   examPeriods = [],
   examPrepSchedules = [],
   specialEvents = [],
+  // 講師の月間予定に出す種別 (全員共通の設定、utils/specialEventDisplay)
+  specialEventDisplay,
   extraLessons = [],
   koshuLessons = [],
   daySchedules = [],
@@ -382,15 +385,28 @@ export function MonthView({
     [visibleExamPeriods]
   );
 
-  // 表示用にタグフィルタ済みの特別イベントリストを 1 度だけ作る。
+  // 表示用に種別 (講師の月間予定に出す種別)・タグで絞った特別イベントを
+  // 1 度だけ作る。期間が長いもの (SPECIAL_EVENT_BAND_MIN_DAYS 日以上) は
+  // 日のセルに出さず、月の上部の帯にまとめる (毎日のセルが埋まるので)。
   const visibleSpecialEvents = useMemo(
-    () => specialEvents.filter((ev) => isSpecialEventVisible(ev, visibility)),
-    [specialEvents, visibility]
+    () =>
+      specialEvents.filter((ev) =>
+        isSpecialEventVisibleInTeacherView(ev, visibility, specialEventDisplay)
+      ),
+    [specialEvents, visibility, specialEventDisplay]
+  );
+  const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+  const bandSpecialEvents = useMemo(
+    () =>
+      showSpecial
+        ? bandSpecialEventsInRange(visibleSpecialEvents, `${monthKey}-01`, `${monthKey}-31`)
+        : [],
+    [showSpecial, visibleSpecialEvents, monthKey]
   );
   const specialEventsForDate = useCallback(
     (ds) =>
       visibleSpecialEvents.filter(
-        (ev) => ds >= ev.startDate && ds <= ev.endDate
+        (ev) => ds >= ev.startDate && ds <= ev.endDate && !isBandSpecialEvent(ev)
       ),
     [visibleSpecialEvents]
   );
@@ -1509,6 +1525,48 @@ export function MonthView({
             onAddLeave={onEditLeave}
             style={{ marginLeft: "auto" }}
           />
+        </div>
+      )}
+      {/* 長い期間の特別イベントは日のセルではなくここに 1 回だけ出す。
+          紙面・画像にも載せる (印刷 / 画像は .month-print-root を撮る) */}
+      {bandSpecialEvents.length > 0 && (
+        <div
+          className="month-print-band"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 6,
+            marginBottom: 8,
+          }}
+        >
+          <span style={{ fontSize: 11, fontWeight: 800, color: "#555" }}>この月:</span>
+          {bandSpecialEvents.map((ev) => {
+            const meta = specialEventTypeMeta(ev.eventType);
+            return (
+              <span
+                key={ev.id}
+                title={`${meta.label}: ${ev.name}${ev.memo ? "\n" + ev.memo : ""}`}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  padding: "1px 8px",
+                  borderRadius: 4,
+                  background: meta.bg,
+                  color: meta.fg,
+                  borderLeft: `3px solid ${meta.accent}`,
+                }}
+              >
+                {meta.icon} {ev.name}
+                {(ev.tags || []).length > 0 && (
+                  <span style={{ opacity: 0.7 }}>[{ev.tags.join("·")}]</span>
+                )}
+                <span style={{ fontWeight: 400, marginLeft: 6 }}>
+                  {fmtMD(ev.startDate)}〜{fmtMD(ev.endDate)}
+                </span>
+              </span>
+            );
+          })}
         </div>
       )}
       <div
