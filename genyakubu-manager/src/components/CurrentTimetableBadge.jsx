@@ -4,8 +4,9 @@ import { fmtMD } from "../utils/dateHelpers";
 import { describeCurrentTimetables } from "../utils/timetable";
 
 // ヘッダの「今の時間割」の表示 (読むだけ)。
-// 講師の一覧・週計・全講師一覧・タイムテーブルなど日付を持たない画面は、
-// 今日の日付で決まる時間割を表示する (utils/timetable.filterSlotsCurrentOn)。
+// 週計・全講師一覧・タイムテーブルなど日付を持たない画面は、今日の日付で
+// 決まる時間割を表示する (utils/timetable.filterSlotsCurrentOn。講師の名前を
+// 並べる一覧は次の期の講師も入れる filterSlotsCurrentOrUpcoming)。
 // 以前はここが端末ごとのセレクタで、選んだ時間割を localStorage に覚えて
 // いたため、期切替のあと閲覧用の端末だけ前の期のまま、が起きた (2026-10-21)。
 // いまは切り替えの操作は無く、時間割の開始日・終了日で自動的に変わる。
@@ -51,11 +52,13 @@ export function CurrentTimetableBadge({ slots, timetables, onOpenTimetables }) {
       ? ` ほか ${overlapGrades.length - MAX_OVERLAP_GRADES} 学年`
       : "");
   const title =
-    "週間・講師の一覧・全講師一覧・タイムテーブルなどは、今日の日付で決まる時間割を表示します" +
-    "（時間割の開始日・終了日で自動的に切り替わります。端末ごとの設定はありません）" +
+    "週計・全講師一覧・タイムテーブルなど日付の無い画面は今日の時間割、" +
+    "月間・週間・ダッシュボードなど日付のある画面はその日の時間割を表示します。" +
+    "時間割の開始日・終了日で自動的に切り替わり、端末ごとの設定はありません。" +
+    "講師の一覧には、次の期から入る講師も出ます。" +
     (hasOverlap
-      ? `\n⚠ ${gradeText} のコマが ${overlapNames} の両方から出ています。` +
-        "前の時間割に終了日を入れてください（時間割管理 → 時間割一覧）"
+      ? `\n⚠ ${gradeText} のコマが ${overlapNames} から重ねて出ています。` +
+        "前の期の時間割に終了日が入っているか確かめてください（時間割管理 → 時間割一覧）"
       : "") +
     (onOpenTimetables ? "\nクリックで時間割管理を開きます" : "");
 
@@ -66,7 +69,7 @@ export function CurrentTimetableBadge({ slots, timetables, onOpenTimetables }) {
     <>
       <span aria-hidden="true">🗓</span>
       <span>{label}</span>
-      {hasOverlap && <span>⚠ {gradeText} が重複</span>}
+      {hasOverlap && <span>⚠ {gradeText} のコマが重複</span>}
     </>
   );
   const style = {
@@ -84,7 +87,8 @@ export function CurrentTimetableBadge({ slots, timetables, onOpenTimetables }) {
   // 読み上げ名は見た目と同じ中身 + 説明 (title は読み上げに頼れないので
   // 名前に入れる)
   const ariaLabel =
-    `今の時間割: ${label}` + (hasOverlap ? `（${gradeText} が ${overlapNames} で重複）` : "");
+    `今の時間割: ${label}` +
+    (hasOverlap ? `（${gradeText} のコマが ${overlapNames} で重複）` : "");
 
   if (onOpenTimetables) {
     return (

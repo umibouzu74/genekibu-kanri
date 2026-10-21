@@ -9,19 +9,15 @@ import { getTimetableStatusOn } from "../../../utils/timetable";
 
 export const CURRENT_TIMETABLE = "current";
 
-function statusLabel(tt, today) {
-  const status = getTimetableStatusOn(tt, today);
-  if (status === "active") return "今日有効";
-  if (status === "upcoming") return tt.startDate ? `開始前 ${fmtMD(tt.startDate)}〜` : "開始前";
-  return "終了";
-}
+const STATUS_LABEL = { active: "今日有効", upcoming: "開始前", ended: "終了" };
 
+// 「1学期（4/1〜8/31・終了）」「2学期（9/1〜・今日有効）」「通常（今日有効）」
 function optionLabel(tt, today) {
   const range =
     tt.startDate || tt.endDate
-      ? ` ${tt.startDate ? fmtMD(tt.startDate) : ""}〜${tt.endDate ? fmtMD(tt.endDate) : ""}`
+      ? `${tt.startDate ? fmtMD(tt.startDate) : ""}〜${tt.endDate ? fmtMD(tt.endDate) : ""}・`
       : "";
-  return `${tt.name}（${statusLabel(tt, today)}${range}）`;
+  return `${tt.name}（${range}${STATUS_LABEL[getTimetableStatusOn(tt, today)]}）`;
 }
 
 export function TimetableScopePicker({ timetables, value, onChange, currentNames, today }) {
@@ -44,7 +40,7 @@ export function TimetableScopePicker({ timetables, value, onChange, currentNames
             e.target.value === CURRENT_TIMETABLE ? CURRENT_TIMETABLE : Number(e.target.value)
           )
         }
-        title="一覧・時間割表に出す時間割 (この画面だけの選択。ほかの画面は今日の日付で決まります)"
+        title="コマ一覧・隔週管理・時間割表に出す時間割（この画面の中だけの選択で、端末には覚えません。ほかの画面は日付で自動的に決まります）"
         style={{
           padding: "4px 8px",
           borderRadius: 6,

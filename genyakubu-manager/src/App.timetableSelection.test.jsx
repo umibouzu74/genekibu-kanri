@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-// 「今の時間割」(講師の一覧・週計・全講師一覧など日付を持たない画面の時間割) は
-// 今日の日付で決まる。以前はヘッダの時間割セレクタで端末ごとに選んで
-// localStorage に覚えていたため、期切替のあと閲覧用の端末だけ前の期のまま、が
-// 起きた (2026-10-21)。古い端末に残った選択は読まずに消す。
+// 「今の時間割」(週計・全講師一覧など日付を持たない画面の時間割) は今日の
+// 日付で決まる (講師の一覧は次の期から入る講師も出す)。以前はヘッダの時間割
+// セレクタで端末ごとに選んで localStorage に覚えていたため、期切替のあと
+// 閲覧用の端末だけ前の期のまま、が起きた (2026-10-21)。古い端末に残った選択は
+// 読まずに消す。
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import App from "./App";
@@ -98,7 +99,29 @@ describe("App の今の時間割", () => {
     setup({ timetables: [{ ...TERM1, endDate: null }, TERM2] });
     renderApp();
     const badge = await findBadge();
-    expect(badge).toHaveAccessibleName("今の時間割: 1学期・2学期（中1 が 1学期・2学期 で重複）");
-    expect(within(badge).getByText("⚠ 中1 が重複")).toBeInTheDocument();
+    expect(badge).toHaveAccessibleName(
+      "今の時間割: 1学期・2学期（中1 のコマが 1学期・2学期 で重複）"
+    );
+    expect(within(badge).getByText("⚠ 中1 のコマが重複")).toBeInTheDocument();
+  });
+
+  it("講師名の横のコマ数は今の時間割だけで数える (前の期のコマを足さない)", async () => {
+    // 同じ講師が 1学期にも 2学期にも 1 コマずつ
+    setup({ slots: [slot(1, "通年の講師", 1), slot(2, "通年の講師", 2)] });
+    renderApp();
+    await findBadge();
+    const button = sidebarTeachers().getByText("通年の講師").closest("button");
+    expect(within(button).getByText("1")).toBeInTheDocument();
+  });
+
+  it("切替日の前でも、次の期から入る講師は講師の一覧に出る (コマ数は今の期で 0)", async () => {
+    vi.setSystemTime(new Date(2026, 7, 26, 12, 0, 0)); // 2026-08-26 (2学期は 9/1 から)
+    setup();
+    renderApp();
+    const badge = await findBadge();
+    expect(badge).toHaveAccessibleName("今の時間割: 1学期");
+    expect(sidebarTeachers().getByText("前期だけの講師")).toBeInTheDocument();
+    const next = sidebarTeachers().getByText("後期の講師").closest("button");
+    expect(within(next).getByText("0")).toBeInTheDocument();
   });
 });

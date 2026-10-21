@@ -89,12 +89,19 @@ describe("MasterView の時間割の選択", () => {
 
   it("前の期を選ぶとその時間割のコマ。新規追加もその時間割に入れる", () => {
     const { onNew } = renderMaster();
-    expect(screen.getByRole("option", { name: "1学期（終了 4/1〜8/31）" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "1学期（4/1〜8/31・終了）" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "2学期（9/1〜・今日有効）" })).toBeInTheDocument();
     fireEvent.change(picker(), { target: { value: "1" } });
     expect(screen.getByText("1学期の英語")).toBeInTheDocument();
     expect(screen.queryByText("2学期の数学")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "＋ 新規追加" }));
     expect(onNew).toHaveBeenCalledWith(1);
+  });
+
+  it("開始前の時間割は開始日を 1 回だけ出す", () => {
+    const term3 = { id: 3, name: "3学期", type: "regular", startDate: "2027-01-08", endDate: null, grades: [] };
+    renderMaster({ timetables: [...TIMETABLES, term3] });
+    expect(screen.getByRole("option", { name: "3学期（1/8〜・開始前）" })).toBeInTheDocument();
   });
 
   it("時間割が 1 つだけなら選択を出さず、絞らない", () => {

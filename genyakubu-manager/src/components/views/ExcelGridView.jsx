@@ -176,13 +176,6 @@ export function ExcelGridView({
     return filterSlotsCurrentOn(slots, timetables, today);
   }, [dashboardMode, slots, timetables, timetableId, today]);
 
-  // Check which days have slots
-  const daysWithSlots = useMemo(() => {
-    const days = new Set();
-    for (const s of filteredSlots) days.add(s.day);
-    return days;
-  }, [filteredSlots]);
-
   // Substitution mode hook (代行日で絞るので全コマを渡す)
   const subMode = useSubstitutionMode({
     slots,
@@ -202,9 +195,20 @@ export function ExcelGridView({
     offsiteLessons,
   });
 
-  // Teacher groups for the unavailability panel (代行モードでは代行日のコマから)
+  // 曜日タブ・欠勤先生のパネルの母集合。代行モードでは代行日に有効な時間割の
+  // コマ (今の時間割に無い曜日の日を代行日にしても「コマなし」にしない)
+  const poolSlots = subMode.isSubMode ? subMode.dateFilteredSlots : filteredSlots;
+
+  // Check which days have slots
+  const daysWithSlots = useMemo(() => {
+    const days = new Set();
+    for (const s of poolSlots) days.add(s.day);
+    return days;
+  }, [poolSlots]);
+
+  // Teacher groups for the unavailability panel
   const teacherGroups = useTeacherGroups({
-    slots: subMode.isSubMode ? subMode.dateFilteredSlots : filteredSlots,
+    slots: poolSlots,
     partTimeStaff: partTimeStaff || [],
     subjects: subjects || [],
     search: "",

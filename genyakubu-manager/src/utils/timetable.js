@@ -115,8 +115,8 @@ export function filterSlotsOfTimetable(slots, timetableId) {
 }
 
 // ─── 「今の時間割」(日付を持たない画面の時間割) ─────────────────────
-// 講師の一覧 (サイドバー)・全講師一覧・講師の週計・講師ごとのタグの導出・
-// タイムテーブルの通常表示のように、特定の日付を持たない画面が使う時間割。
+// サイドバーの講師ごとのコマ数・全講師一覧・講師の週計・タイムテーブルの
+// 通常表示のように、特定の日付を持たない画面が使う時間割。
 // **端末ごとの選択は持たず、日付 (既定は今日) から決める** (2026-10-21)。
 // 以前はヘッダのセレクタで端末ごとに選んで localStorage に保存していたため、
 // 期切替のあと閲覧用の端末だけ 1学期のまま、が起きた。
@@ -128,6 +128,8 @@ export function filterSlotsOfTimetable(slots, timetableId) {
 //     前の期に早めの終了日を入れた夏休みに、講師一覧が空にならないように
 // 日付を持つ画面 (ダッシュボード・月間・週間の各日・代行) はこれではなく
 // filterSlotsForDate / isTimetableActiveForDate で日ごとに見る。
+// 講師の名前を並べる一覧 (サイドバー・まとめて印刷) だけは、これから始まる
+// 時間割の講師も入れる (filterSlotsCurrentOrUpcoming)。
 
 /**
  * 学年 grade のコマにとって dateStr の「今の時間割」の id。
@@ -162,16 +164,17 @@ export function currentTimetableIdsForGrade(timetables, grade, dateStr) {
 }
 
 /**
- * 「今の時間割」のコマ。時間割が 1 つも無いデータ (時間割管理を使う前) は
- * 絞らない。コマの時間割が見つからない (削除済み等) コマは、日付で見る
- * 画面 (filterSlotsForDate) と同じく出さない。
+ * 「今の時間割」のコマ。時間割が 1 つだけ (または無い) なら切り替わる相手が
+ * 無いので絞らない (以前のセレクタと同じ)。2 つ以上あるとき、コマの時間割が
+ * 見つからない (削除済み等) コマは、日付で見る画面 (filterSlotsForDate) と
+ * 同じく出さない。
  * @param {import("../types").Slot[]} slots
  * @param {import("../types").Timetable[]} timetables
  * @param {string} dateStr
  * @returns {import("../types").Slot[]}
  */
 export function filterSlotsCurrentOn(slots, timetables, dateStr) {
-  if (!Array.isArray(timetables) || timetables.length === 0) return slots;
+  if (!Array.isArray(timetables) || timetables.length <= 1) return slots;
   const byGrade = new Map();
   return slots.filter((s) => {
     const grade = s.grade ?? "";
@@ -181,6 +184,32 @@ export function filterSlotsCurrentOn(slots, timetables, dateStr) {
       byGrade.set(grade, ids);
     }
     return ids.has(s.timetableId ?? 1);
+  });
+}
+
+/**
+ * 今の時間割のコマ + これから始まる時間割 (開始日が指定日より後) のコマ。
+ * 講師の名前を並べる一覧 (サイドバー・まとめて印刷の講師・講師ごとのタグの
+ * 導出) に使う。期切替の反映は切替日より前に行うので、その間も次の期から
+ * 入る講師の月間を開いたり、翌月の予定を刷ったりできるように。終わった
+ * 時間割の講師は出さない。コマ数を数える用途 (週計など) には使わない
+ * (切替前は今の期と次の期の両方を数えてしまう)。
+ * @param {import("../types").Slot[]} slots
+ * @param {import("../types").Timetable[]} timetables
+ * @param {string} dateStr
+ * @returns {import("../types").Slot[]}
+ */
+export function filterSlotsCurrentOrUpcoming(slots, timetables, dateStr) {
+  if (!Array.isArray(timetables) || timetables.length <= 1) return slots;
+  const current = new Set(filterSlotsCurrentOn(slots, timetables, dateStr));
+  const upcomingIds = new Set(
+    timetables.filter((t) => t && t.startDate && t.startDate > dateStr).map((t) => t.id)
+  );
+  const byId = new Map(timetables.map((t) => [t?.id, t]));
+  return slots.filter((s) => {
+    if (current.has(s)) return true;
+    const id = s.timetableId ?? 1;
+    return upcomingIds.has(id) && gradeMatchesTimetable(s.grade ?? "", byId.get(id).grades);
   });
 }
 
@@ -222,14 +251,18 @@ export function getTimetableStatusOn(timetable, dateStr) {
 /**
  * 「今の時間割」の内訳 (ヘッダの表示用)。
  *   - timetables: 今の時間割にコマを出している時間割 (並び順) と、指定日から
- *     見た状態 (期と期の間は upcoming / ended)
+ *     見た状態 (期と期の間は upcoming / ended)、今の時間割に出ているコマ数
  *   - overlaps: 同じ学年のコマが 2 つ以上の時間割から出ている学年。前の期に
  *     終了日が入っていない等で、日付で見る画面でもコマが二重に出ている
  * @param {import("../types").Slot[]} slots
  * @param {import("../types").Timetable[]} timetables
  * @param {string} dateStr
  * @returns {{
- *   timetables: { timetable: import("../types").Timetable, status: "active" | "upcoming" | "ended" }[],
+ *   timetables: {
+ *     timetable: import("../types").Timetable,
+ *     status: "active" | "upcoming" | "ended",
+ *     slotCount: number,
+ *   }[],
  *   overlaps: { grade: string, timetables: import("../types").Timetable[] }[],
  * }}
  */
@@ -237,21 +270,24 @@ export function describeCurrentTimetables(slots, timetables, dateStr) {
   if (!Array.isArray(timetables) || timetables.length === 0) {
     return { timetables: [], overlaps: [] };
   }
-  const used = new Set();
+  const countById = new Map();
   const idsByGrade = new Map();
   for (const s of filterSlotsCurrentOn(slots || [], timetables, dateStr)) {
     const id = s.timetableId ?? 1;
-    used.add(id);
+    countById.set(id, (countById.get(id) || 0) + 1);
     const grade = s.grade ?? "";
     if (!idsByGrade.has(grade)) idsByGrade.set(grade, new Set());
     idsByGrade.get(grade).add(id);
   }
   const inOrder = (ids) => timetables.filter((t) => ids.has(t.id));
   return {
-    timetables: inOrder(used).map((t) => ({
-      timetable: t,
-      status: getTimetableStatusOn(t, dateStr),
-    })),
+    timetables: timetables
+      .filter((t) => countById.has(t.id))
+      .map((t) => ({
+        timetable: t,
+        status: getTimetableStatusOn(t, dateStr),
+        slotCount: countById.get(t.id),
+      })),
     overlaps: [...idsByGrade]
       .filter(([, ids]) => ids.size > 1)
       .map(([grade, ids]) => ({ grade, timetables: inOrder(ids) }))
@@ -260,9 +296,11 @@ export function describeCurrentTimetables(slots, timetables, dateStr) {
 }
 
 /**
- * 新しく作るコマの既定の時間割 (コマの追加フォーム・反映ダイアログの
- * 「前の時間割」)。今の時間割の先頭、無ければ指定日に有効な時間割の先頭、
- * それも無ければ従来どおり id=1 (無いときは先頭)。
+ * 新しく作るコマの既定の時間割 (コマの追加フォーム・反映ダイアログの期切替で
+ * 終わらせる「前の時間割」)。今の時間割のうちコマの多いもの (同数なら並び順の
+ * 先頭)、無ければ指定日に有効な時間割の先頭、それも無ければ従来どおり id=1
+ * (無いときは先頭)。学年を分けた時間割 (附属など) を並走させていても、
+ * 期切替の既定が小さい方の時間割にならないように、コマ数で選ぶ。
  * @param {import("../types").Slot[]} slots
  * @param {import("../types").Timetable[]} timetables
  * @param {string} dateStr
@@ -271,7 +309,9 @@ export function describeCurrentTimetables(slots, timetables, dateStr) {
 export function defaultTimetableIdOn(slots, timetables, dateStr) {
   if (!Array.isArray(timetables) || timetables.length === 0) return 1;
   const current = describeCurrentTimetables(slots, timetables, dateStr).timetables;
-  if (current.length > 0) return current[0].timetable.id;
+  if (current.length > 0) {
+    return current.reduce((best, x) => (x.slotCount > best.slotCount ? x : best)).timetable.id;
+  }
   const inEffect = timetables.find((t) => isTimetableInEffectOn(t, dateStr));
   if (inEffect) return inEffect.id;
   return timetables.some((t) => t.id === 1) ? 1 : timetables[0].id;

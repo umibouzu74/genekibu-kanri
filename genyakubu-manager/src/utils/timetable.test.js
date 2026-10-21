@@ -17,6 +17,7 @@ import {
   getTimetableStatusOn,
   currentTimetableIdsForGrade,
   filterSlotsCurrentOn,
+  filterSlotsCurrentOrUpcoming,
   filterSlotsOfTimetable,
   describeCurrentTimetables,
   defaultTimetableIdOn,
@@ -205,8 +206,21 @@ describe("今の時間割 (日付から決める)", () => {
     const tts = [TERM1, CHU3, TERM2, FUZOKU];
     expect(filterSlotsCurrentOn(slots, tts, "2026-05-01").map((s) => s.id)).toEqual([1, 3, 5, 6]);
     expect(filterSlotsCurrentOn(slots, tts, "2026-10-21").map((s) => s.id)).toEqual([2, 4, 5]);
-    // 時間割が無いデータは絞らない
+    // 時間割が 1 つ以下なら切り替わる相手が無いので絞らない (以前のセレクタと同じ)
     expect(filterSlotsCurrentOn(slots, [], "2026-10-21")).toBe(slots);
+    expect(filterSlotsCurrentOn(slots, [TERM1], "2026-10-21")).toBe(slots);
+  });
+
+  it("講師の一覧用: 今の時間割 + これから始まる時間割 (終わった時間割は入れない)", () => {
+    const slots = [slot(1, "中1", 1), slot(2, "中1", 2), slot(3, "中3", 4), slot(4, "中1", 4)];
+    // 8/26: 1学期は有効、2学期・中3 2学期は 9/1 から
+    expect(
+      filterSlotsCurrentOrUpcoming(slots, [TERM1, CHU3, TERM2], "2026-08-26").map((s) => s.id)
+    ).toEqual([1, 2, 3]);
+    // 10/21: 1学期は終わっている
+    expect(
+      filterSlotsCurrentOrUpcoming(slots, [TERM1, CHU3, TERM2], "2026-10-21").map((s) => s.id)
+    ).toEqual([2, 3]);
   });
 
   it("選んだ時間割のコマ (timetableId 無しは id=1)", () => {
@@ -235,10 +249,15 @@ describe("今の時間割 (日付から決める)", () => {
     expect(gap.timetables.map((x) => [x.timetable.id, x.status])).toEqual([[2, "upcoming"]]);
   });
 
-  it("新しいコマの既定の時間割は今の時間割の先頭", () => {
+  it("新しいコマの既定の時間割は今の時間割のうちコマの多いもの", () => {
     const slots = [slot(1, "中1", 1), slot(2, "中1", 2)];
     expect(defaultTimetableIdOn(slots, [TERM1, TERM2], "2026-10-21")).toBe(2);
     expect(defaultTimetableIdOn(slots, [TERM1, TERM2], "2026-05-01")).toBe(1);
+    // 附属 (学年を分けた並走) が並び順で先でも、コマの多い本体の時間割を選ぶ
+    const withFuzoku = [slot(3, "附中1", 5), slot(4, "中1", 2), slot(5, "中2", 2)];
+    expect(defaultTimetableIdOn(withFuzoku, [FUZOKU, TERM1, TERM2], "2026-10-21")).toBe(2);
+    // 同数なら並び順の先頭
+    expect(defaultTimetableIdOn([slot(6, "附中1", 5), slot(7, "中1", 2)], [FUZOKU, TERM2], "2026-10-21")).toBe(5);
     // コマがまだ無い時間割でも今日有効なら既定にする
     expect(defaultTimetableIdOn([], [TERM1, TERM2], "2026-10-21")).toBe(2);
     expect(defaultTimetableIdOn([], [], "2026-10-21")).toBe(1);

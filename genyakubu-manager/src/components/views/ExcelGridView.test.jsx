@@ -738,4 +738,25 @@ describe("ExcelGridView の時間割 (今の時間割 / 選んだ時間割 / 代
     expect(screen.getAllByText("田中").length).toBeGreaterThan(0);
     expect(screen.queryByText("鈴木")).not.toBeInTheDocument();
   });
+
+  it("今の時間割にコマの無い曜日でも、代行日の時間割にコマがあれば代行モードで出す", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 21, 12, 0, 0));
+    // 1学期だけ火曜にコマがある (2学期は月曜だけ)
+    const slots = [
+      slot({ id: 1, day: "火", teacher: "田中", timetableId: 1 }),
+      slot({ id: 2, day: "月", teacher: "鈴木", timetableId: 2 }),
+    ];
+    const { container } = renderGrid({
+      dashboardMode: false,
+      enableSubMode: true,
+      viewDate: undefined,
+      slots,
+      timetables: TIMETABLES,
+    });
+    enterSubMode(container, "2026-07-14"); // 1学期の火曜
+    expect(screen.queryByText("火曜日のコマがありません")).not.toBeInTheDocument();
+    expect(screen.getByText("数学")).toBeInTheDocument();
+    expect(screen.queryByText("鈴木")).not.toBeInTheDocument();
+  });
 });

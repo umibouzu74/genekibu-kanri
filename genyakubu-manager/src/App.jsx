@@ -39,7 +39,11 @@ import { useTimetablesCrud } from "./hooks/useTimetablesCrud";
 import { useStaffCrud } from "./hooks/useStaffCrud";
 import { useExamPrepSchedulesCrud } from "./hooks/useExamPrepSchedulesCrud";
 import { useDataIO } from "./hooks/useDataIO";
-import { defaultTimetableIdOn, filterSlotsCurrentOn } from "./utils/timetable";
+import {
+  defaultTimetableIdOn,
+  filterSlotsCurrentOn,
+  filterSlotsCurrentOrUpcoming,
+} from "./utils/timetable";
 import { useToday } from "./hooks/useToday";
 import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
 import { visibilityForTeacher } from "./utils/teacherTags";
@@ -480,8 +484,8 @@ export default function App() {
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const todayStr = useToday();
-  // 「今の時間割」(講師の一覧・週計・全講師一覧・タイムテーブルの通常表示
-  // など、日付を持たない画面の時間割) は今日の日付から決める
+  // 「今の時間割」(週計・全講師一覧・タイムテーブルの通常表示など、日付を
+  // 持たない画面の時間割) は今日の日付から決める
   // (utils/timetable.filterSlotsCurrentOn)。以前はヘッダのセレクタで端末ごとに
   // 選んで localStorage に覚えていたため、期切替のあと閲覧用の端末だけ前の期の
   // まま、が起きた (2026-10-21)。古い端末に残った選択はここで消す。
@@ -613,12 +617,20 @@ export default function App() {
     defaultView: START_VIEW,
   });
 
-  // 今の時間割のコマ (日付を持たない画面用。講師の一覧・週計・全講師一覧・
-  // 講師ごとのタグの導出)。日付を持つ画面 (ダッシュボード・月間・週間) は
+  // 今の時間割のコマ (日付を持たない画面用。サイドバーの講師ごとのコマ数・
+  // 講師の週計・全講師一覧)。日付を持つ画面 (ダッシュボード・月間・週間) は
   // 全コマを渡し、画面の側で日ごとに時間割の有効期間を見る。
-  // selectTeacher のタグ導出でも参照するため Navigation より前に置く。
   const currentSlots = useMemo(
     () => filterSlotsCurrentOn(slots, timetables, todayStr),
+    [slots, timetables, todayStr]
+  );
+  // 講師の名前を並べる一覧 (サイドバー・まとめて印刷・講師ごとのタグの導出) は
+  // これから始まる時間割の講師も入れる。期切替は切替日より前に反映するので、
+  // その間も次の期から入る講師の月間を開いたり翌月の予定を刷ったりできるように。
+  // コマ数を数える用途には使わない (切替前は 2 つの期を数えてしまう)。
+  // selectTeacher のタグ導出でも参照するため Navigation より前に置く。
+  const rosterSlots = useMemo(
+    () => filterSlotsCurrentOrUpcoming(slots, timetables, todayStr),
     [slots, timetables, todayStr]
   );
 
@@ -637,10 +649,10 @@ export default function App() {
       visibilityForTeacher({
         visibility: base,
         teacher: t,
-        slots: currentSlots,
+        slots: rosterSlots,
         tags: availableTags,
       }),
-    [currentSlots, availableTags]
+    [rosterSlots, availableTags]
   );
   // ─── 欠勤組み換えの下書きを守るビュー移動ガード ─────────────────
   // AbsenceWorkflowView は lazy で、ビューを離れるとアンマウントされて
@@ -954,7 +966,7 @@ export default function App() {
   // 講師の所属 (今年度) で分けている端末では、現役部 常勤 → 現役部 非常勤 →
   // バイト → 予備校部 (教科別) の順に並べる
   const allTeacherGroups = useTeacherGroups({
-    slots: currentSlots,
+    slots: rosterSlots,
     partTimeStaff,
     subjects,
     teacherKana,
@@ -1159,7 +1171,9 @@ export default function App() {
         canUseAdminData={handoverEnabled}
         teacherGroups={allTeacherGroups}
         subjectCategories={subjectCategories}
-        slots={slots}
+        /* 講師名の横のコマ数は今の時間割で数える (以前は全時間割のコマを
+           数えていたため、期切替の後は前の期の分まで足されていた) */
+        slots={currentSlots}
         subs={subs}
         isAdmin={isAdmin}
         onSignIn={signIn}
