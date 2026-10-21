@@ -84,35 +84,109 @@ export function getActiveTimetableIds(dateStr, grade, timetables) {
  */
 export function filterSlotsForDate(slots, dateStr, timetables) {
   if (!Array.isArray(timetables) || timetables.length === 0) return slots;
+  return slots.filter((s) => isSlotTimetableActiveOn(s, dateStr, timetables));
+}
+
+/**
+ * コマの時間割がその日 (コマの学年にとって) 有効か。filterSlotsForDate の
+ * 1 コマ版 (曜日ごとに日付が違う週間の列などで使う)。時間割が 1 つも無い
+ * データは絞らない。
+ * @param {import("../types").Slot} slot
+ * @param {string} dateStr
+ * @param {import("../types").Timetable[]} timetables
+ * @returns {boolean}
+ */
+export function isSlotTimetableActiveOn(slot, dateStr, timetables) {
+  if (!Array.isArray(timetables) || timetables.length === 0) return true;
+  const ttId = slot.timetableId ?? 1;
+  const tt = timetables.find((t) => t.id === ttId);
+  return isTimetableActiveForDate(tt, dateStr, slot.grade);
+}
+
+/**
+ * 指定した時間割のコマだけ (コースマスター管理で時間割を選んで見るとき)。
+ * Slots without timetableId are treated as belonging to timetable id 1.
+ * @param {import("../types").Slot[]} slots
+ * @param {number} timetableId
+ * @returns {import("../types").Slot[]}
+ */
+export function filterSlotsOfTimetable(slots, timetableId) {
+  return slots.filter((s) => (s.timetableId ?? 1) === timetableId);
+}
+
+// ─── 「今の時間割」(日付を持たない画面の時間割) ─────────────────────
+// 講師の一覧 (サイドバー)・全講師一覧・講師の週計・講師ごとのタグの導出・
+// タイムテーブルの通常表示のように、特定の日付を持たない画面が使う時間割。
+// **端末ごとの選択は持たず、日付 (既定は今日) から決める** (2026-10-21)。
+// 以前はヘッダのセレクタで端末ごとに選んで localStorage に保存していたため、
+// 期切替のあと閲覧用の端末だけ 1学期のまま、が起きた。
+//
+// 判定は学年ごと (時間割は学年を絞れるので):
+//   - その日その学年に有効な時間割 (isTimetableActiveForDate) があれば全部。
+//     学年を分けた時間割の並走 (附属・中3 だけ先に切り替え) もそのまま入る
+//   - 無い日 (期と期の間) は次に始まる時間割、無ければ最後に終わった時間割。
+//     前の期に早めの終了日を入れた夏休みに、講師一覧が空にならないように
+// 日付を持つ画面 (ダッシュボード・月間・週間の各日・代行) はこれではなく
+// filterSlotsForDate / isTimetableActiveForDate で日ごとに見る。
+
+/**
+ * 学年 grade のコマにとって dateStr の「今の時間割」の id。
+ * @param {import("../types").Timetable[]} timetables
+ * @param {string} grade
+ * @param {string} dateStr
+ * @returns {number[]} 時間割管理の並び順
+ */
+export function currentTimetableIdsForGrade(timetables, grade, dateStr) {
+  if (!Array.isArray(timetables)) return [];
+  const g = grade ?? "";
+  const forGrade = timetables.filter((t) => t && gradeMatchesTimetable(g, t.grades));
+  const active = forGrade.filter((t) => isTimetableActiveForDate(t, dateStr, g));
+  if (active.length > 0) return active.map((t) => t.id);
+  const upcoming = forGrade.filter((t) => t.startDate && t.startDate > dateStr);
+  if (upcoming.length > 0) {
+    const first = upcoming.reduce(
+      (min, t) => (t.startDate < min ? t.startDate : min),
+      upcoming[0].startDate
+    );
+    return upcoming.filter((t) => t.startDate === first).map((t) => t.id);
+  }
+  const ended = forGrade.filter((t) => t.endDate && t.endDate < dateStr);
+  if (ended.length > 0) {
+    const last = ended.reduce(
+      (max, t) => (t.endDate > max ? t.endDate : max),
+      ended[0].endDate
+    );
+    return ended.filter((t) => t.endDate === last).map((t) => t.id);
+  }
+  return [];
+}
+
+/**
+ * 「今の時間割」のコマ。時間割が 1 つも無いデータ (時間割管理を使う前) は
+ * 絞らない。コマの時間割が見つからない (削除済み等) コマは、日付で見る
+ * 画面 (filterSlotsForDate) と同じく出さない。
+ * @param {import("../types").Slot[]} slots
+ * @param {import("../types").Timetable[]} timetables
+ * @param {string} dateStr
+ * @returns {import("../types").Slot[]}
+ */
+export function filterSlotsCurrentOn(slots, timetables, dateStr) {
+  if (!Array.isArray(timetables) || timetables.length === 0) return slots;
+  const byGrade = new Map();
   return slots.filter((s) => {
-    const ttId = s.timetableId ?? 1;
-    const tt = timetables.find((t) => t.id === ttId);
-    return isTimetableActiveForDate(tt, dateStr, s.grade);
+    const grade = s.grade ?? "";
+    let ids = byGrade.get(grade);
+    if (!ids) {
+      ids = new Set(currentTimetableIdsForGrade(timetables, grade, dateStr));
+      byGrade.set(grade, ids);
+    }
+    return ids.has(s.timetableId ?? 1);
   });
 }
 
 /**
- * Filter slots to those belonging to the active timetable, used by aggregate
- * views (week/month/dashboard "現在の時間割") where no specific date applies.
- * Returns slots unchanged when there is only a single timetable (or none) —
- * the filter is a no-op in that case.
- * Slots without timetableId are treated as belonging to timetable id 1.
- */
-export function filterSlotsByActiveTimetable(slots, timetables, activeTimetableId) {
-  if (!Array.isArray(timetables) || timetables.length <= 1) return slots;
-  const activeId = activeTimetableId || 1;
-  return slots.filter((s) => (s.timetableId ?? 1) === activeId);
-}
-
-// ─── ヘッダの時間割セレクタ (集計ベースのビューの「現在の時間割」) ──────
-// 選択は端末ごと (localStorage) なので、期切替のあと各端末が旧期を表示した
-// まま気付かない、が起きる (CLAUDE.md「期切替の運用」の集計ベースの経路)。
-// セレクタの選択肢に「今日有効 / 終了 / 開始前」を出し、表示中の時間割が
-// 今日有効でないときは切り替えを促すための純関数。
-
-/**
  * 時間割が指定日に有効か (学年を問わない版)。
- * isTimetableActiveForDate は (日付, 学年) で見るが、セレクタで知りたいのは
+ * isTimetableActiveForDate は (日付, 学年) で見るが、ここで知りたいのは
  * 「その時間割が自分の対象学年にとって有効か」。学年を絞った時間割
  * (grades: ["中3"]) を別の学年で引くと日付の内側でも false になるので、
  * 対象学年の先頭 (grades が空 = 全学年なら何を渡しても一致) を渡して
@@ -146,68 +220,61 @@ export function getTimetableStatusOn(timetable, dateStr) {
 }
 
 /**
- * この端末でまだ時間割を選んでいない (localStorage に保存が無い) ときの既定。
- * 今日有効な時間割があればその先頭 (並びは時間割管理の順 = セレクタの順)、
- * 無ければ従来どおり id=1 (デフォルト時間割。無いときは先頭)。
- * 期切替で前の期に終了日を入れてあれば今日有効なのは 1 つなので、複数が
- * 有効になるのは学年を分けた時間割を並走させている場合だけ。そのときに
- * 「どれが本命か」を推測する規則は足さず、並び順で決める。
+ * 「今の時間割」の内訳 (ヘッダの表示用)。
+ *   - timetables: 今の時間割にコマを出している時間割 (並び順) と、指定日から
+ *     見た状態 (期と期の間は upcoming / ended)
+ *   - overlaps: 同じ学年のコマが 2 つ以上の時間割から出ている学年。前の期に
+ *     終了日が入っていない等で、日付で見る画面でもコマが二重に出ている
+ * @param {import("../types").Slot[]} slots
+ * @param {import("../types").Timetable[]} timetables
+ * @param {string} dateStr
+ * @returns {{
+ *   timetables: { timetable: import("../types").Timetable, status: "active" | "upcoming" | "ended" }[],
+ *   overlaps: { grade: string, timetables: import("../types").Timetable[] }[],
+ * }}
+ */
+export function describeCurrentTimetables(slots, timetables, dateStr) {
+  if (!Array.isArray(timetables) || timetables.length === 0) {
+    return { timetables: [], overlaps: [] };
+  }
+  const used = new Set();
+  const idsByGrade = new Map();
+  for (const s of filterSlotsCurrentOn(slots || [], timetables, dateStr)) {
+    const id = s.timetableId ?? 1;
+    used.add(id);
+    const grade = s.grade ?? "";
+    if (!idsByGrade.has(grade)) idsByGrade.set(grade, new Set());
+    idsByGrade.get(grade).add(id);
+  }
+  const inOrder = (ids) => timetables.filter((t) => ids.has(t.id));
+  return {
+    timetables: inOrder(used).map((t) => ({
+      timetable: t,
+      status: getTimetableStatusOn(t, dateStr),
+    })),
+    overlaps: [...idsByGrade]
+      .filter(([, ids]) => ids.size > 1)
+      .map(([grade, ids]) => ({ grade, timetables: inOrder(ids) }))
+      .sort((a, b) => a.grade.localeCompare(b.grade, "ja")),
+  };
+}
+
+/**
+ * 新しく作るコマの既定の時間割 (コマの追加フォーム・反映ダイアログの
+ * 「前の時間割」)。今の時間割の先頭、無ければ指定日に有効な時間割の先頭、
+ * それも無ければ従来どおり id=1 (無いときは先頭)。
+ * @param {import("../types").Slot[]} slots
  * @param {import("../types").Timetable[]} timetables
  * @param {string} dateStr
  * @returns {number}
  */
-export function pickDefaultTimetableId(timetables, dateStr) {
+export function defaultTimetableIdOn(slots, timetables, dateStr) {
   if (!Array.isArray(timetables) || timetables.length === 0) return 1;
+  const current = describeCurrentTimetables(slots, timetables, dateStr).timetables;
+  if (current.length > 0) return current[0].timetable.id;
   const inEffect = timetables.find((t) => isTimetableInEffectOn(t, dateStr));
   if (inEffect) return inEffect.id;
   return timetables.some((t) => t.id === 1) ? 1 : timetables[0].id;
-}
-
-/**
- * 集計ベースのビューに使う時間割 id を決める。
- * 保存された選択 (savedId) があればそれを使い、**勝手に切り替えない**
- * (今日有効でなくても。気付かせるのはセレクタの注意書きの役目)。
- * 保存が無い / 保存された時間割がもう無い (別の端末で削除された等) ときは
- * pickDefaultTimetableId。後者で空の画面を出さないため。
- * @param {import("../types").Timetable[]} timetables
- * @param {number | null | undefined} savedId
- * @param {string} dateStr
- * @returns {number}
- */
-export function resolveActiveTimetableId(timetables, savedId, dateStr) {
-  if (savedId != null) {
-    if (!Array.isArray(timetables) || timetables.some((t) => t.id === savedId)) {
-      return savedId;
-    }
-  }
-  return pickDefaultTimetableId(timetables, dateStr);
-}
-
-/**
- * 表示中の時間割が今日有効でなく、かつ他に今日有効な時間割があるとき、
- * 切り替え先の候補を返す (それ以外は null)。候補が複数あるときは並び順の
- * 先頭を出し、残りの件数を otherCount で返す (どれが本命かは推測しない)。
- * @param {import("../types").Timetable[]} timetables
- * @param {number} activeId
- * @param {string} dateStr
- * @returns {{
- *   current: import("../types").Timetable,
- *   status: "upcoming" | "ended",
- *   suggestion: import("../types").Timetable,
- *   otherCount: number,
- * } | null}
- */
-export function suggestTimetableSwitch(timetables, activeId, dateStr) {
-  if (!Array.isArray(timetables)) return null;
-  const current = timetables.find((t) => t.id === activeId);
-  if (!current) return null;
-  const status = getTimetableStatusOn(current, dateStr);
-  if (status === "active") return null;
-  const candidates = timetables.filter(
-    (t) => t.id !== activeId && isTimetableInEffectOn(t, dateStr)
-  );
-  if (candidates.length === 0) return null;
-  return { current, status, suggestion: candidates[0], otherCount: candidates.length - 1 };
 }
 
 /**

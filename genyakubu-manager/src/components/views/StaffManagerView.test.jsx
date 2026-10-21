@@ -43,7 +43,6 @@ function renderView({ teacherKana = {}, ...rest } = {}) {
           subjects={SUBJECTS}
           slots={SLOTS}
           timetables={[]}
-          activeTimetableId={1}
           subs={[]}
           holidays={[]}
           examPeriods={[]}

@@ -188,7 +188,6 @@ describe("ExcelGridView (ダッシュボード表示期間フィルタ)", () => 
       timetables: [
         { id: 1, name: "通常", startDate: "2026-04-01", endDate: "2026-07-10", grades: [] },
       ],
-      activeTimetableId: 1,
     });
     expect(screen.queryByText("田中")).not.toBeInTheDocument();
     expect(
@@ -202,7 +201,6 @@ describe("ExcelGridView (ダッシュボード表示期間フィルタ)", () => 
       timetables: [
         { id: 1, name: "通常", startDate: "2026-04-01", endDate: "2026-07-31", grades: [] },
       ],
-      activeTimetableId: 1,
       displayCutoff: {
         groups: [{ grades: ["中3"], startDate: "2026-04-01", date: "2026-07-31" }],
       },
@@ -210,10 +208,10 @@ describe("ExcelGridView (ダッシュボード表示期間フィルタ)", () => 
     expect(screen.getByText("田中")).toBeInTheDocument();
   });
 
-  // 期切替 (1学期 → 2学期) の直後は、表示中の時間割 (activeTimetableId) が
-  // 新しい期を指したまま切替日より前の日を開くことがある。ダッシュボードは
-  // 日付でどの時間割が有効かを決めるので、セレクタでは絞らない。
-  it("ダッシュボードでは表示日に有効な時間割のコマを出す (表示中の時間割で絞らない)", () => {
+  // 期切替 (1学期 → 2学期) の直後に切替日より前の日を開くことがある。
+  // ダッシュボードは日付でどの時間割が有効かを決めるので、今の時間割
+  // (今日の時間割) では絞らない。
+  it("ダッシュボードでは表示日に有効な時間割のコマを出す (今の時間割で絞らない)", () => {
     renderGrid({
       slots: [
         slot({ id: 1, grade: "中3", teacher: "田中", timetableId: 1 }),
@@ -223,8 +221,7 @@ describe("ExcelGridView (ダッシュボード表示期間フィルタ)", () => 
         { id: 1, name: "2026 1学期", startDate: "2026-04-01", endDate: "2026-08-31", grades: [] },
         { id: 2, name: "2026 2学期", startDate: "2026-09-01", endDate: null, grades: [] },
       ],
-      // セレクタは新しい期を指しているが、表示日 (7/13) は 1学期の範囲
-      activeTimetableId: 2,
+      // 表示日 (7/13) は 1学期の範囲
     });
     expect(screen.getByText("田中")).toBeInTheDocument();
     expect(screen.queryByText("鈴木")).not.toBeInTheDocument();
@@ -682,5 +679,63 @@ describe("ExcelGridView (代行モードのキーボード日付移動)", () => 
     enterSubMode(dash.container, "2026-07-18");
     fireEvent.keyDown(window, { key: "ArrowRight" });
     expect(dateInput(dash.container).value).toBe("2026-07-18");
+  });
+});
+
+// 日付を持たない通常の表示は「今の時間割」(今日の日付で決まる時間割)。
+// 以前はヘッダの時間割セレクタ (端末ごとの選択) で絞っていたため、選択が
+// 前の期のままの端末では前の期の時間割が出た
+describe("ExcelGridView の時間割 (今の時間割 / 選んだ時間割 / 代行日)", () => {
+  const TIMETABLES = [
+    { id: 1, name: "1学期", startDate: "2026-04-01", endDate: "2026-08-31", grades: [] },
+    { id: 2, name: "2学期", startDate: "2026-09-01", endDate: null, grades: [] },
+  ];
+  const SLOTS = [
+    slot({ id: 1, teacher: "田中", timetableId: 1 }),
+    slot({ id: 2, cls: "A", teacher: "鈴木", timetableId: 2 }),
+  ];
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("通常の表示は今日の日付で決まる時間割を出す", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 21, 12, 0, 0)); // 2026-10-21
+    renderGrid({ dashboardMode: false, viewDate: undefined, slots: SLOTS, timetables: TIMETABLES });
+    expect(screen.getByText("鈴木")).toBeInTheDocument();
+    expect(screen.queryByText("田中")).not.toBeInTheDocument();
+  });
+
+  it("時間割を選んだとき (コースマスター管理) はその時間割を出す", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 21, 12, 0, 0));
+    renderGrid({
+      dashboardMode: false,
+      viewDate: undefined,
+      slots: SLOTS,
+      timetables: TIMETABLES,
+      timetableId: 1,
+    });
+    expect(screen.getByText("田中")).toBeInTheDocument();
+    expect(screen.queryByText("鈴木")).not.toBeInTheDocument();
+  });
+
+  it("代行モードは代行日に有効な時間割のコマを出す (今日の時間割に縛られない)", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 21, 12, 0, 0));
+    const { container } = renderGrid({
+      dashboardMode: false,
+      enableSubMode: true,
+      viewDate: undefined,
+      slots: SLOTS,
+      timetables: TIMETABLES,
+    });
+    expect(screen.queryByText("田中")).not.toBeInTheDocument();
+    // 1学期の月曜 (7/13) を代行日にする
+    enterSubMode(container, MONDAY);
+    // セルと欠勤先生のパネル (代行日のコマの講師) の両方に出る
+    expect(screen.getAllByText("田中").length).toBeGreaterThan(0);
+    expect(screen.queryByText("鈴木")).not.toBeInTheDocument();
   });
 });

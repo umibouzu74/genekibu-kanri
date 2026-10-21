@@ -23,7 +23,6 @@ export function useTimetablesCrud({
   saveSlots,
   classSets,
   saveClassSets,
-  onRemoveActive,
 }) {
   const toasts = useToasts();
   const crud = useCrudResource({ list: timetables, save: saveTimetables });
@@ -49,7 +48,7 @@ export function useTimetablesCrud({
       const msg = linkedSlots.length
         ? `この時間割には ${linkedSlots.length} 件のコマが割り当てられています。\n削除するとコマはデフォルト時間割に移動します。`
         : "この時間割を削除しますか？";
-      const removed = await crud.confirmedRemove(id, {
+      await crud.confirmedRemove(id, {
         title: "時間割の削除",
         message: msg,
         successMsg: "時間割を削除しました",
@@ -63,9 +62,8 @@ export function useTimetablesCrud({
           }
         },
       });
-      if (removed && onRemoveActive) onRemoveActive(id);
     },
-    [slots, saveSlots, toasts, crud, onRemoveActive]
+    [slots, saveSlots, toasts, crud]
   );
 
   const duplicate = useCallback(

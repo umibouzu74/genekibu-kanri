@@ -35,7 +35,6 @@ function renderWeek(props = {}) {
       slots={[MON_SLOT]}
       subs={[]}
       adjustments={[]}
-      allSlots={[MON_SLOT]}
       classSets={[]}
       biweeklyAnchors={[]}
       sessionOverrides={[]}
@@ -71,7 +70,6 @@ describe("WeekView の直近 2 週間の休講", () => {
     const mid1 = { ...MON_SLOT, id: 2, grade: "中1", cls: "A", subj: "英語" };
     renderWeek({
       slots: [MON_SLOT, mid1],
-      allSlots: [MON_SLOT, mid1],
       holidays: [
         { id: 1, date: "2026-12-07", label: "中1休み", scope: ["全部"], targetGrades: ["中1"] },
       ],
@@ -96,7 +94,6 @@ describe("WeekView の直近 2 週間の休講", () => {
     // 12/7 (月) の休講。時間割は 12/5 で終わっているので 12/7 のコマは無い
     const { unmount } = renderWeek({
       slots: [ttSlot],
-      allSlots: [ttSlot],
       timetables: [{ id: "t1", name: "前期", startDate: "2026-04-01", endDate: "2026-12-05" }],
       holidays: [{ id: 1, date: "2026-12-07", label: "創立記念日", scope: ["全部"] }],
     });
@@ -116,7 +113,6 @@ describe("WeekView の直近 2 週間の休講", () => {
     // 12/7 は A 週 → 堀上の担当 → 出る
     const { unmount } = renderWeek({
       slots: [bi],
-      allSlots: [bi],
       biweeklyAnchors: anchors,
       holidays: [{ id: 1, date: "2026-12-07", label: "創立記念日", scope: ["全部"] }],
     });
@@ -125,7 +121,6 @@ describe("WeekView の直近 2 週間の休講", () => {
     // 12/14 は B 週 → 河野の担当 → 堀上には出さない
     renderWeek({
       slots: [bi],
-      allSlots: [bi],
       biweeklyAnchors: anchors,
       holidays: [{ id: 2, date: "2026-12-14", label: "B週の休講", scope: ["全部"] }],
     });
@@ -213,7 +208,7 @@ describe("WeekView の基準週", () => {
   it("隔週コマは表示中の週の担当側にだけ出る", () => {
     const bi = { ...MON_SLOT, id: 3, subj: "英/数", note: "隔週(河野)" };
     // 12/7 = A 週 (堀上)。今週 (11/30) は B 週 = 河野の担当
-    renderWeek({ slots: [bi], allSlots: [bi], biweeklyAnchors: [{ date: "2026-12-07", weekType: "A" }] });
+    renderWeek({ slots: [bi], biweeklyAnchors: [{ date: "2026-12-07", weekType: "A" }] });
     expect(screen.queryByText(/（隔週）/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "次の週 ▶" }));
     expect(screen.getByText("英（隔週）")).toBeTruthy();
@@ -247,6 +242,22 @@ describe("WeekView の基準週", () => {
     expect(screen.getByTestId("week-range").getAttribute("aria-live")).toBe("polite");
   });
 
+  it("どの時間割のコマを出すかは列の日付で決まる (端末ごとの選択に左右されない)", () => {
+    // 12/3 (木) から後期。今週 (11/30〜) の月曜は前期、来週の月曜は後期
+    const timetables = [
+      { id: 1, name: "前期", type: "regular", startDate: "2026-04-01", endDate: "2026-12-02", grades: [] },
+      { id: 2, name: "後期", type: "regular", startDate: "2026-12-03", endDate: null, grades: [] },
+    ];
+    const zenki = { ...MON_SLOT, id: 11, subj: "前期の数学", timetableId: 1 };
+    const kouki = { ...MON_SLOT, id: 12, subj: "後期の理科", timetableId: 2 };
+    renderWeek({ slots: [zenki, kouki], timetables });
+    expect(screen.getByText("前期の数学")).toBeTruthy();
+    expect(screen.queryByText("後期の理科")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "次の週 ▶" }));
+    expect(screen.queryByText("前期の数学")).toBeNull();
+    expect(screen.getByText("後期の理科")).toBeTruthy();
+  });
+
   it("講師を切り替えても週は保つ (同じ週で見比べるため)", () => {
     const { rerender } = renderWeek();
     fireEvent.click(screen.getByRole("button", { name: "次の週 ▶" }));
@@ -256,7 +267,6 @@ describe("WeekView の基準週", () => {
         slots={[MON_SLOT]}
         subs={[]}
         adjustments={[]}
-        allSlots={[MON_SLOT]}
         classSets={[]}
         biweeklyAnchors={[]}
         sessionOverrides={[]}

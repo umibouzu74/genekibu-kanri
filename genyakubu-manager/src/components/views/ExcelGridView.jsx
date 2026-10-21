@@ -55,8 +55,9 @@ import { SubstitutionPopover } from "../SubstitutionPopover";
 import { S } from "../../styles/common";
 import { buildSessionCountMap } from "../../utils/sessionCount";
 import {
-  filterSlotsByActiveTimetable,
+  filterSlotsCurrentOn,
   filterSlotsForDate,
+  filterSlotsOfTimetable,
   getCutoffGroupLabelsWithSlots,
   getDayCutoffKind,
   isSlotBeyondCutoff,
@@ -108,7 +109,9 @@ export function ExcelGridView({
   biweeklyAnchors,
   isAdmin,
   timetables,
-  activeTimetableId,
+  // 通常の表示 (日付を持たない) で出す時間割を固定する (コースマスター管理で
+  // 時間割を選んだとき)。省略時は今日の日付で決まる「今の時間割」
+  timetableId = null,
   partTimeStaff,
   teacherKana = {},
   subjects,
@@ -152,22 +155,26 @@ export function ExcelGridView({
   const confirm = useConfirm();
   // 描画対象の曜日。全曜日印刷中のみ printDay が勝つ。
   const activeDay = printDay || selectedDay;
+  // 「今日」はタブを開いたまま日付を跨いでも更新される (useToday)
+  const today = useToday();
 
   // 表示するコマの母集合。
-  // 単体のタイムテーブルビューは日付を持たない「現在の時間割」の表示なので
-  // ヘッダの時間割セレクタ (activeTimetableId) で絞る。
+  // 単体のタイムテーブルビューの通常の表示は日付を持たないので「今の時間割」
+  // (今日の日付で決まる時間割。utils/timetable.filterSlotsCurrentOn)。
+  // コースマスター管理で時間割を選んでいればその時間割 (timetableId)。
   // ダッシュボード表示は表示日が決まっており、どの時間割が有効かは日付が
-  // 決める (下の filterSlotsForDate)。ここでセレクタでも絞ると、期切替
+  // 決める (下の filterSlotsForDate)。ここで今の時間割でも絞ると、期切替
   // (1学期 → 2学期) の直後に切替日より前の日を開いたとき、その日のコマが
   // まるごと消えてしまう。日別リスト (DashboardListView) は日付だけで
   // 判定しているので、そちらに合わせる。
-  const filteredSlots = useMemo(
-    () =>
-      dashboardMode
-        ? slots
-        : filterSlotsByActiveTimetable(slots, timetables, activeTimetableId),
-    [dashboardMode, slots, timetables, activeTimetableId]
-  );
+  // 代行モードも日付を持つので、全コマを useSubstitutionMode に渡して代行日で
+  // 絞る (subMode.dateFilteredSlots)。以前は通常の表示と同じ母集合を渡して
+  // いたため、ヘッダの選択が前の期のままだと代行日のコマが空になった
+  const filteredSlots = useMemo(() => {
+    if (dashboardMode) return slots;
+    if (timetableId != null) return filterSlotsOfTimetable(slots, timetableId);
+    return filterSlotsCurrentOn(slots, timetables, today);
+  }, [dashboardMode, slots, timetables, timetableId, today]);
 
   // Check which days have slots
   const daysWithSlots = useMemo(() => {
@@ -176,17 +183,9 @@ export function ExcelGridView({
     return days;
   }, [filteredSlots]);
 
-  // Teacher groups for the unavailability panel
-  const teacherGroups = useTeacherGroups({
-    slots: filteredSlots,
-    partTimeStaff: partTimeStaff || [],
-    subjects: subjects || [],
-    search: "",
-  });
-
-  // Substitution mode hook
+  // Substitution mode hook (代行日で絞るので全コマを渡す)
   const subMode = useSubstitutionMode({
-    slots: filteredSlots,
+    slots,
     subs: subs || [],
     saveSubs: saveSubs || (() => {}),
     holidays: holidays || [],
@@ -201,6 +200,14 @@ export function ExcelGridView({
     daySchedules: daySchedules || [],
     adjustments: adjustments || [],
     offsiteLessons,
+  });
+
+  // Teacher groups for the unavailability panel (代行モードでは代行日のコマから)
+  const teacherGroups = useTeacherGroups({
+    slots: subMode.isSubMode ? subMode.dateFilteredSlots : filteredSlots,
+    partTimeStaff: partTimeStaff || [],
+    subjects: subjects || [],
+    search: "",
   });
 
   // Clear unavailable selection when day changes
@@ -298,7 +305,6 @@ export function ExcelGridView({
   // (DashboardDateNav.stepDate) と同じ。ダッシュボード内の描画
   // (dashboardMode) では DashboardDateNav が同じキーを握っているので付けない
   // (二重に動く)。全曜日印刷中も止める (printDay の差し替え中に日付を動かさない)
-  const today = useToday();
   const stepSubDate = useCallback(
     (step) => {
       if (!subModeDate) return;
@@ -330,8 +336,9 @@ export function ExcelGridView({
   // Popover slot lookup
   const popoverSlot = useMemo(() => {
     if (!popoverTarget) return null;
-    return filteredSlots.find((s) => s.id === popoverTarget.slotId) || null;
-  }, [popoverTarget, filteredSlots]);
+    // 代行日のコマは通常の表示の母集合 (今の時間割) に居ないことがあるので全コマから
+    return slots.find((s) => s.id === popoverTarget.slotId) || null;
+  }, [popoverTarget, slots]);
 
   // viewDate を含む週の月〜土の日付を曜日→"YYYY-MM-DD" で保持。
   const weekDates = useMemo(() => computeWeekDates(viewDate), [viewDate]);
