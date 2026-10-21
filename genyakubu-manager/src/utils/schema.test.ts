@@ -284,7 +284,7 @@ describe("type guards", () => {
         name: "修学旅行",
         startDate: "2026-05-08",
         endDate: "2026-05-12",
-        eventType: "trip",
+        eventType: "school",
         targetGrades: ["高2"],
         memo: "",
       })
@@ -296,7 +296,7 @@ describe("type guards", () => {
         name: "テスト発表",
         startDate: "2026-05-01",
         endDate: "2026-05-01",
-        eventType: "announcement",
+        eventType: "jukuTest",
         targetGrades: [],
       })
     ).toBe(true);
@@ -861,7 +861,7 @@ describe("v12 → v13 migration: specialEvents 初期化", () => {
         name: "修学旅行",
         startDate: "2026-05-08",
         endDate: "2026-05-12",
-        eventType: "trip",
+        eventType: "school",
         targetGrades: ["高2"],
         memo: "",
       },
@@ -1430,5 +1430,26 @@ describe("validateExportBundle biweeklyAnchors format", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/biweeklyAnchors/);
+  });
+});
+
+describe("v23 → v24: 特別イベントの表示設定", () => {
+  it("specialEventDisplay は既定値で埋めない (無ければ現状維持)", () => {
+    const out = migrateExportBundle({ schemaVersion: 23 }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out).not.toHaveProperty("specialEventDisplay");
+  });
+
+  it("validateExportBundle は真偽値以外を弾く", () => {
+    expect(validateExportBundle({ specialEventDisplay: { monthTypes: { school: false } } }).ok).toBe(true);
+    expect(validateExportBundle({ specialEventDisplay: {} }).ok).toBe(true);
+    expect(validateExportBundle({ specialEventDisplay: { monthTypes: { school: "no" } } }).ok).toBe(false);
+    expect(validateExportBundle({ specialEventDisplay: [] }).ok).toBe(false);
+  });
+
+  it("特別イベントの出典は文字列だけ", () => {
+    const base = { id: 1, name: "x", startDate: "2026-11-01", endDate: "2026-11-01", eventType: "jukuTest", targetGrades: [] };
+    expect(isSpecialEvent({ ...base, source: "2026中学予定表" })).toBe(true);
+    expect(isSpecialEvent({ ...base, source: 1 })).toBe(false);
   });
 });

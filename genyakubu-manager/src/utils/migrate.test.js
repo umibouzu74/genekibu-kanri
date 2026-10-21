@@ -260,7 +260,7 @@ describe("migrateSpecialEvents", () => {
         name: "修学旅行",
         startDate: "2026-05-08",
         endDate: "2026-05-12",
-        eventType: "trip",
+        eventType: "school",
         targetGrades: ["高2"],
         memo: "京都奈良",
       },

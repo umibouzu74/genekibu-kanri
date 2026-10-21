@@ -3,6 +3,7 @@
 // (useSyncedStorage migrate option) and JSON import (useDataIO).
 
 import { SPECIAL_EVENT_TYPES } from "../constants/specialEvents";
+import { upgradeSpecialEventType } from "./specialEventTypes";
 
 const VALID_SPECIAL_EVENT_TYPES = new Set(SPECIAL_EVENT_TYPES.map((t) => t.key));
 
@@ -51,10 +52,15 @@ export const migrateExamPeriods = (arr) =>
 /**
  * Restore `targetGrades: []` dropped by Firebase RTDB and ensure each
  * special event has every required field (id, eventType, memo).
+ * v23 までの種別・タグで仮置きした種別は v24 の種別へ寄せる
+ * (utils/specialEventTypes。冪等なので毎回の読み込みで通してよい)。
+ * 未知の eventType は "other" に落とす — 新しい種別を足すときは
+ * SPECIAL_EVENT_TYPES に必ず入れること (古い版の端末は新しい種別を
+ * "other" に潰すので、リリース後は全端末で再読み込みしてもらう)。
  */
 export const migrateSpecialEvents = (arr) =>
   Array.isArray(arr)
-    ? arr.map((ev, i) => ({
+    ? arr.map(upgradeSpecialEventType).map((ev, i) => ({
         ...ev,
         id: typeof ev?.id === "number" ? ev.id : i + 1,
         name: typeof ev?.name === "string" ? ev.name : "",

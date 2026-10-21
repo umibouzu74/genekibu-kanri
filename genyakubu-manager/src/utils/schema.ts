@@ -47,8 +47,10 @@ import type {
   YoteihyoConfirmation,
   YoteihyoMappingEntry,
 } from "../types";
+import { SPECIAL_EVENT_TYPE_BY_KEY } from "../constants/specialEvents";
+import { upgradeSpecialEventTypes } from "./specialEventTypes";
 
-export const CURRENT_SCHEMA_VERSION = 23;
+export const CURRENT_SCHEMA_VERSION = 24;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -265,17 +267,22 @@ export function isSpecialEvent(x: unknown): x is SpecialEvent {
   if (!isString(x.name)) return false;
   if (!isString(x.startDate)) return false;
   if (!isString(x.endDate)) return false;
-  if (
-    x.eventType !== "trip" &&
-    x.eventType !== "ceremony" &&
-    x.eventType !== "festival" &&
-    x.eventType !== "announcement" &&
-    x.eventType !== "other"
-  ) {
+  // v24 の種別だけ (v23 までの種別は migrateExportBundle が寄せてから来る)
+  if (!isString(x.eventType) || !SPECIAL_EVENT_TYPE_BY_KEY.has(x.eventType)) {
     return false;
   }
   if (!Array.isArray(x.targetGrades)) return false;
+  if (x.source !== undefined && !isString(x.source)) return false;
   return true;
+}
+
+// 特別イベントの表示設定 ({ monthTypes: { 種別: boolean } })。種別の欠けは
+// 読み込みで既定値に埋める (utils/specialEventDisplay) ので、形だけを見る
+export function isSpecialEventDisplay(x: unknown): boolean {
+  if (!isObject(x)) return false;
+  if (x.monthTypes === undefined) return true;
+  if (!isObject(x.monthTypes)) return false;
+  return Object.values(x.monthTypes).every((v) => typeof v === "boolean");
 }
 
 export function isExtraLesson(x: unknown): x is ExtraLesson {
@@ -725,6 +732,10 @@ export function validateExportBundle(
       return { ok: false, error: "staffLeave の形式が不正です" };
   }
 
+  if (raw.specialEventDisplay != null && !isSpecialEventDisplay(raw.specialEventDisplay)) {
+    return { ok: false, error: "specialEventDisplay の形式が不正です" };
+  }
+
   for (const [key, check] of [
     ["yoteihyoMapping", isYoteihyoMappingEntry],
     ["yoteihyoConfirmed", isYoteihyoConfirmation],
@@ -1111,6 +1122,15 @@ export function migrateExportBundle(raw: unknown): unknown {
   // v22 → v23: yoteihyoMapping (予定表チェックの講座の対応。以前は端末だけに
   //             保存していた) と yoteihyoConfirmed (確認済みの食い違い) を追加。
   //             既定値で埋めない (無ければ現状維持)。
+
+  // v23 → v24: 特別イベントの種別を塾の実情に合わせて作り直した
+  //             (trip/ceremony/festival → school、announcement → other、
+  //             タグで仮置きした種別「公立中」「塾テスト」… → 種別へ移してタグを
+  //             消す。utils/specialEventTypes)。specialEventDisplay (講師の
+  //             月間予定に出す種別) を追加。既定値で埋めない (無ければ現状維持)。
+  if (version < 24 && Array.isArray(bundle.specialEvents)) {
+    bundle.specialEvents = upgradeSpecialEventTypes(bundle.specialEvents);
+  }
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;

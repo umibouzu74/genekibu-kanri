@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import {
   ALL_GRADES,
   DEPT_COLOR,
@@ -9,7 +9,7 @@ import {
 } from "../data";
 import { nextNumericId } from "../utils/schema";
 import { useToasts } from "../hooks/useToasts";
-import { useRemoveWithUndo } from "../hooks/useCrudResource";
+import { useRemoveManyWithUndo, useRemoveWithUndo } from "../hooks/useCrudResource";
 import {
   scrollFormIntoView,
   useEditTarget,
@@ -18,6 +18,9 @@ import {
 import { ListPeriodFilter } from "./ListPeriodFilter";
 import { useListPeriod } from "../hooks/useListPeriod";
 import { formatDateRange } from "../utils/dateHelpers";
+import { specialEventsToTsv } from "../utils/specialEventImport";
+import { SpecialEventDisplaySettings } from "./SpecialEventDisplaySettings";
+import { SpecialEventBulkImportDialog } from "./SpecialEventBulkImportDialog";
 import { S, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { TAG_META } from "../constants/eventKinds";
@@ -30,6 +33,9 @@ import {
 export function SpecialEventManager({
   specialEvents,
   onSave,
+  // 講師の月間予定に出す種別 (全員共通の設定、utils/specialEventDisplay)
+  display,
+  onSaveDisplay,
   isAdmin,
   // 既存タグ候補は ExamPeriod とも共通空間。親 (App) から既存タグ集計を受け取る。
   knownTags = [],
@@ -45,12 +51,17 @@ export function SpecialEventManager({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [memo, setMemo] = useState("");
+  const [source, setSource] = useState("");
   const [targetGrades, setTargetGrades] = useState([]);
   const [allGrades, setAllGrades] = useState(true);
   const [tagsArr, setTagsArr] = useState([]);
   const [tagInput, setTagInput] = useState("");
   const [editId, setEditId] = useState(null);
   const [error, setError] = useState("");
+  const [bulkOpen, setBulkOpen] = useState(false);
+  // 一覧の絞り込み (種別・出典)。null = すべて
+  const [typeFilter, setTypeFilter] = useState(null);
+  const [sourceFilter, setSourceFilter] = useState(null);
   const toasts = useToasts();
 
   // 既存タグ: 親 App から共通空間として受け取る (両ソース集約済み・五十音順)。
@@ -69,6 +80,10 @@ export function SpecialEventManager({
   };
 
   const removeEventWithUndo = useRemoveWithUndo({
+    list: specialEvents,
+    save: onSave,
+  });
+  const removeEventsWithUndo = useRemoveManyWithUndo({
     list: specialEvents,
     save: onSave,
   });
@@ -114,6 +129,7 @@ export function SpecialEventManager({
     setStartDate(d);
     setEndDate(d);
     setMemo("");
+    setSource("");
     setTargetGrades([]);
     setAllGrades(true);
     setTagsArr([]);
@@ -161,13 +177,22 @@ export function SpecialEventManager({
       memo: memo.trim(),
       tags,
     };
+    // 出典は空なら持たない (編集で消したときは項目ごと外す)
+    const src = source.trim();
     if (editId != null) {
       onSave(
-        specialEvents.map((ev) => (ev.id === editId ? { ...ev, ...base } : ev))
+        specialEvents.map((ev) => {
+          if (ev.id !== editId) return ev;
+          const { source: _old, ...rest } = ev;
+          return src ? { ...rest, ...base, source: src } : { ...rest, ...base };
+        })
       );
       toasts.success("イベントを更新しました");
     } else {
-      onSave([...specialEvents, { id: nextNumericId(specialEvents), ...base }]);
+      onSave([
+        ...specialEvents,
+        { id: nextNumericId(specialEvents), ...base, ...(src ? { source: src } : {}) },
+      ]);
       toasts.success("イベントを追加しました");
     }
     resetForm();
@@ -179,6 +204,7 @@ export function SpecialEventManager({
     setStartDate(ev.startDate);
     setEndDate(ev.endDate);
     setMemo(ev.memo || "");
+    setSource(ev.source || "");
     if ((ev.targetGrades || []).length === 0) {
       setAllGrades(true);
       setTargetGrades([]);
@@ -203,7 +229,38 @@ export function SpecialEventManager({
   );
   // 一覧の期間絞り込み (既定は今月以降)。編集・削除は全件が対象
   const period = useListPeriod();
-  const shown = period.apply(sorted, (ev) => [ev.startDate, ev.endDate]);
+  // 出典ごとの件数 (全期間)。出典で絞っている間は期間に関係なくその出典の
+  // 全件を出す (予定表の改訂版が来たら「出典ごと消して入れ直す」ため)
+  const sources = useMemo(() => {
+    const m = new Map();
+    for (const ev of specialEvents) if (ev.source) m.set(ev.source, (m.get(ev.source) || 0) + 1);
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], "ja"));
+  }, [specialEvents]);
+  const activeSource = sourceFilter && sources.some(([s]) => s === sourceFilter) ? sourceFilter : null;
+  const base = activeSource
+    ? sorted.filter((ev) => ev.source === activeSource)
+    : period.apply(sorted, (ev) => [ev.startDate, ev.endDate]);
+  // 種別のチップの件数は期間 (・出典) で絞った後の数
+  const typeCounts = new Map();
+  for (const ev of base) typeCounts.set(ev.eventType, (typeCounts.get(ev.eventType) || 0) + 1);
+  const shown = typeFilter ? base.filter((ev) => ev.eventType === typeFilter) : base;
+
+  const copyTsv = async () => {
+    try {
+      await navigator.clipboard.writeText(specialEventsToTsv(shown));
+      toasts.success(`${shown.length} 件を表 (TSV) としてコピーしました`);
+    } catch {
+      toasts.error("クリップボードにコピーできませんでした");
+    }
+  };
+
+  const removeSource = (src) => {
+    const ids = specialEvents.filter((ev) => ev.source === src).map((ev) => ev.id);
+    removeEventsWithUndo(ids, {
+      successMsg: (n) => `出典「${src}」の ${n} 件を削除しました`,
+    });
+    setSourceFilter(null);
+  };
 
   useEditTarget({
     editTargetId,
@@ -237,6 +294,36 @@ export function SpecialEventManager({
       >
         特別イベント管理
       </div>
+
+      <SpecialEventDisplaySettings display={display} onSave={onSaveDisplay} isAdmin={isAdmin} />
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => setBulkOpen(true)}
+            style={{ ...S.btn(false), fontSize: 12, padding: "6px 12px" }}
+          >
+            📋 まとめて登録
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={copyTsv}
+          disabled={shown.length === 0}
+          title="いま一覧に出ているイベントを、表 (TSV) としてクリップボードにコピーします。Excel に貼って点検できます"
+          style={{ ...S.btn(false), fontSize: 12, padding: "6px 12px" }}
+        >
+          📄 表として書き出す (TSV をコピー)
+        </button>
+      </div>
+      {bulkOpen && (
+        <SpecialEventBulkImportDialog
+          specialEvents={specialEvents}
+          onSave={onSave}
+          onClose={() => setBulkOpen(false)}
+        />
+      )}
 
       {isAdmin && (
         <div
@@ -363,6 +450,17 @@ export function SpecialEventManager({
             />
           </div>
 
+          {/* 出典 */}
+          <div style={{ marginBottom: 10 }}>
+            <input
+              value={source}
+              onChange={(e) => setSource(e.target.value)}
+              placeholder="出典（任意。例: 2026中学予定表）"
+              aria-label="出典"
+              style={{ ...S.input, width: "100%", maxWidth: 360 }}
+            />
+          </div>
+
           {/* 対象学年 */}
           <div style={{ marginBottom: 12 }}>
             <div
@@ -457,7 +555,7 @@ export function SpecialEventManager({
           {/* タグ */}
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
-              タグ (学校名等、任意)
+              タグ (学校名・部など、任意。種別はタグに入れず上で選ぶ)
             </div>
             <div
               style={{
@@ -569,7 +667,75 @@ export function SpecialEventManager({
         </div>
       )}
 
-      <ListPeriodFilter period={period} shown={shown.length} total={sorted.length} noun="特別イベント" />
+      {activeSource ? (
+        <div style={{ fontSize: 12, color: "#555", marginBottom: 8 }}>
+          出典「{activeSource}」の {base.length} 件を表示しています (期間に関係なく全件)
+        </div>
+      ) : (
+        <ListPeriodFilter period={period} shown={shown.length} total={sorted.length} noun="特別イベント" />
+      )}
+
+      {/* 種別のチップ (件数付き)。押すとその種別だけ、もう一度押すと全部 */}
+      <div
+        role="group"
+        aria-label="種別で絞り込む"
+        style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}
+      >
+        <span style={{ fontSize: 11, color: "#888", marginRight: 2 }}>種別:</span>
+        <FilterChip
+          active={typeFilter == null}
+          onClick={() => setTypeFilter(null)}
+          label={`すべて ${base.length}`}
+        />
+        {SPECIAL_EVENT_TYPES.map((t) => (
+          <FilterChip
+            key={t.key}
+            active={typeFilter === t.key}
+            onClick={() => setTypeFilter(typeFilter === t.key ? null : t.key)}
+            label={`${t.icon} ${t.label} ${typeCounts.get(t.key) || 0}`}
+            tone={t}
+            dim={!typeCounts.get(t.key)}
+          />
+        ))}
+      </div>
+
+      {/* 出典 (まとめて登録で付けたもの)。出典ごとに表示 / まとめて削除 */}
+      {sources.length > 0 && (
+        <div
+          role="group"
+          aria-label="出典で絞り込む"
+          style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}
+        >
+          <span style={{ fontSize: 11, color: "#888", marginRight: 2 }}>出典:</span>
+          {sources.map(([src, n]) => (
+            <FilterChip
+              key={src}
+              active={activeSource === src}
+              onClick={() => setSourceFilter(activeSource === src ? null : src)}
+              label={`📄 ${src} ${n}`}
+            />
+          ))}
+          {isAdmin && activeSource && (
+            <button
+              type="button"
+              onClick={() => removeSource(activeSource)}
+              style={{
+                fontSize: 11,
+                padding: "2px 10px",
+                borderRadius: 10,
+                border: `1px solid ${colors.danger}`,
+                background: "#fff",
+                color: colors.danger,
+                cursor: "pointer",
+                marginLeft: 6,
+              }}
+            >
+              この出典の {base.length} 件をまとめて削除
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 一覧 */}
       <div
         style={{
@@ -593,7 +759,7 @@ export function SpecialEventManager({
               📌
             </div>
             <div style={{ fontWeight: 700, color: "#555", marginBottom: 4 }}>
-              {sorted.length > 0 ? "この期間に該当する特別イベントはありません (期間の絞り込みを変えてください)" : "登録された特別イベントはありません"}
+              {sorted.length > 0 ? "条件に該当する特別イベントはありません (期間・種別の絞り込みを変えてください)" : "登録された特別イベントはありません"}
             </div>
             {isAdmin && (
               <div style={{ fontSize: 12, color: "#888" }}>
@@ -604,9 +770,26 @@ export function SpecialEventManager({
         ) : (
           shown.map((ev, i) => {
             const meta = specialEventTypeMeta(ev.eventType);
+            // 月ごとの見出し (開始日の月)
+            const ym = ev.startDate.slice(0, 7);
+            const newMonth = i === 0 || shown[i - 1].startDate.slice(0, 7) !== ym;
             return (
+              <Fragment key={ev.id}>
+              {newMonth && (
+                <div
+                  style={{
+                    padding: "4px 14px",
+                    fontSize: 12,
+                    fontWeight: 800,
+                    color: "#5a3a8e",
+                    background: "#f3eefa",
+                    borderBottom: "1px solid #e4dcf2",
+                  }}
+                >
+                  {Number(ym.slice(0, 4))}年{Number(ym.slice(5, 7))}月
+                </div>
+              )}
               <div
-                key={ev.id}
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
@@ -711,6 +894,11 @@ export function SpecialEventManager({
                       {ev.memo}
                     </span>
                   )}
+                  {ev.source && (
+                    <span style={{ fontSize: 10, color: "#999" }} title="出典">
+                      📄 {ev.source}
+                    </span>
+                  )}
                 </div>
                 {isAdmin && (
                   <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
@@ -747,6 +935,7 @@ export function SpecialEventManager({
                   </div>
                 )}
               </div>
+              </Fragment>
             );
           })
         )}
@@ -759,5 +948,29 @@ export function SpecialEventManager({
         反映されます (これまで告知イベントで代用していた場合は移行を推奨)。
       </div>
     </div>
+  );
+}
+
+// 一覧の絞り込みチップ (種別・出典)。tone は種別の色 (無ければ中立)
+function FilterChip({ active, onClick, label, tone, dim = false }) {
+  const accent = tone?.accent || "#8a5ec4";
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      style={{
+        fontSize: 11,
+        padding: "2px 8px",
+        borderRadius: 10,
+        cursor: "pointer",
+        background: active ? tone?.bg || "#f3eefa" : "#fff",
+        color: active ? tone?.fg || "#5a3a8e" : dim ? "#bbb" : "#555",
+        border: `1px solid ${active ? accent : "#ddd"}`,
+        fontWeight: active ? 700 : 400,
+      }}
+    >
+      {label}
+    </button>
   );
 }

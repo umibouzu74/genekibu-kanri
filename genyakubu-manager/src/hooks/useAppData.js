@@ -30,6 +30,10 @@ import { migrateTeacherAffiliations } from "../utils/teacherAffiliations";
 import { EMPTY_STAFF_LEAVE, migrateStaffLeave } from "../utils/staffLeave";
 import { migrateCourseMapping } from "../utils/yoteihyo/courseMapping";
 import { migrateYoteihyoConfirmed } from "../utils/yoteihyo/confirmations";
+import {
+  DEFAULT_SPECIAL_EVENT_DISPLAY,
+  normalizeSpecialEventDisplay,
+} from "../utils/specialEventDisplay";
 
 // fuzokuPlan の既定値。useSyncedStorage の初期値は参照が変わらない方がよい
 // (毎描画で新しいオブジェクトを渡さない)
@@ -43,7 +47,7 @@ const EMPTY_LIST = Object.freeze([]);
 export const canUseAdminData = (isAdmin) => Boolean(isAdmin) || !isConfigured;
 
 // ─── 本体の永続 state をまとめて持つフック ────────────────────────
-// App.jsx にあった 20 本 (現在は 27 本) の useSyncedStorage (+ 端末限定の eventVisibility) と
+// App.jsx にあった 20 本 (現在は 28 本) の useSyncedStorage (+ 端末限定の eventVisibility) と
 // 保存エラーの通知をここへ移した (2026-09-04)。宣言の中身・キー・migrate は
 // 移動前と同じ。App は返り値を分割代入して使う。
 //
@@ -176,6 +180,13 @@ export function useAppData({ toasts, isAdmin }) {
     [],
     { migrate: migrateSpecialEvents, onError: onStorageError }
   );
+  // 特別イベントの表示設定 (講師の月間予定に出す種別)。全員共通なので同期する。
+  // RTDB は空の {} を消すので、読み込みで全種別の真偽値を必ず埋める
+  const [specialEventDisplay, saveSpecialEventDisplay] = useSyncedStorage(
+    LS.specialEventDisplay,
+    DEFAULT_SPECIAL_EVENT_DISPLAY,
+    { migrate: normalizeSpecialEventDisplay, onError: onStorageError }
+  );
   const [extraLessons, saveExtraLessons] = useSyncedStorage(
     LS.extraLessons,
     [],
@@ -284,6 +295,8 @@ export function useAppData({ toasts, isAdmin }) {
     saveTeacherKana,
     specialEvents,
     saveSpecialEvents,
+    specialEventDisplay,
+    saveSpecialEventDisplay,
     extraLessons,
     saveExtraLessons,
     daySchedules,

@@ -684,3 +684,57 @@ describe("MonthView の有給・半休", () => {
     expect(screen.queryByRole("button", { name: /の有給・半休を入れる/ })).toBeNull();
   });
 });
+
+// 特別イベント: 講師の月間予定に出す種別 (全員共通の設定) で絞り、期間が長い
+// もの (8 日以上) は日のセルではなく月の上部の帯に 1 回だけ出す
+describe("MonthView 特別イベントの種別と長い期間の帯", () => {
+  const SE = (id, name, startDate, endDate, eventType) => ({
+    id,
+    name,
+    startDate,
+    endDate,
+    eventType,
+    targetGrades: [],
+    memo: "",
+    tags: [],
+  });
+  const events = [
+    SE(1, "中3 直前ポイント", "2026-06-15", "2026-08-04", "course"),
+    SE(2, "公開実力テスト", "2026-07-11", "2026-07-11", "jukuTest"),
+    SE(3, "公立中 終業式", "2026-07-17", "2026-07-17", "school"),
+    SE(4, "夏期講習 (前半)", "2026-07-21", "2026-07-27", "course"),
+  ];
+  const props = { ...baseProps, specialEvents: events, visibility: { special: true } };
+  const cellText = (container) =>
+    [...container.querySelectorAll(".month-print-cell")].map((c) => c.textContent).join("|");
+
+  it("長いものは帯に (セルには出さない)。7 日以下はセル", () => {
+    const { container } = render(<MonthView {...props} />);
+    const band = container.querySelector(".month-print-band");
+    expect(band).toHaveTextContent("この月:");
+    expect(band).toHaveTextContent("中3 直前ポイント");
+    expect(band).toHaveTextContent("6/15〜8/4");
+    expect(cellText(container)).not.toContain("直前ポイント");
+    expect(cellText(container)).toContain("夏期講習 (前半)");
+    expect(band).not.toHaveTextContent("夏期講習");
+  });
+
+  it("既定では学校の予定を出さない。設定で出すようにできる", () => {
+    const { container, rerender } = render(<MonthView {...props} />);
+    expect(cellText(container)).toContain("公開実力テスト");
+    expect(cellText(container)).not.toContain("終業式");
+    rerender(
+      <MonthView
+        {...props}
+        specialEventDisplay={{ monthTypes: { school: true, jukuTest: false } }}
+      />
+    );
+    expect(cellText(container)).toContain("終業式");
+    expect(cellText(container)).not.toContain("公開実力テスト");
+  });
+
+  it("特別イベントの表示トグルが OFF なら帯も出さない", () => {
+    const { container } = render(<MonthView {...props} visibility={{ special: false }} />);
+    expect(container.querySelector(".month-print-band")).toBeNull();
+  });
+});

@@ -25,6 +25,9 @@ export const LS = {
   sessionOverrides: "genyakubu-session-overrides",
   examPrepSchedules: "genyakubu-exam-prep-schedules",
   specialEvents: "genyakubu-special-events",
+  // 特別イベントの表示設定 (全員共通、管理者が決める)。講師の月間予定に出す
+  // 種別 { monthTypes: { school: false, ... } } (utils/specialEventDisplay)
+  specialEventDisplay: "genyakubu-special-event-display",
   extraLessons: "genyakubu-extra-lessons",
   daySchedules: "genyakubu-day-schedules",
   // 附属の授業予定: 日付ごとの学校メモ (バス時刻) + 確認テストの手動指定。

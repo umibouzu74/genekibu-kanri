@@ -187,11 +187,16 @@ export interface ExamPrepSchedule {
 // テスト発表日や修学旅行・文化祭など、休講や試験期間とは別に
 // 「告知用」として扱いたい予定。`isOffForGrade` 等の出欠ロジックには
 // 影響せず、ダッシュボード/月次/イベントカレンダーに視覚的に表示する。
+// 種別は schema v24 で塾の実情に合わせて作り直した (constants/specialEvents)。
+// v23 までの trip / ceremony / festival / announcement は読み込みで寄せる
+// (utils/specialEventTypes)。
 export type SpecialEventType =
-  | "trip" // 修学旅行・遠足など (生徒不在)
-  | "ceremony" // 始業式・卒業式など
-  | "festival" // 文化祭・体育祭など
-  | "announcement" // テスト発表日・出願など
+  | "school" // 学校の予定 (公立中の定期テスト・始業式・修学旅行など)
+  | "jukuTest" // 塾のテスト (チャレンジテスト・公開実力・プレテスト)
+  | "entrance" // 入試 (推薦・学力検査・合格発表)
+  | "course" // 講習 (冬期講習・直前ポイント)
+  | "parents" // 保護者会
+  | "staff" // 社内 (教科会議・模試監督)
   | "other";
 
 export interface SpecialEvent {
@@ -203,8 +208,17 @@ export interface SpecialEvent {
   targetGrades: string[]; // 空配列 = 全学年対象
   memo: string;
   // tags: 学校名等の任意ラベル ("桜井", "第一" など)。ExamPeriod と
-  // 共通のタグ空間で表示・フィルタを統一する。
+  // 共通のタグ空間で表示・フィルタを統一する。種別はタグに入れない。
   tags?: string[];
+  // 出典 (例: "2026中学予定表")。まとめて登録で付け、一覧で出典ごとに
+  // 表示・まとめて削除する (予定表の改訂版が来たら出典ごと入れ直す)
+  source?: string;
+}
+
+// 特別イベントの表示設定 (全員共通、LS.specialEventDisplay)。
+// monthTypes = 講師の月間予定 (月間・週間・まとめて印刷・画像) に出す種別。
+export interface SpecialEventDisplay {
+  monthTypes: Record<SpecialEventType, boolean>;
 }
 
 // ─── Day schedule (特別時程) ─────────────────────────────────────
@@ -479,6 +493,7 @@ export interface ExportBundle {
   sessionOverrides?: SessionOverride[];
   examPrepSchedules?: ExamPrepSchedule[];
   specialEvents?: SpecialEvent[];
+  specialEventDisplay?: SpecialEventDisplay;
   extraLessons?: ExtraLesson[];
   daySchedules?: DaySchedule[];
   fuzokuPlan?: FuzokuPlan;

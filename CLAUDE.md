@@ -1877,6 +1877,67 @@ PrintButton (window.print) 系統で足りる (Excel 出力は作らない)。
 - 「有給・半休に取り込む」(管理者で adminData を読める人だけ) は常勤の公休を有給・半休へ
   (`calendarForLeave` → App の `importLeaveCalendar`。上の「講師の所属と有給・半休」節)
 
+## 特別イベントの種別と月間予定への表示 (2026-10-21 実装)
+
+行事の登録は **Claude が予定表 Excel を読んでまとめて入れる**前提。種別ごとに
+「講師の月間予定 (バイトに送る画像・まとめて印刷を含む) に出すか」を決める。
+
+- **種別は `constants/specialEvents.js` の `SPECIAL_EVENT_TYPES` の 1 か所** (schema v24):
+  school 🏫 学校の予定 / jukuTest 📝 塾のテスト / entrance 🎓 入試 / course 📚 講習 /
+  parents 👪 保護者会 / staff 🏢 社内 / other 📌 その他。`teacherMonth` が月間予定に
+  出すかの既定値 (学校の予定・入試だけ出さない)
+  - **種別を足すときは必ずこの配列に入れる**。`migrate.migrateSpecialEvents` は未知の
+    eventType を "other" に落とす。古い版を開いたままの端末も新しい種別を "other" に
+    潰すので、リリースノートに「全端末で再読み込み」を書く
+- **旧種別・タグの仮置きの寄せは `utils/specialEventTypes.upgradeSpecialEventType`**
+  (読み込みの migrate とバックアップの v24 移行が共有。冪等なので毎回の読み込みで通る)。
+  読み替えるのは旧種別 (trip/ceremony/festival/announcement) か other のときだけで、
+  仮置きのタグ (`SPECIAL_EVENT_TYPE_TAGS`: 公立中・塾テスト・入試・講習・保護者会) が
+  あればタグを優先し、**移したタグは消す**。学校名・部のタグ (「中学」「高松」) は残す
+  (`utils/teacherTags` の講師ごとの導出に使う)。**種別をタグに入れない** — other の
+  イベントに「講習」タグを付けると次の読み込みで course に寄る (意図どおり)。
+  テスト期間 (`examPeriods`) のタグは同じタグ空間だが触らない
+- **「講師の月間予定に出す種別」は全員共通の設定** (`LS.specialEventDisplay`、同期。
+  `{ monthTypes: { school: false, ... } }`)。RTDB は空の {} を消すので
+  `utils/specialEventDisplay.normalizeSpecialEventDisplay` を migrate に通して**全種別の
+  真偽値を必ず持たせる**。エクスポート / インポート (無ければ現状維持) / 初期化
+  (既定値に戻す) と database.rules.json に配線済み。切り替えは管理者だけ
+  (特別イベント管理の見出しの下の 1 行。閲覧者には表示のみ)
+- **判定は `EventVisibilityToggles.isSpecialEventVisibleInTeacherView` の 1 か所**
+  (種別の設定 → 閲覧者の表示トグル・タグの絞り込み)。効くのは**講師別の月間
+  (MonthView)・週間 (WeekView)** だけで、まとめて印刷・画像は MonthView を通るので揃う。
+  **イベントカレンダー・ダッシュボードは全種別を出す** (全体を見る画面)。各ビューで
+  種別の判定を書き起こさない
+  - イベントカレンダーの「種別」チップは閲覧者の端末の絞り込み (`eventVisibility` の
+    `specialTypeFilters`、タグと同じ「キー無し = ON / false = OFF」)。**読むのは
+    カレンダーだけ** (`isSpecialEventVisibleInCalendar`)。講師の月間予定は全員共通の
+    設定で決めるので、こちらを月間に効かせない。種別とタグのチップは別の行
+  - `DEFAULT_EVENT_VISIBILITY.special` (特別イベントの既定表示) は false のまま。
+    種別で絞れるようになったので既定 ON にするかは要相談
+- **期間が `SPECIAL_EVENT_BAND_MIN_DAYS` (8) 日以上のイベントは、講師別の月間では
+  日のセルに出さず月の上部の帯** (`.month-print-band`「この月: 📚 中3 直前ポイント
+  1/12〜3/4」) にまとめる (`utils/specialEventDisplay.bandSpecialEventsInRange`)。帯は
+  `.month-print-root` の中なので印刷・画像にも載る。紙面の規則は `printStyles.monthPaperCss`
+  (印刷と画像で共有)。週間は直近 2 週間のイベントを 1 件ずつ期間付きで並べるだけなので
+  帯は無い。イベントカレンダーは続きのバーのまま
+- **📋 まとめて登録** (特別イベント管理の中、管理者だけ。`SpecialEventBulkImportDialog`):
+  1 行目が見出しの TSV (`開始日 | 終了日 | 種別 | 名称 | 対象学年 | タグ | メモ` + 任意で
+  `出典`) を貼り、「確認」で行ごとに OK / エラー理由 / 重複 (同じ名称・開始日・終了日。
+  既定で飛ばす) を出してから 1 回の save (updater) で入れる。toast の「元に戻す」は
+  足した id だけ消す。パーサは `utils/specialEventImport` (純関数)。前半の
+  `parseTsvTable` / `parseFlexibleDate` (11/1 は年度から年を補う) / `parseGradeList` /
+  `splitList` は特別イベントに依存しないので、**休講・追加授業のまとめて登録はこれを
+  使って列の対応だけ書く**
+  - 任意の `source` (出典) を持てる。一覧で出典ごとに表示 (期間に関係なく全件) /
+    まとめて削除 (`useRemoveManyWithUndo`、cascade 無し) → 改訂版の予定表は「出典ごと
+    消して入れ直す」。逆向きの「📄 表として書き出す (TSV をコピー)」は貼り戻すと同じ
+    内容で読める形 (`specialEventsToTsv`)
+  - 入口は画面の中のボタンだけ (サイドバー・メインメニュー・Cmd+K には出していない。
+    「特別イベント」のセクションへはサイドバーから飛べる)。足すなら「サイドバーの導線」
+- 特別イベント管理の一覧は月ごとの見出し + 種別のチップ (件数は期間・出典で絞った後)
+- 未実装 (要相談): **対象学年での絞り込み** (その講師の現在の担当コマに対象学年が
+  1 つも無いイベントを月間予定に出さない。担当コマは時間割から導出し、使用履歴は使わない)
+
 ## Firebase 同期の「空」と「未初期化」 (2026-09-04 確定)
 
 RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノードごと消し**、
