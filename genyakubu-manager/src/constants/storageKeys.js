@@ -15,6 +15,9 @@ export const LS = {
   adjustments: "genyakubu-adjustments",
   timetables: "genyakubu-timetables",
   displayCutoff: "genyakubu-display-cutoff",
+  // 廃止 (2026-10-21)。ヘッダの時間割セレクタの端末ごとの選択だった。
+  // 「今の時間割」は日付から決める (utils/timetable.filterSlotsCurrentOn)。
+  // 古い端末に残った値を起動時・初期化で消すためだけに残してある
   activeTimetableId: "genyakubu-active-timetable",
   examPeriods: "genyakubu-exam-periods",
   teacherSubjects: "genyakubu-teacher-subjects",

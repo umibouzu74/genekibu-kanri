@@ -10,7 +10,9 @@ import { FieldError } from "./FieldError";
 import { MultiDateCalendar } from "./MultiDateCalendar";
 
 
-export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, activeTimetableId }) {
+// defaultTimetableId: 新しく作るコマの時間割の既定 (今の時間割。コースマスター
+// 管理で時間割を選んでいればその時間割)
+export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, defaultTimetableId }) {
   const formId = useId();
   const [f, setF] = useState(
     slot || {
@@ -22,7 +24,7 @@ export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, acti
       subj: "",
       teacher: "",
       note: "",
-      timetableId: activeTimetableId || 1,
+      timetableId: defaultTimetableId || 1,
     }
   );
   const [errors, setErrors] = useState({});

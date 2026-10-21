@@ -46,7 +46,11 @@ import { useToday } from "../../hooks/useToday";
 import { useDateKeyNav } from "../../hooks/useDateKeyNav";
 import { shiftDate } from "./dashboardHelpers";
 import { resolveSlotDaySchedule } from "../../utils/daySchedules";
-import { filterSlotsForDate, isSlotBeyondCutoff } from "../../utils/timetable";
+import {
+  filterSlotsForDate,
+  isSlotBeyondCutoff,
+  isSlotTimetableActiveOn,
+} from "../../utils/timetable";
 import { EVENT_KIND, EXAM_META, HOLIDAY_META } from "../../constants/eventKinds";
 import { makeEventHelpers } from "./dashboardHelpers";
 import { isCancelAdjustment } from "../../utils/slotCancel";
@@ -241,7 +245,6 @@ export function WeekView({
   onEdit,
   onDel,
   isAdmin,
-  allSlots,
   classSets,
   biweeklyAnchors,
   sessionOverrides,
@@ -298,12 +301,17 @@ export function WeekView({
 
   // 隔週スロットは「その週の実施側講師」のビューにだけ出す。判定は列の日付
   // (その曜日の実際の日付) で行う — 休講・テスト期間で週送りが止まる分も
-  // 他の画面と同じ答えになる
+  // 他の画面と同じ答えになる。
+  // どの時間割のコマを出すかも列の日付で決める (時間割の開始日・終了日)。
+  // 期切替の週は曜日ごとに前後の期が並び、週を送れば次の期のコマが見える。
+  // 以前はヘッダの時間割セレクタ (端末ごとの選択) で絞っていたため、
+  // 選択が前の期のままの端末では今週の列に前の期のコマが出ていた
   const ts = useMemo(
     () =>
       sortS(
         slots
           .filter((s) => isSlotForTeacher(s, teacher))
+          .filter((s) => isSlotTimetableActiveOn(s, weekDates[s.day] || weekBase, timetables))
           .filter(
             (s) =>
               !isBiweekly(s.note) ||
@@ -317,7 +325,7 @@ export function WeekView({
               )
           )
       ),
-    [teacher, slots, weekDates, weekBase, biweeklyAnchors, holidays, examPeriods]
+    [teacher, slots, weekDates, weekBase, timetables, biweeklyAnchors, holidays, examPeriods]
   );
   const byDay = useMemo(() => {
     const m = {};
@@ -366,7 +374,6 @@ export function WeekView({
   const { sessionCtx } = useSessionCtx({
     classSets,
     slots,
-    allSlots,
     displayCutoff,
     timetables,
     holidays,

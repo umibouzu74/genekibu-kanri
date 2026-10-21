@@ -23,7 +23,6 @@ export function StaffListTab({
   subjectsByCat,
   slots,
   timetables,
-  activeTimetableId,
   subs,
   holidays,
   examPeriods,
@@ -54,7 +53,6 @@ export function StaffListTab({
         staffNames: sortedPartTimeStaff.map((s) => s.name),
         slots,
         timetables,
-        activeTimetableId,
       });
       toasts.success(`出勤可能時間調査の Excel を出力しました (${sortedPartTimeStaff.length} 名分)`);
     } catch (e) {
