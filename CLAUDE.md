@@ -143,7 +143,7 @@ sensitivity: base) は **`utils/teacherKana.js` に集約**されており、
 - **`PrintButton` (`src/components/PrintButton.jsx`)** — メインドキュメントを
   そのまま `window.print()` する単純方式
   - 適用先: Dashboard / WeekView / EventCalendarView / ConfirmedSubsView /
-    MasterView / FuzokuPlanView (附属の授業予定)
+    MasterView / FuzokuPlanView (附属の授業予定) / YearCalendarView (年間カレンダー)
   - 仕上げは App.jsx 末尾のグローバル `@media print` と各ビュー自前の
     印刷 CSS だけで完結。**popup を使わない。**
 
@@ -1964,11 +1964,26 @@ PrintButton (window.print) 系統で足りる (Excel 出力は作らない)。
   `specialEventImport` の `parseTsvTable` / `parseFlexibleDate` / `buildImportedEvents` を使う。
   出典ごとにまとめて削除できる (改訂版は出典ごと入れ直す)。削除は cascade が無いので
   removeWithUndo / useRemoveManyWithUndo
+- 現役部の段のテスト期間は、授業を止めない期間に「[表示のみ]」、例外的に授業を行う日に
+  「📖 授業あり」を添える (イベントカレンダーと同じ言い方。止める期間と同じ見た目だと
+  その日は授業が無いと読める)
 - 週は日曜始まり (イベントカレンダー・講師の月間と同じ)。期間は 1 / 3 / 6 か月と年度。
   見ている期間・表示する段は sessionStorage (`SS_YEAR_CAL_KEY`)
+- **「年度」ボタンとまとめて登録の年度の既定は、今日ではなく見ている月の年度**
+  (3 月に来年度の予定表を貼ると、今日の年度では 1 年早く入る)。12 か月の表示では
+  ◀ / ▶ が 1 年ずつ動く。まとめて登録は日付に添えた曜日 (「4/8(水)」) が暦と
+  合わない行をエラーにする (`yobikoEvents.weekdayMismatch`。年度の取り違えに気付く)
+- 新しい id は**この画面を開いてから見た最大の id より後** (`allocId` / ダイアログの
+  `idFloor`)。消した直後に足すと消した id を使い回し、6 秒の「元に戻す」が何もしなく
+  なるため (removeWithUndo は同じ id があると戻さない)
+- バックアップの検証 (`schema.isYobikoEvent`) は形だけを見る (終了日の欠け・知らない
+  種別は `migrateYobikoEvents` が直す)。1 件のためにバックアップ全体を拒まない
 - 印刷は PrintButton (window.print) 系統。1 か月 = 1 ページ (`.year-cal-month + .year-cal-month`
   で改ページ)、週の途中で改ページしない (`<tbody>` 1 つ = 1 週)。塗りは紙面にも出す
-  (print-color-adjust)。段の見出し (予備校部 / 現役部) を左の列に出し、色だけに頼らない
+  (print-color-adjust)。段の見出し (予備校部 / 現役部) を左の列に出し、色だけに頼らない。
+  期間の続きの日を薄くするのは画面だけ (`.year-cal-cont`。紙面の小さい字をさらに薄く
+  しない)。紙面の見出しは表示中の段だけを書き、トップバーの 🖨 で刷ったときの印刷
+  ジョブ名は `data-print-title`
 
 ## Firebase 同期の「空」と「未初期化」 (2026-09-04 確定)
 

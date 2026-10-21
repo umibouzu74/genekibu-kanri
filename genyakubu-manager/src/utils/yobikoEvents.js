@@ -21,7 +21,8 @@ import {
   isYobikoDayMark,
   yobikoKindMeta,
 } from "../constants/yobikoEvents";
-import { isValidDateStr } from "./dateHelpers";
+import { WEEKDAYS } from "../constants/schools";
+import { isValidDateStr, parseLocalDate } from "./dateHelpers";
 import { parseFlexibleDate, parseTsvTable } from "./specialEventImport";
 
 const plain = (s) => String(s ?? "").trim();
@@ -33,12 +34,17 @@ export function yobikoEventLabel(ev) {
 
 /**
  * 読み込んだ値を正しい形に揃える (RTDB は空文字のキーを落とさないが、
- * 古い端末・手で直したバックアップでも崩れないように)。読めない行は捨てる
+ * 古い端末・手で直したバックアップでも崩れないように)。日付の読めない行は捨てる。
+ * id の無い行・重なった id には、今ある最大の次から振り直す (同じ id が 2 件あると
+ * 編集・削除が両方に効く)
  */
 export function migrateYobikoEvents(raw) {
   if (!Array.isArray(raw)) return [];
   const out = [];
-  raw.forEach((ev, i) => {
+  const used = new Set();
+  let nextId =
+    raw.reduce((max, ev) => (typeof ev?.id === "number" && ev.id > max ? ev.id : max), 0) + 1;
+  raw.forEach((ev) => {
     if (!ev || typeof ev !== "object") return;
     const startDate = typeof ev.startDate === "string" ? ev.startDate : "";
     if (!isValidDateStr(startDate)) return;
@@ -46,8 +52,10 @@ export function migrateYobikoEvents(raw) {
       typeof ev.endDate === "string" && isValidDateStr(ev.endDate) && ev.endDate >= startDate
         ? ev.endDate
         : startDate;
+    const id = typeof ev.id === "number" && !used.has(ev.id) ? ev.id : nextId++;
+    used.add(id);
     const rec = {
-      id: typeof ev.id === "number" ? ev.id : i + 1,
+      id,
       name: typeof ev.name === "string" ? ev.name : "",
       startDate,
       endDate,
@@ -105,7 +113,9 @@ export const YOBIKO_TSV_COLUMNS = Object.freeze({
   startDate: ["開始日", "開始", "日付"],
   endDate: ["終了日", "終了"],
   kind: ["種別"],
-  name: ["名称", "名前", "行事", "予定"],
+  // 「行事」「予定」は種別の値でもあるので見出しの別名にしない (見出しの無い表の
+  // 1 行目「3/19 | | 行事 | 終了式」が見出しに見えて、黙って 1 行消える)
+  name: ["名称", "名前"],
   memo: ["メモ", "備考"],
   source: ["出典"],
 });
@@ -144,6 +154,22 @@ export function parseYobikoKind(raw) {
 const dupKey = (ev) => `${plain(ev.name)}|${ev.kind}|${ev.startDate}|${ev.endDate}`;
 
 /**
+ * 日付に添えた曜日 (「4/8(水)」) が暦と合わなければ、その日の本当の曜日を返す。
+ * 曜日が書いてなければ / 合っていれば null。年度を取り違えた表 (来年度の予定表を
+ * 今年度のつもりで貼った) を、どの行も「OK」のまま 1 年ずれて登録しないように
+ */
+export function weekdayMismatch(raw, ds) {
+  const m = String(raw ?? "")
+    .normalize("NFKC")
+    .match(/\(\s*([日月火水木金土])(?:曜日?)?\s*\)\s*$/);
+  if (!m || !ds) return null;
+  const actual = WEEKDAYS[parseLocalDate(ds).getDay()];
+  return actual === m[1] ? null : actual;
+}
+
+const hasYear = (raw) => /\d{4}/.test(String(raw ?? "").normalize("NFKC"));
+
+/**
  * 貼り付けた表を読み、行ごとに OK / エラー / 重複 を判定する
  * (特別イベントのまとめて登録と同じ形。utils/specialEventImport)。
  *   existing: 登録済みの予備校部の予定 (同じ名称・種別・期間なら重複)
@@ -159,7 +185,26 @@ export function parseYobikoEventImport(text, { existing = [], fiscalYear, source
     if (!startDate) return fail(`開始日「${cells.startDate}」が読めません`);
     const endDate = cells.endDate ? parseFlexibleDate(cells.endDate, fiscalYear) : startDate;
     if (!endDate) return fail(`終了日「${cells.endDate}」が読めません`);
-    if (endDate < startDate) return fail("終了日が開始日より前です");
+    for (const [label, raw, ds] of [
+      ["開始日", cells.startDate, startDate],
+      ["終了日", cells.endDate, endDate],
+    ]) {
+      const actual = weekdayMismatch(raw, ds);
+      if (actual) {
+        return fail(`${label}「${raw}」の曜日が合いません (${ds} は ${actual}曜)。年度を確かめてください`);
+      }
+    }
+    if (endDate < startDate) {
+      // 年の無い「3/25〜4/5」は 3/25 を翌年、4/5 を年度の年に置くので逆転する
+      const month = (ds) => Number(ds.slice(5, 7));
+      const crossesFiscalYear =
+        !hasYear(cells.startDate) && !hasYear(cells.endDate) && month(startDate) <= 3 && month(endDate) >= 4;
+      return fail(
+        crossesFiscalYear
+          ? "終了日が開始日より前です (年度をまたぐ期間は 2027/4/5 のように年も書いてください)"
+          : "終了日が開始日より前です"
+      );
+    }
     const kind = parseYobikoKind(cells.kind);
     if (!kind) return fail(`種別「${cells.kind}」が読めません`);
     const name = plain(cells.name);
@@ -179,9 +224,11 @@ export function parseYobikoEventImport(text, { existing = [], fiscalYear, source
 
 // ─── 書き出し (表として点検する・貼り戻す) ─────────────────────────────
 
+// 読み取り (parseTsvTable) は "…" の中のタブ・改行を 1 つのセルとして読まないので、
+// 書き出しではタブ・改行を空白にしてから書く (貼り戻すと同じ内容で読めるように)
 const tsvCell = (v) => {
-  const s = String(v ?? "");
-  return /[\t\n"]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  const s = String(v ?? "").replace(/[\t\r\n]+/g, " ");
+  return s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
 /** 予備校部の予定を TSV に (貼り戻すと同じ内容で読める形)。出典があれば列を足す */

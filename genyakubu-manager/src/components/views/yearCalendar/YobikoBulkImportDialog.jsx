@@ -26,12 +26,22 @@ const STATUS_META = {
 // まとめて登録 (SpecialEventBulkImportDialog) と同じ流れ。登録は 1 回の save
 // (updater) で、toast の「元に戻す」は足した id だけ消す。
 // 予定表の写真・PDF は Claude に表 (この列の TSV) にしてもらって貼る運用。
-export function YobikoBulkImportDialog({ yobikoEvents, onSave, onClose }) {
+// 年度の既定は見ている月の年度 (defaultFiscalYear)。3 月に来年度の予定表を貼ると、
+// 今日の年度では 1 年早く入るため。id は idFloor 以上 (消した直後の id を使い回さない)
+export function YobikoBulkImportDialog({
+  yobikoEvents,
+  defaultFiscalYear,
+  idFloor = 1,
+  onSave,
+  onClose,
+}) {
   const toasts = useToasts();
   const ids = useId();
   const [text, setText] = useState("");
   const [source, setSource] = useState("");
-  const [fiscalYear, setFiscalYear] = useState(() => fiscalYearOf(fmtDate(new Date())));
+  const [fiscalYear, setFiscalYear] = useState(
+    () => defaultFiscalYear ?? fiscalYearOf(fmtDate(new Date()))
+  );
   const [preview, setPreview] = useState(null);
   const [includeDuplicates, setIncludeDuplicates] = useState(false);
 
@@ -56,7 +66,7 @@ export function YobikoBulkImportDialog({ yobikoEvents, onSave, onClose }) {
   const register = () => {
     if (!preview) return;
     const added = buildImportedEvents(preview.rows, {
-      startId: nextNumericId(yobikoEvents),
+      startId: Math.max(nextNumericId(yobikoEvents), idFloor),
       includeDuplicates,
     });
     if (added.length === 0) return;
@@ -65,7 +75,7 @@ export function YobikoBulkImportDialog({ yobikoEvents, onSave, onClose }) {
       // (undo は added の id を見るので、ここで書き換えた id で消える)
       const taken = new Set(prev.map((e) => e.id));
       if (added.some((e) => taken.has(e.id))) {
-        let id = nextNumericId(prev);
+        let id = Math.max(nextNumericId(prev), idFloor);
         for (const e of added) e.id = id++;
       }
       return [...prev, ...added];
@@ -88,13 +98,13 @@ export function YobikoBulkImportDialog({ yobikoEvents, onSave, onClose }) {
     <Modal title="📋 予備校部の予定をまとめて登録" onClose={onClose} width="min(880px, 100%)">
       <div style={{ fontSize: 12, color: "#555", lineHeight: 1.7, marginBottom: 10 }}>
         予定表の Excel・スプレッドシートから、<b>1 行目が見出し</b>の表をそのまま貼り付けます。
-        予定表が写真・PDF のときは、Claude に「年間カレンダーのまとめて登録の形 (TSV) にして」と頼むと表にできます。
         <br />
         列: <code>{YOBIKO_TSV_HEADER.join(" | ")}</code> (終了日が空なら単日。任意で「出典」の列)
         <br />
         種別: {YOBIKO_KIND_HINT} (空 = 行事)。休校日などは名称が空でも登録できます (日付の数字を塗る)
         <br />
-        日付: <code>2026-11-01</code> / <code>2026/11/1</code> / <code>11/1</code> (年は下の年度から補う。1〜3 月は翌年)
+        日付: <code>2026-11-01</code> / <code>2026/11/1</code> / <code>11/1</code> (年は下の年度から補う。1〜3 月は翌年)。
+        <code>11/1(日)</code> のように曜日を添えると、暦と合わない行をエラーにします (年度の取り違えに気付けます)
       </div>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>

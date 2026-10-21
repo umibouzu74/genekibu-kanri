@@ -78,6 +78,31 @@ describe("parseYobikoEventImport", () => {
     expect(rows.map((r) => r.status)).toEqual(["duplicate", "ok", "duplicate", "ok"]);
   });
 
+  it("見出しの無い表の 1 行目を見出しと取り違えない (「行事」は種別の値)", () => {
+    const { rows, header } = parseYobikoEventImport("3/19\t\t行事\t終了式\n10/9\t\t行事\tx\t備考あり", {
+      fiscalYear: 2026,
+    });
+    expect(header).toBe(false);
+    expect(rows.map((r) => r.event?.name)).toEqual(["終了式", "x"]);
+  });
+
+  it("日付に添えた曜日が暦と合わなければエラー (年度の取り違えに気付く)", () => {
+    // 2027 年度の予定表を 2026 年度として貼った: 4/8 は 2026 年なら水曜、2027 年なら木曜
+    const text = "開始日\t種別\t名称\n4/8(木)\t入寮日\t\n4/9（金）\t行事\tx";
+    const wrong = parseYobikoEventImport(text, { fiscalYear: 2026 });
+    expect(wrong.rows[0].error).toBe("開始日「4/8(木)」の曜日が合いません (2026-04-08 は 水曜)。年度を確かめてください");
+    const right = parseYobikoEventImport(text, { fiscalYear: 2027 });
+    expect(right.rows.map((r) => r.status)).toEqual(["ok", "ok"]);
+  });
+
+  it("年度をまたぐ期間を年なしで書いたら、年を書くよう案内する", () => {
+    const { rows } = parseYobikoEventImport("開始日\t終了日\t名称\n3/25\t4/5\tx\n3/25\t2027/4/5\tx", {
+      fiscalYear: 2026,
+    });
+    expect(rows[0].error).toMatch("年度をまたぐ期間は");
+    expect(rows[1].status).toBe("ok");
+  });
+
   it("出典の列があれば列の値を使う", () => {
     const { rows } = parseYobikoEventImport("開始日\t名称\t出典\n2026/10/1\tA\t改訂版", {
       fiscalYear: 2026,
@@ -96,10 +121,21 @@ describe("書き出し → 貼り戻し", () => {
     const tsv = yobikoEventsToTsv(events);
     expect(tsv.split("\n")[0]).toBe("開始日\t終了日\t種別\t名称\tメモ\t出典");
     const { rows } = parseYobikoEventImport(tsv, { fiscalYear: 2026 });
+    expect(rows.every((r) => r.status === "ok")).toBe(true);
     expect(rows.map((r) => r.event)).toEqual([
       { name: "", startDate: "2026-10-04", endDate: "2026-10-04", kind: "closed" },
       { name: "冬期講習Ⅰ期", startDate: "2026-12-24", endDate: "2026-12-27", kind: "event", memo: "❶〜❹", source: "S" },
     ]);
+  });
+});
+
+describe("書き出しのタブ・改行", () => {
+  it("セルの中のタブ・改行は空白にして書く (貼り戻すと列がずれない)", () => {
+    const tsv = yobikoEventsToTsv([
+      { id: 1, name: "a\tb", startDate: "2026-10-04", endDate: "2026-10-04", kind: "event", memo: "1行目\n2行目" },
+    ]);
+    const { rows } = parseYobikoEventImport(tsv, { fiscalYear: 2026 });
+    expect(rows[0].event).toMatchObject({ name: "a b", memo: "1行目 2行目" });
   });
 });
 
@@ -137,8 +173,17 @@ describe("migrateYobikoEvents", () => {
       ])
     ).toEqual([
       { id: 3, name: "A", startDate: "2026-10-01", endDate: "2026-10-01", kind: "event" },
-      { id: 2, name: "", startDate: "2026-10-02", endDate: "2026-10-02", kind: "closed", source: "S" },
+      { id: 4, name: "", startDate: "2026-10-02", endDate: "2026-10-02", kind: "closed", source: "S" },
     ]);
+  });
+
+  it("id の無い行・重なった id は最大の次から振り直す (1 件の編集が 2 件に効かない)", () => {
+    const out = migrateYobikoEvents([
+      { id: 2, startDate: "2026-10-01", kind: "event", name: "a" },
+      { startDate: "2026-10-02", kind: "event", name: "b" },
+      { id: 2, startDate: "2026-10-03", kind: "event", name: "c" },
+    ]);
+    expect(out.map((e) => e.id)).toEqual([2, 3, 4]);
   });
 });
 

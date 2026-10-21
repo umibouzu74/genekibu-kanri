@@ -69,6 +69,26 @@ describe("段の中身", () => {
     ]);
   });
 
+  it("現役部: 授業を止めないテスト期間・例外的に授業を行う日を見分けられる", () => {
+    const entries = genyakuEntries({
+      examPeriods: [
+        {
+          id: 1,
+          name: "特訓",
+          startDate: "2026-11-17",
+          endDate: "2026-11-20",
+          targetGrades: ["中3"],
+          classExceptions: [{ date: "2026-11-19" }],
+        },
+        { id: 2, name: "高校 期末", startDate: "2026-12-08", endDate: "2026-12-08", targetGrades: [], stopsClasses: false },
+      ],
+    });
+    expect(entries.map((e) => e.label)).toEqual(["特訓 (中3)", "高校 期末 [表示のみ]"]);
+    const m = spreadByDate(entries, "2026-11-01", "2026-12-31");
+    expect(m.get("2026-11-19")[0].note).toBe("📖 授業あり");
+    expect(m.get("2026-11-18")[0].note).toBe("");
+  });
+
   it("日付に広げる: 範囲で切り、始まり・終わりの印を付ける", () => {
     const m = spreadByDate(yobikoEntries(yobiko), "2026-12-25", "2026-12-31");
     expect([...m.keys()]).toEqual(["2026-12-25", "2026-12-26", "2026-12-27"]);

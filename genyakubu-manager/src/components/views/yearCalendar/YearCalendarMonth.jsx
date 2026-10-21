@@ -1,7 +1,7 @@
 import { DayNumberLink } from "../../DayNumberLink";
 import { YEAR_CAL_LANES } from "../../../constants/yobikoEvents";
 import { buildMonthWeeks, shortDate } from "../../../utils/yearCalendar";
-import { formatDateRange } from "../../../utils/dateHelpers";
+import { fmtDateWeekday, formatDateRange } from "../../../utils/dateHelpers";
 
 const WEEK_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 const SUN_COLOR = "#c03030";
@@ -142,7 +142,7 @@ function DateCell({ ds, dow, isToday, marks, onSelectDate, onAddYobiko }) {
             type="button"
             className="no-print inline-activate year-cal-add"
             onClick={() => onAddYobiko(ds)}
-            aria-label={`${ds} に予備校部の予定を追加`}
+            aria-label={`${fmtDateWeekday(ds)} に予備校部の予定を追加`}
             title="この日に予備校部の予定を追加"
           >
             ＋
@@ -157,6 +157,8 @@ function LaneCell({ ds, items, onEdit }) {
   if (!ds) return <td className="year-cal-out" />;
   return (
     <td className="year-cal-cell">
+      {/* 読み上げでは段の欄にも日付を (見出しは曜日と段だけで、何日か分からない) */}
+      {items?.length > 0 && <span className="year-cal-sr">{Number(ds.slice(8))}日 </span>}
       {(items || []).map((it) => (
         <LaneItem key={it.key} item={it} onEdit={onEdit} />
       ))}
@@ -166,9 +168,11 @@ function LaneCell({ ds, items, onEdit }) {
 
 function LaneItem({ item, onEdit }) {
   const multi = item.endDate !== item.startDate;
-  // 期間の始まりの日だけ「〜12/27」を添え、続きの日は薄く出す (同じ名前が
-  // 並んでも、どこから続いているかが分かるように)
-  const text = item.isStart && multi ? `${item.label} 〜${shortDate(item.endDate)}` : item.label;
+  // 期間の始まりの日だけ「〜12/27」を添え、続きの日は画面では薄く出す (同じ名前が
+  // 並んでも、どこから続いているかが分かるように)。その日だけの添え書き
+  // (テスト期間の「📖 授業あり」) は名前の後ろに
+  const base = item.isStart && multi ? `${item.label} 〜${shortDate(item.endDate)}` : item.label;
+  const text = item.note ? `${base} · ${item.note}` : base;
   const period = multi ? ` (${formatDateRange(item.startDate, item.endDate)})` : "";
   const title = `${item.title}${period}`;
   const style = {
@@ -184,7 +188,6 @@ function LaneItem({ item, onEdit }) {
     borderRadius: 2,
     background: item.meta.bg,
     color: item.meta.fg,
-    opacity: item.isStart ? 1 : 0.6,
     wordBreak: "break-word",
     fontFamily: "inherit",
     fontWeight: item.isStart ? 600 : 400,
@@ -193,7 +196,7 @@ function LaneItem({ item, onEdit }) {
     return (
       <button
         type="button"
-        className="inline-activate year-cal-item"
+        className={`inline-activate year-cal-item${item.isStart ? "" : " year-cal-cont"}`}
         onClick={() => onEdit(item)}
         title={`${title} — クリックで編集`}
         style={{ ...style, cursor: "pointer" }}
@@ -203,7 +206,7 @@ function LaneItem({ item, onEdit }) {
     );
   }
   return (
-    <span className="year-cal-item" title={title} style={style}>
+    <span className={`year-cal-item${item.isStart ? "" : " year-cal-cont"}`} title={title} style={style}>
       {text}
     </span>
   );

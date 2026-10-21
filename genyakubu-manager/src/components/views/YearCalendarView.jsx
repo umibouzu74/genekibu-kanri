@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useToday } from "../../hooks/useToday";
 import { useDateKeyNav } from "../../hooks/useDateKeyNav";
 import { useToasts } from "../../hooks/useToasts";
@@ -7,6 +7,7 @@ import { MonthNav } from "../MonthNav";
 import { PrintButton } from "../PrintButton";
 import { nextNumericId } from "../../utils/schema";
 import { formatDateRange } from "../../utils/dateHelpers";
+import { fiscalYearOf } from "../../utils/teacherAffiliations";
 import {
   fiscalYearStartYm,
   genyakuEntries,
@@ -38,8 +39,10 @@ import { YobikoBulkImportDialog } from "./yearCalendar/YobikoBulkImportDialog";
 // 予定を 1 枚で見る (2026-10-21)。予備校部の予定は utils/yobikoEvents
 // (この画面だけが読む)、現役部は休講・テスト期間・特別イベントを読むだけ。
 //
-// 期間は 1 / 3 / 6 か月と年度 (4 月〜3 月)。印刷は PrintButton (window.print)
-// 系統で、1 か月 = 1 ページ (2 か月目から改ページ)。
+// 期間は 1 / 3 / 6 か月と年度 (4 月〜3 月)。年度の表示では ◀ / ▶ が 1 年ずつ
+// 動く (前年度 / 次年度)。「年度」ボタン・まとめて登録の年度の既定は、今日では
+// なく**見ている月の年度** (3 月に来年度の予定表を入れる)。
+// 印刷は PrintButton (window.print) 系統で、1 か月 = 1 ページ (2 か月目から改ページ)。
 //
 // 予備校部の予定の登録・編集・削除は管理者だけ。削除は cascade が無いので
 // removeWithUndo。現役部の記録はクリックで「休講・テスト期間・イベント」の
@@ -110,10 +113,13 @@ export function YearCalendarView({
     [holidays, examPeriods, specialEvents, from, to]
   );
 
-  // ← / → で 1 か月ずつ、t で今月から (入力中・ダイアログ中は効かない)
-  const goPrev = () => setViewState((s) => ({ ym: shiftYm(s.ym, -1) }));
-  const goNext = () => setViewState((s) => ({ ym: shiftYm(s.ym, 1) }));
-  const goThisMonth = () => setViewState({ ym: todayYm });
+  // ← / → で前後へ (12 か月の表示は 1 年ずつ)、t で今月 (12 か月の表示は今年度) から。
+  // 入力中・ダイアログ中は効かない
+  const step = (s) => (s.count === 12 ? 12 : 1);
+  const goPrev = () => setViewState((s) => ({ ym: shiftYm(s.ym, -step(s)) }));
+  const goNext = () => setViewState((s) => ({ ym: shiftYm(s.ym, step(s)) }));
+  const goThisMonth = () =>
+    setViewState((s) => ({ ym: s.count === 12 ? fiscalYearStartYm(todayYm) : todayYm }));
   useDateKeyNav({ onPrev: goPrev, onNext: goNext, onToday: goThisMonth });
 
   const canEdit = isAdmin && !!onSaveYobikoEvents;
@@ -122,13 +128,24 @@ export function YearCalendarView({
   const removeWithUndo = useRemoveWithUndo({ list: yobikoEvents, save: onSaveYobikoEvents });
   const removeManyWithUndo = useRemoveManyWithUndo({ list: yobikoEvents, save: onSaveYobikoEvents });
 
+  // 新しい id は、この画面を開いてから見た最大の id より後にする。消した直後に
+  // 足すと消した id を使い回し、6 秒の「元に戻す」が「同じ id がある」として
+  // 何もしなくなるため (removeWithUndo は最新の一覧に同じ id があれば戻さない)
+  const maxIdSeen = useRef(0);
+  for (const e of yobikoEvents) if (e.id > maxIdSeen.current) maxIdSeen.current = e.id;
+  const allocId = (prev) => {
+    const id = Math.max(nextNumericId(prev), maxIdSeen.current + 1);
+    maxIdSeen.current = id;
+    return id;
+  };
+
   const submitDialog = (event) => {
     const editId = dialog?.event?.id;
     if (editId != null) {
       onSaveYobikoEvents((prev) => prev.map((e) => (e.id === editId ? { id: editId, ...event } : e)));
       toasts.success("予備校部の予定を更新しました");
     } else {
-      onSaveYobikoEvents((prev) => [...prev, { id: nextNumericId(prev), ...event }]);
+      onSaveYobikoEvents((prev) => [...prev, { id: allocId(prev), ...event }]);
       toasts.success("予備校部の予定を追加しました");
     }
     setDialog(null);
@@ -142,8 +159,14 @@ export function YearCalendarView({
   const [y1, m1] = months[months.length - 1].split("-").map(Number);
   const rangeLabel =
     count === 1 ? `${y0}年${m0}月` : y0 === y1 ? `${y0}年${m0}月〜${m1}月` : `${y0}年${m0}月〜${y1}年${m1}月`;
-  const fiscalStart = fiscalYearStartYm(todayYm);
+  // 「年度」= 見ている月の年度 (今日の年度ではない)
+  const fiscalStart = fiscalYearStartYm(ym);
   const isFiscalView = count === 12 && ym.endsWith("-04");
+  const viewedFiscalYear = fiscalYearOf(`${ym}-01`);
+  const laneCaption =
+    lanes.yobiko && lanes.genyaku
+      ? `上: ${YEAR_CAL_LANES.yobiko.label} / 下: ${YEAR_CAL_LANES.genyaku.label}`
+      : YEAR_CAL_LANES[lanes.yobiko ? "yobiko" : "genyaku"].label;
 
   return (
     <div className="year-cal-view">
@@ -160,7 +183,7 @@ export function YearCalendarView({
           onNext={goNext}
           onToday={goThisMonth}
           onPick={(v) => /^\d{4}-\d{2}$/.test(v) && setViewState({ ym: v })}
-          isCurrent={ym === todayYm}
+          isCurrent={ym === (count === 12 ? fiscalYearStartYm(todayYm) : todayYm)}
         />
         <div role="group" aria-label="表示する期間" style={{ display: "inline-flex", gap: 4 }}>
           {COUNT_OPTIONS.filter((n) => n !== 12).map((n) => (
@@ -177,8 +200,8 @@ export function YearCalendarView({
           <button
             type="button"
             aria-pressed={isFiscalView}
-            onClick={() => setViewState({ ym: isFiscalView ? ym : fiscalStart, count: 12 })}
-            title="4 月〜3 月の 12 か月"
+            onClick={() => setViewState({ ym: fiscalStart, count: 12 })}
+            title="見ている月の年度 (4 月〜3 月) の 12 か月。◀ / ▶ で前年度 / 次年度"
             style={{ ...S.btn(isFiscalView), fontSize: 11, padding: "4px 10px" }}
           >
             年度
@@ -201,9 +224,10 @@ export function YearCalendarView({
         <PrintButton />
       </div>
 
-      {/* 紙面だけの見出し (画面はトップバーの題と期間の操作で足りる) */}
-      <h2 className="year-cal-print-title">
-        {rangeLabel} (上: {YEAR_CAL_LANES.yobiko.label} / 下: {YEAR_CAL_LANES.genyaku.label})
+      {/* 紙面だけの見出し (画面はトップバーの題と期間の操作で足りる)。トップバーの
+          🖨 (popup) で刷ったときの印刷ジョブ名も data-print-title から */}
+      <h2 className="year-cal-print-title" data-print-title={`年間カレンダー ${rangeLabel}`}>
+        {rangeLabel} ({laneCaption})
       </h2>
       <Legend lanes={lanes} />
 
@@ -211,8 +235,8 @@ export function YearCalendarView({
         <div className="no-print" style={{ fontSize: 12, color: colors.inkMuted, margin: "6px 0 10px" }}>
           予備校部の予定はまだありません。
           {canEdit
-            ? "下の「📋 まとめて登録」で予定表を表 (TSV) にして貼り付けるか、日付の「＋」から 1 件ずつ入れられます。"
-            : "管理者が登録すると上の段に出ます。"}
+            ? "下の「📋 まとめて登録」に予定表 (1 行目が見出しの表) を貼り付けるか、日付の「＋」から 1 件ずつ入れてください。"
+            : "管理者が登録すると予備校部の段に出ます。"}
         </div>
       )}
 
@@ -265,7 +289,8 @@ export function YearCalendarView({
         />
       )}
 
-      {dialog && (
+      {/* 開いている間に管理者でなくなったら (別のタブでログアウト等) 閉じる */}
+      {dialog && canEdit && (
         <YobikoEventDialog
           event={dialog.event || null}
           initialDate={dialog.date || ""}
@@ -274,9 +299,11 @@ export function YearCalendarView({
           onClose={() => setDialog(null)}
         />
       )}
-      {bulkOpen && (
+      {bulkOpen && canEdit && (
         <YobikoBulkImportDialog
           yobikoEvents={yobikoEvents}
+          defaultFiscalYear={viewedFiscalYear}
+          idFloor={maxIdSeen.current + 1}
           onSave={onSaveYobikoEvents}
           onClose={() => setBulkOpen(false)}
         />
@@ -416,11 +443,11 @@ function YobikoEventPanel({
               <button
                 type="button"
                 onClick={() => onRemoveSource(source)}
-                aria-label={`出典「${source}」の予定を全部削除`}
-                title="この出典の予定を全部削除 (6 秒間は元に戻せます)。改訂版の予定表を入れ直すときに"
+                aria-label={`出典「${source}」の ${count} 件をまとめて削除`}
+                title="この出典の予定をまとめて削除します (6 秒間は元に戻せます)。改訂版の予定表を入れ直すときに使います"
                 style={{ ...S.btn(false), fontSize: 10, padding: "1px 8px", color: colors.danger }}
               >
-                全部削除
+                まとめて削除
               </button>
             </span>
           ))}
@@ -428,7 +455,7 @@ function YobikoEventPanel({
       )}
       <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 12, marginBottom: 6 }}>
         <input type="checkbox" checked={allPeriods} onChange={(e) => setAllPeriods(e.target.checked)} />
-        表示中の期間 ({rangeLabel}) の外も出す
+        表示中の期間 ({rangeLabel}) より前・後の予定も出す
       </label>
       {shown.length === 0 ? (
         <div style={{ fontSize: 12, color: colors.inkMuted }}>この期間の予備校部の予定はありません。</div>
@@ -544,6 +571,10 @@ const YEAR_CAL_CSS = `
 }
 .year-cal-daterow .year-cal-lane-head { background: #fafafa; }
 .year-cal-lane-genyaku td, .year-cal-lane-genyaku th { border-top: 2px solid #4a5260; }
+@media screen {
+  /* 期間の続きの日は薄く (紙面では薄くしない。小さい字がさらに読めなくなる) */
+  .year-cal-cont { opacity: .65; }
+}
 .year-cal-sr {
   position: absolute; width: 1px; height: 1px; overflow: hidden;
   clip: rect(0 0 0 0); white-space: nowrap;

@@ -1145,12 +1145,14 @@ describe("v24 → v25: yobikoEvents (予備校部の予定)", () => {
     expect(out).not.toHaveProperty("yobikoEvents");
   });
 
-  it("isYobikoEvent: 日の種別は名称なしで通し、種別・日付の崩れは弾く", () => {
+  it("isYobikoEvent: 形だけを見る (終了日の欠け・知らない種別は読み込みで直すので通す)", () => {
     expect(isYobikoEvent(rec)).toBe(true);
     expect(isYobikoEvent({ ...rec, kind: "event", name: "冬期講習Ⅰ期", endDate: "2026-12-27", memo: "❶", source: "S" })).toBe(true);
-    expect(isYobikoEvent({ ...rec, kind: "holiday" })).toBe(false);
+    expect(isYobikoEvent({ ...rec, kind: "holiday" })).toBe(true);
+    expect(isYobikoEvent({ ...rec, endDate: undefined })).toBe(true);
+    expect(isYobikoEvent({ ...rec, kind: undefined })).toBe(false);
     expect(isYobikoEvent({ ...rec, startDate: "10/4" })).toBe(false);
-    expect(isYobikoEvent({ ...rec, endDate: undefined })).toBe(false);
+    expect(isYobikoEvent({ ...rec, endDate: "12/27" })).toBe(false);
     expect(isYobikoEvent({ ...rec, name: undefined })).toBe(false);
     expect(isYobikoEvent({ ...rec, source: 1 })).toBe(false);
   });

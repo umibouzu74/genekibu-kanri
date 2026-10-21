@@ -5,7 +5,7 @@
 // 編集画面へ、閲覧者は見るだけ、を固定する。
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { YearCalendarView, SS_YEAR_CAL_KEY } from "./YearCalendarView";
 import { ToastProvider } from "../../hooks/useToasts";
 import { ConfirmProvider } from "../../hooks/useConfirm";
@@ -22,7 +22,15 @@ afterEach(() => {
 
 const holidays = [{ id: 1, date: "2026-11-03", label: "文化の日", scope: ["全部"], targetGrades: [], subjKeywords: [] }];
 const examPeriods = [
-  { id: 7, name: "テスト直前特訓", startDate: "2026-11-17", endDate: "2026-11-26", targetGrades: ["中1", "中2"] },
+  {
+    id: 7,
+    name: "テスト直前特訓",
+    startDate: "2026-11-17",
+    endDate: "2026-11-26",
+    targetGrades: ["中1", "中2"],
+    classExceptions: [{ date: "2026-11-21", grades: ["中2"] }],
+  },
+  { id: 8, name: "高校 期末", startDate: "2026-12-08", endDate: "2026-12-08", targetGrades: [], stopsClasses: false },
 ];
 const specialEvents = [
   { id: 3, name: "第2回保護者会", startDate: "2026-11-28", endDate: "2026-12-06", eventType: "parents", targetGrades: [], memo: "" },
@@ -34,8 +42,11 @@ const yobiko = [
   { id: 4, name: "進研模試(記述)", startDate: "2026-10-10", endDate: "2026-10-10", kind: "event", source: "予備校2026" },
 ];
 
-function Harness({ initial = yobiko, isAdmin = true, onSaveSpy, onEditGenyakuEvent }) {
+function Harness({ initial = yobiko, isAdmin = true, onSaveSpy, onEditGenyakuEvent, adminRef }) {
   const [list, setList] = useState(initial);
+  const [admin, setAdmin] = useState(isAdmin);
+  if (adminRef) adminRef.current = setAdmin;
+  isAdmin = admin;
   return (
     <YearCalendarView
       yobikoEvents={list}
@@ -94,9 +105,21 @@ describe("YearCalendarView", () => {
     expect(within(nov).getByText("文化の日")).toBeTruthy();
     expect(within(nov).getByText("テスト直前特訓 (中1・中2) 〜11/26")).toBeTruthy();
     expect(within(nov).getByText("👪 第2回保護者会 〜12/6")).toBeTruthy();
-    // 期間の続きの日も (薄く) 同じ名前で出る
+    // 期間の続きの日も (画面では薄く) 同じ名前で出る
     expect(within(month("2026年12月")).getAllByText("👪 第2回保護者会").length).toBe(6);
     expect(within(month("2026年12月")).getByText("冬期講習Ⅰ期 〜12/27")).toBeTruthy();
+    // テスト期間の例外日 (授業あり)・授業を止めないテスト期間は見分けが付く
+    expect(within(nov).getByText("テスト直前特訓 (中1・中2) · 📖 授業あり (中2)")).toBeTruthy();
+    expect(within(month("2026年12月")).getByText("高校 期末 [表示のみ]")).toBeTruthy();
+  });
+
+  it("紙面の見出しは表示中の段だけ。印刷ジョブ名は期間から", () => {
+    renderView();
+    const title = screen.getByRole("heading", { level: 2, hidden: true });
+    expect(title.textContent).toBe("2026年10月〜12月 (上: 予備校部 / 下: 現役部)");
+    expect(title.getAttribute("data-print-title")).toBe("年間カレンダー 2026年10月〜12月");
+    fireEvent.click(screen.getByRole("checkbox", { name: "現役部" }));
+    expect(title.textContent).toBe("2026年10月〜12月 (予備校部)");
   });
 
   it("段を隠せる (最後の 1 つは外せない)。期間と段は sessionStorage に残る", () => {
@@ -113,17 +136,33 @@ describe("YearCalendarView", () => {
     });
   });
 
-  it("年度ボタンで 4 月〜3 月の 12 か月", () => {
+  it("年度ボタンで 4 月〜3 月の 12 か月。◀ / ▶ は 1 年ずつ", () => {
     renderView();
     fireEvent.click(screen.getByRole("button", { name: "年度" }));
     expect(screen.getByText("2026年4月〜2027年3月")).toBeTruthy();
     expect(screen.getByRole("region", { name: "2027年3月" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "次の月" }));
+    expect(screen.getByText("2027年4月〜2028年3月")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "年度" }).getAttribute("aria-pressed")).toBe("true");
+    // 今月 (t) は 12 か月の表示では今年度へ
+    fireEvent.click(screen.getByRole("button", { name: "今月" }));
+    expect(screen.getByText("2026年4月〜2027年3月")).toBeTruthy();
+  });
+
+  it("「年度」は今日ではなく見ている月の年度 (3 月に来年度を見る)", () => {
+    sessionStorage.setItem(SS_YEAR_CAL_KEY, JSON.stringify({ ym: "2027-05", count: 1 }));
+    renderView();
+    fireEvent.click(screen.getByRole("button", { name: "年度" }));
+    expect(screen.getByText("2027年4月〜2028年3月")).toBeTruthy();
+    // まとめて登録の年度の既定も見ている年度
+    fireEvent.click(screen.getByRole("button", { name: "📋 まとめて登録" }));
+    expect(screen.getByLabelText("年度").value).toBe("2027");
   });
 
   it("管理者: 日付の「＋」から追加、一覧から削除して元に戻せる", () => {
     const spy = vi.fn();
     renderView({ onSaveSpy: spy });
-    fireEvent.click(screen.getByRole("button", { name: "2026-10-31 に予備校部の予定を追加" }));
+    fireEvent.click(screen.getByRole("button", { name: "2026-10-31 (土) に予備校部の予定を追加" }));
     const dialog = screen.getByRole("dialog", { name: "予備校部の予定を追加" });
     expect(within(dialog).getByLabelText("開始日").value).toBe("2026-10-31");
     // 行事は名称が要る
@@ -140,6 +179,30 @@ describe("YearCalendarView", () => {
     expect(within(month("2026年10月")).queryByText("進研模試(記述)")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "元に戻す" }));
     expect(within(month("2026年10月")).getByText("進研模試(記述)")).toBeTruthy();
+  });
+
+  it("管理者: 一番新しい予定を消してすぐ足しても、消した方を元に戻せる (id を使い回さない)", () => {
+    renderView();
+    const panel = screen.getByRole("region", { name: "予備校部の予定の登録" });
+    // id 4 (最大) を消す
+    fireEvent.click(within(panel).getByRole("button", { name: "「進研模試(記述)」を削除" }));
+    fireEvent.click(within(panel).getByRole("button", { name: "＋ 追加" }));
+    const dialog = screen.getByRole("dialog", { name: "予備校部の予定を追加" });
+    fireEvent.change(within(dialog).getByLabelText("開始日"), { target: { value: "2026-10-20" } });
+    fireEvent.change(within(dialog).getByLabelText("名称"), { target: { value: "新しい予定" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "追加" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "元に戻す" })[0]);
+    expect(within(month("2026年10月")).getByText("進研模試(記述)")).toBeTruthy();
+    expect(within(month("2026年10月")).getByText("新しい予定")).toBeTruthy();
+  });
+
+  it("開いている間に管理者でなくなったら、ダイアログを閉じる (保存できないまま残さない)", () => {
+    const adminRef = { current: null };
+    renderView({ adminRef });
+    fireEvent.click(screen.getByRole("button", { name: "📋 まとめて登録" }));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    act(() => adminRef.current(false));
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("管理者: 欄の予定をクリックすると編集。休校日は名称なしで登録できる", () => {

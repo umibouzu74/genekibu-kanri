@@ -65,9 +65,10 @@ export function buildMonthWeeks(ym) {
 }
 
 // ─── 段の中身 ───────────────────────────────────────────────────────
-// 1 件 = { key, kind, label, title, startDate, endDate, meta, source }
+// 1 件 = { key, kind, label, title, startDate, endDate, meta, source, dateNotes? }
 //   kind: 予備校部 = "yobiko"、現役部 = EVENT_KIND (holiday / exam / special)
 //   meta: 色 ({ bg, fg, accent })
+//   dateNotes: 日付 → その日だけ名前に添える文字 (テスト期間の「📖 授業あり」)
 
 /** 現役部の段に出す記録 (休講・テスト期間・特別イベント) */
 export function genyakuEntries({ holidays = [], examPeriods = [], specialEvents = [] } = {}) {
@@ -90,15 +91,33 @@ export function genyakuEntries({ holidays = [], examPeriods = [], specialEvents 
   for (const ep of examPeriods || []) {
     if (!ep?.startDate) continue;
     const target = describeExamTargetGrades(ep, { short: true });
+    // 授業を止めないテスト期間・例外的に授業を行う日は、イベントカレンダーと
+    // 同じ言い方で添える (止める期間と同じ見た目だと、その日は授業が無いと読める)
+    const displayOnly = ep.stopsClasses === false;
+    const dateNotes = {};
+    if (!displayOnly) {
+      for (const ex of ep.classExceptions || []) {
+        if (!ex?.date) continue;
+        const grades = ex.grades || [];
+        dateNotes[ex.date] = grades.length ? `📖 授業あり (${grades.join("・")})` : "📖 授業あり";
+      }
+    }
+    const name = target ? `${ep.name} (${target})` : ep.name;
     out.push({
       key: `e-${ep.id}`,
       kind: EVENT_KIND.EXAM,
-      label: target ? `${ep.name} (${target})` : ep.name,
-      title: `テスト期間: ${ep.name} / 対象: ${describeExamTargetGrades(ep)}`,
+      label: displayOnly ? `${name} [表示のみ]` : name,
+      title: [
+        `テスト期間: ${ep.name} / 対象: ${describeExamTargetGrades(ep)}`,
+        displayOnly ? "授業を休止しない (表示のみ)" : "",
+      ]
+        .filter(Boolean)
+        .join(" / "),
       startDate: ep.startDate,
       endDate: ep.endDate || ep.startDate,
       meta: EXAM_META,
       source: ep,
+      dateNotes,
     });
   }
   for (const ev of specialEvents || []) {
@@ -170,7 +189,12 @@ export function spreadByDate(entries, from, to) {
     const end = e.endDate > to ? to : e.endDate;
     for (const d of eachDateStrInRange(start, end)) {
       if (!m.has(d)) m.set(d, []);
-      m.get(d).push({ ...e, isStart: d === e.startDate, isEnd: d === e.endDate });
+      m.get(d).push({
+        ...e,
+        isStart: d === e.startDate,
+        isEnd: d === e.endDate,
+        note: e.dateNotes?.[d] || "",
+      });
     }
   }
   return m;

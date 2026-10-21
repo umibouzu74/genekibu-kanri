@@ -49,7 +49,6 @@ import type {
   YoteihyoMappingEntry,
 } from "../types";
 import { SPECIAL_EVENT_TYPE_BY_KEY } from "../constants/specialEvents";
-import { YOBIKO_EVENT_KIND_BY_KEY } from "../constants/yobikoEvents";
 import { upgradeSpecialEventTypes } from "./specialEventTypes";
 
 export const CURRENT_SCHEMA_VERSION = 25;
@@ -375,13 +374,16 @@ export function isOffsiteLesson(x: unknown): x is OffsiteLesson {
 }
 
 // 予備校部の予定 (年間カレンダーの上半分、utils/yobikoEvents)。日の種別
-// (休校日など) は名称が空でもよい
+// (休校日など) は名称が空でもよい。形だけを見る: 終了日の欠け (= 単日)・知らない
+// 種別 (後の版で足した種別) は読み込みの migrateYobikoEvents が直すので、1 件の
+// ためにバックアップ全体を拒まない
 export function isYobikoEvent(x: unknown): x is YobikoEvent {
   if (!isObject(x)) return false;
   if (!isNumber(x.id)) return false;
   if (!isString(x.name)) return false;
-  if (!isIsoDate(x.startDate) || !isIsoDate(x.endDate)) return false;
-  if (!isString(x.kind) || !YOBIKO_EVENT_KIND_BY_KEY.has(x.kind)) return false;
+  if (!isIsoDate(x.startDate)) return false;
+  if (x.endDate != null && x.endDate !== "" && !isIsoDate(x.endDate)) return false;
+  if (!isString(x.kind)) return false;
   if (x.memo !== undefined && !isString(x.memo)) return false;
   if (x.source !== undefined && !isString(x.source)) return false;
   return true;
