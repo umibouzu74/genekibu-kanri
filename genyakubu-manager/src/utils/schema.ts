@@ -44,13 +44,14 @@ import type {
   TeacherAffiliationChange,
   Timetable,
   ValidationResult,
+  YobikoEvent,
   YoteihyoConfirmation,
   YoteihyoMappingEntry,
 } from "../types";
 import { SPECIAL_EVENT_TYPE_BY_KEY } from "../constants/specialEvents";
 import { upgradeSpecialEventTypes } from "./specialEventTypes";
 
-export const CURRENT_SCHEMA_VERSION = 24;
+export const CURRENT_SCHEMA_VERSION = 25;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -369,6 +370,22 @@ export function isOffsiteLesson(x: unknown): x is OffsiteLesson {
   }
   if (x.keepOnHolidays !== undefined && typeof x.keepOnHolidays !== "boolean") return false;
   if (x.memo !== undefined && !isString(x.memo)) return false;
+  return true;
+}
+
+// 予備校部の予定 (年間カレンダーの上半分、utils/yobikoEvents)。日の種別
+// (休校日など) は名称が空でもよい。形だけを見る: 終了日の欠け (= 単日)・知らない
+// 種別 (後の版で足した種別) は読み込みの migrateYobikoEvents が直すので、1 件の
+// ためにバックアップ全体を拒まない
+export function isYobikoEvent(x: unknown): x is YobikoEvent {
+  if (!isObject(x)) return false;
+  if (!isNumber(x.id)) return false;
+  if (!isString(x.name)) return false;
+  if (!isIsoDate(x.startDate)) return false;
+  if (x.endDate != null && x.endDate !== "" && !isIsoDate(x.endDate)) return false;
+  if (!isString(x.kind)) return false;
+  if (x.memo !== undefined && !isString(x.memo)) return false;
+  if (x.source !== undefined && !isString(x.source)) return false;
   return true;
 }
 
@@ -698,6 +715,18 @@ export function validateExportBundle(
         ok: false,
         error: `offsiteLessons[${bad}] の形式が不正です`,
         path: `offsiteLessons[${bad}]`,
+      };
+  }
+
+  if (raw.yobikoEvents != null) {
+    if (!Array.isArray(raw.yobikoEvents))
+      return { ok: false, error: "yobikoEvents が配列ではありません" };
+    const bad = raw.yobikoEvents.findIndex((r: unknown) => !isYobikoEvent(r));
+    if (bad !== -1)
+      return {
+        ok: false,
+        error: `yobikoEvents[${bad}] の形式が不正です`,
+        path: `yobikoEvents[${bad}]`,
       };
   }
 
@@ -1131,6 +1160,9 @@ export function migrateExportBundle(raw: unknown): unknown {
   if (version < 24 && Array.isArray(bundle.specialEvents)) {
     bundle.specialEvents = upgradeSpecialEventTypes(bundle.specialEvents);
   }
+
+  // v24 → v25: yobikoEvents (予備校部の予定: 年間カレンダーの上半分。休校日・
+  //             出勤者休日・行事) を追加。既定値で埋めない (無ければ現状維持)。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;

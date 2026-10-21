@@ -95,6 +95,8 @@ export const SIDEBAR_MENU = [
     category: C.CALENDAR,
   },
   { key: VIEWS.EVENTS, icon: "🗒", label: "イベントカレンダー", category: C.CALENDAR },
+  // 予備校部と現役部の予定を 1 枚に (上 = 予備校部、下 = 現役部)
+  { key: VIEWS.YEAR_CAL, icon: "📆", label: "年間カレンダー", category: C.CALENDAR },
   // 学校の予定表 (Excel) を読んで、休講・振替の登録の漏れを探す
   { key: VIEWS.YOTEIHYO, icon: "📑", label: "予定表チェック", category: C.CALENDAR },
   // 附属コースの月間予定 (以前は Excel で管理していたもの)

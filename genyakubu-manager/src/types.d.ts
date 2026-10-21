@@ -215,6 +215,29 @@ export interface SpecialEvent {
   source?: string;
 }
 
+// ─── 予備校部の予定 (年間カレンダーの上半分) ───────────────────────
+// 予備校部の「年間行事予定表 (教員用)」を写す (utils/yobikoEvents)。
+// kind が日の種別 (休校日・出勤者休日・授業なしの登校日・入寮日) なら日付の
+// 数字を塗り、行事 (event) なら名称を欄に出す。現役部の SpecialEvent とは別に
+// 持つ (年間カレンダー以外の画面は読まない)。
+export type YobikoEventKind =
+  | "event" // 行事 (マークテスト・ダブル授業・冬期講習…)
+  | "closed" // 休校日
+  | "offMonFri" // 月〜金出勤者休日
+  | "offTueSat" // 火〜土出勤者休日
+  | "noClass" // 登校日で授業のない日
+  | "dorm"; // 入寮日
+
+export interface YobikoEvent {
+  id: number;
+  name: string; // 日の種別は空でもよい (表示は種別の名前)
+  startDate: string; // "YYYY-MM-DD"
+  endDate: string; // "YYYY-MM-DD" (単日は start と同じ)
+  kind: YobikoEventKind;
+  memo?: string;
+  source?: string; // 出典 (まとめて登録で付け、出典ごとに消せる)
+}
+
 // 特別イベントの表示設定 (全員共通、LS.specialEventDisplay)。
 // monthTypes = 講師の月間予定 (月間・週間・まとめて印刷・画像) に出す種別。
 export interface SpecialEventDisplay {
@@ -498,6 +521,7 @@ export interface ExportBundle {
   daySchedules?: DaySchedule[];
   fuzokuPlan?: FuzokuPlan;
   offsiteLessons?: OffsiteLesson[];
+  yobikoEvents?: YobikoEvent[];
   /** 管理者が書き出したときだけ含まれる */
   handoverNotes?: HandoverNote[];
   teacherAffiliations?: TeacherAffiliationChange[];

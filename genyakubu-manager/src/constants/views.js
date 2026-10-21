@@ -19,6 +19,8 @@ export const VIEWS = Object.freeze({
   SHARED: "shared",
   ABSENCE_FLOW: "absence-flow",
   EVENTS: "events",
+  // 年間カレンダー (1 日の欄を上 = 予備校部 / 下 = 現役部 に分けて並べる)
+  YEAR_CAL: "year-cal",
   BUILDER: "builder",
   REGULAR_BUILDER: "regular-builder",
   // 附属コース (水曜) の月間予定: 時程・科目・確認テスト・学校メモ

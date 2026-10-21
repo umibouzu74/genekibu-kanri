@@ -26,6 +26,7 @@ import { LS } from "../constants/storageKeys";
 import { isConfigured } from "../firebase/config";
 import { migrateHandoverNotes } from "../utils/handoverNotes";
 import { migrateOffsiteLessons } from "../utils/offsiteLessons";
+import { migrateYobikoEvents } from "../utils/yobikoEvents";
 import { migrateTeacherAffiliations } from "../utils/teacherAffiliations";
 import { EMPTY_STAFF_LEAVE, migrateStaffLeave } from "../utils/staffLeave";
 import { migrateCourseMapping } from "../utils/yoteihyo/courseMapping";
@@ -211,6 +212,12 @@ export function useAppData({ toasts, isAdmin }) {
     EMPTY_LIST,
     { migrate: migrateOffsiteLessons, onError: onStorageError }
   );
+  // 予備校部の予定 (年間カレンダーの上半分)。閲覧者も読める appData/
+  const [yobikoEvents, saveYobikoEvents] = useSyncedStorage(
+    LS.yobikoEvents,
+    EMPTY_LIST,
+    { migrate: migrateYobikoEvents, onError: onStorageError }
+  );
   // 講師の所属 (年度ごとの区分の変更)。組織の区分なので閲覧者も読める appData/
   const [teacherAffiliations, saveTeacherAffiliations] = useSyncedStorage(
     LS.teacherAffiliations,
@@ -305,6 +312,8 @@ export function useAppData({ toasts, isAdmin }) {
     saveFuzokuPlan,
     offsiteLessons,
     saveOffsiteLessons,
+    yobikoEvents,
+    saveYobikoEvents,
     handoverNotes,
     saveHandoverNotes,
     handoverEnabled,
