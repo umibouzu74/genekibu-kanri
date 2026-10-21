@@ -79,7 +79,6 @@ export function Dashboard({
   biweeklyAnchors = [],
   adjustments = [],
   sessionOverrides = [],
-  activeTimetableId,
   partTimeStaff,
   teacherKana = {},
   subjects,
@@ -293,7 +292,6 @@ export function Dashboard({
           biweeklyAnchors={biweeklyAnchors}
           isAdmin={false}
           timetables={timetables || []}
-          activeTimetableId={activeTimetableId}
           partTimeStaff={partTimeStaff || []}
           teacherKana={teacherKana}
           subjects={subjects || []}

@@ -18,7 +18,7 @@ import ExcelJS from "exceljs";
 import { DAYS } from "../constants/schools";
 import { timeToMin } from "./dateHelpers";
 import { isSlotForTeacher } from "./biweekly";
-import { filterSlotsByActiveTimetable } from "./timetable";
+import { describeCurrentTimetables, filterSlotsCurrentOn } from "./timetable";
 
 // ─── スタイル定義 (excelExport.ts の配色に合わせる) ─────────────────
 const ARGB_WHITE = "FFFFFFFF";
@@ -273,14 +273,13 @@ export function buildStaffSurveyWorkbook({ staffNames, slots, timetableLabel, da
 
 // ─── 公開エントリ (ブラウザでダウンロード) ──────────────────────────
 /**
- * 現在の時間割 (時間割スイッチャで選択中の timetable のコマ) から
- * バイト全員分の調査票を生成してダウンロードする。絞り込みは他ビューの
- * 「現在の時間割」表示と同じ filterSlotsByActiveTimetable に合わせる。
+ * 今の時間割 (今日の日付で決まる時間割のコマ) から バイト全員分の調査票を
+ * 生成してダウンロードする。絞り込みは他ビューの「今の時間割」表示と同じ
+ * filterSlotsCurrentOn に合わせる。
  * @param {{
  *   staffNames: string[],
  *   slots: import("../types").Slot[],
  *   timetables: import("../types").Timetable[],
- *   activeTimetableId: number,
  *   now?: Date,
  * }} params
  */
@@ -288,15 +287,16 @@ export async function downloadStaffSurveyExcel({
   staffNames,
   slots,
   timetables,
-  activeTimetableId,
   now = new Date(),
 }) {
   const pad = (n) => String(n).padStart(2, "0");
   const dateLabel = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
-  const currentSlots = filterSlotsByActiveTimetable(slots, timetables, activeTimetableId);
+  const currentSlots = filterSlotsCurrentOn(slots, timetables, dateLabel);
   const timetableLabel =
-    (timetables || []).find((t) => t.id === (activeTimetableId || 1))?.name || "現在の時間割";
+    describeCurrentTimetables(slots, timetables, dateLabel)
+      .timetables.map(({ timetable }) => timetable.name)
+      .join("・") || "現在の時間割";
 
   const workbook = buildStaffSurveyWorkbook({
     staffNames,

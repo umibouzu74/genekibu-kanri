@@ -64,7 +64,6 @@ export function useDataIO({
   staffLeave,
   yoteihyoCourseMapping,
   yoteihyoConfirmed,
-  activeTimetableId,
   saveSlots,
   saveHolidays,
   saveBiweeklyBase,
@@ -98,7 +97,6 @@ export function useDataIO({
   setShowDataMgr,
   setSelected,
   setView,
-  setActiveTimetableId,
   defaultView,
 }) {
   const toasts = useToasts();
@@ -143,9 +141,8 @@ export function useDataIO({
           // 予定表チェックの講座の対応・確認済みの食い違い
           yoteihyoMapping: yoteihyoCourseMapping,
           yoteihyoConfirmed,
-          // インポート先で timetables に対する選択が宙吊りにならないよう
-          // アクティブな時間割 ID も持ち出す
-          activeTimetableId,
+          // 表示する時間割は日付で決まるので、端末ごとの選択 (旧 activeTimetableId)
+          // は持ち出さない。旧バックアップに入っていても読み込みでは無視する
         },
         null,
         2
@@ -162,7 +159,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, specialEventDisplay, extraLessons, daySchedules, fuzokuPlan, offsiteLessons, handoverNotes, handoverEnabled, teacherAffiliations, staffLeave, yoteihyoCourseMapping, yoteihyoConfirmed, activeTimetableId, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, specialEventDisplay, extraLessons, daySchedules, fuzokuPlan, offsiteLessons, handoverNotes, handoverEnabled, teacherAffiliations, staffLeave, yoteihyoCourseMapping, yoteihyoConfirmed, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -283,16 +280,6 @@ export function useDataIO({
           if (d.teacherKana && typeof d.teacherKana === "object" && !Array.isArray(d.teacherKana) && saveTeacherKana) {
             saveTeacherKana(sanitizeKanaMap(d.teacherKana));
           }
-          // 取り込んだ timetables に存在する ID のときだけ復元する
-          // (無い/不正なら現状維持 — 旧バックアップには含まれない)
-          if (
-            setActiveTimetableId &&
-            typeof d.activeTimetableId === "number" &&
-            Array.isArray(d.timetables) &&
-            d.timetables.some((t) => t?.id === d.activeTimetableId)
-          ) {
-            setActiveTimetableId(d.activeTimetableId);
-          }
           toasts.success("データをインポートしました");
 
           // 古いバックアップには cascade 削除前の孤立データが含まれることが
@@ -369,7 +356,6 @@ export function useDataIO({
       saveYoteihyoCourseMapping,
       saveYoteihyoConfirmed,
       handoverEnabled,
-      setActiveTimetableId,
       setImporting,
       setShowDataMgr,
     ]
@@ -420,7 +406,6 @@ export function useDataIO({
     // 予定表チェックの講座の対応はコマの科目名を指すので、時間割と一緒にやり直す
     if (saveYoteihyoCourseMapping) saveYoteihyoCourseMapping([]);
     if (saveYoteihyoConfirmed) saveYoteihyoConfirmed([]);
-    if (setActiveTimetableId) setActiveTimetableId(1);
     setSelected(null);
     setView(defaultView);
     setShowDataMgr(false);
@@ -455,7 +440,6 @@ export function useDataIO({
     saveTeacherAffiliations,
     saveYoteihyoCourseMapping,
     saveYoteihyoConfirmed,
-    setActiveTimetableId,
     setSelected,
     setView,
     setShowDataMgr,

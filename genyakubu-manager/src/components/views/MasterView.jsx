@@ -8,10 +8,17 @@ import {
   normalizeMasterTab,
 } from "../../constants/masterTabs";
 import { getWeekType } from "../../utils/biweekly";
+import {
+  describeCurrentTimetables,
+  filterSlotsCurrentOn,
+  filterSlotsOfTimetable,
+} from "../../utils/timetable";
 import { useToasts } from "../../hooks/useToasts";
+import { useToday } from "../../hooks/useToday";
 import { ExcelGridView } from "./ExcelGridView";
 import { BiweeklyTab } from "./master/BiweeklyTab";
 import { MasterListTab } from "./master/MasterListTab";
+import { CURRENT_TIMETABLE, TimetableScopePicker } from "./master/TimetableScopePicker";
 import { PrintButton } from "../PrintButton";
 
 // 印刷系統: PrintButton (window.print() 直接呼び) を使う。
@@ -21,7 +28,7 @@ import { PrintButton } from "../PrintButton";
 
 // タブの定義は constants/masterTabs.js が正 (サイドバー / Cmd+K と共有)。
 // ここでラベルを書き起こすと導線側と食い違うので、必ず配列から作る。
-function TabSwitcher({ tab, setTab }) {
+function TabSwitcher({ tab, setTab, picker }) {
   return (
     <div
       className="no-print"
@@ -32,6 +39,7 @@ function TabSwitcher({ tab, setTab }) {
           {t.label}
         </button>
       ))}
+      {picker}
       <span style={{ marginLeft: "auto" }}>
         <PrintButton />
       </span>
@@ -48,7 +56,6 @@ export function MasterView({
   onSetBiweeklyAnchors,
   isAdmin,
   timetables,
-  activeTimetableId,
   saveSlots,
   partTimeStaff,
   teacherKana = {},
@@ -73,34 +80,60 @@ export function MasterView({
   const tab = normalizeMasterTab(tabProp ?? innerTab);
   const setTab = onTabChange ?? setInnerTab;
 
+  // 見る時間割 (この画面だけの選択。TimetableScopePicker)。既定は今の時間割
+  const today = useToday();
+  const [timetableChoice, setTimetableChoice] = useState(CURRENT_TIMETABLE);
+  const multiTimetable = Array.isArray(timetables) && timetables.length > 1;
+  // 選んだ時間割が (別の端末で) 消えたら今の時間割に戻す
+  const choice =
+    timetableChoice !== CURRENT_TIMETABLE &&
+    multiTimetable &&
+    timetables.some((t) => t.id === timetableChoice)
+      ? timetableChoice
+      : CURRENT_TIMETABLE;
+  const pinnedTimetableId = choice === CURRENT_TIMETABLE ? null : choice;
+  const scopedSlots = useMemo(() => {
+    if (!multiTimetable) return slots;
+    return pinnedTimetableId != null
+      ? filterSlotsOfTimetable(slots, pinnedTimetableId)
+      : filterSlotsCurrentOn(slots, timetables, today);
+  }, [multiTimetable, slots, timetables, pinnedTimetableId, today]);
+  const currentNames = useMemo(
+    () =>
+      multiTimetable
+        ? describeCurrentTimetables(slots, timetables, today)
+            .timetables.map(({ timetable }) => timetable.name)
+            .join("・")
+        : "",
+    [multiTimetable, slots, timetables, today]
+  );
+  const picker = (
+    <TimetableScopePicker
+      timetables={timetables}
+      value={choice}
+      onChange={setTimetableChoice}
+      currentNames={currentNames}
+      today={today}
+    />
+  );
+
   const grades = useMemo(
-    () => [...new Set(slots.map((s) => s.grade))].sort(),
-    [slots]
+    () => [...new Set(scopedSlots.map((s) => s.grade))].sort(),
+    [scopedSlots]
   );
 
   const filtered = useMemo(() => {
-    const r = slots.filter(
+    const r = scopedSlots.filter(
       (s) =>
         (!filterDay || s.day === filterDay) &&
         (!filterGrade || s.grade === filterGrade) &&
         // teacher/subj は Firebase 別クライアント書込等で欠落しうるので
         // null ガード (extraLessons 側の防御と同じ理由。無いと view ごと落ちる)
         (!filterTeacher || (s.teacher ?? "").includes(filterTeacher)) &&
-        (!filterSubj || (s.subj ?? "").includes(filterSubj)) &&
-        (!timetables ||
-          timetables.length <= 1 ||
-          (s.timetableId ?? 1) === (activeTimetableId || 1))
+        (!filterSubj || (s.subj ?? "").includes(filterSubj))
     );
     return sortS(r);
-  }, [
-    slots,
-    filterDay,
-    filterGrade,
-    filterTeacher,
-    filterSubj,
-    timetables,
-    activeTimetableId,
-  ]);
+  }, [scopedSlots, filterDay, filterGrade, filterTeacher, filterSubj]);
 
   const dayGroups = useMemo(() => {
     const activeDays = filterDay ? [filterDay] : DAYS;
@@ -114,7 +147,7 @@ export function MasterView({
   }, [filtered, filterDay]);
 
   const biweeklyGroups = useMemo(() => {
-    const alt = slots.filter((s) => s.note?.includes("隔週"));
+    const alt = scopedSlots.filter((s) => s.note?.includes("隔週"));
     const g = {};
     alt.forEach((s) => {
       const k = `${s.day}_${s.time}`;
@@ -126,7 +159,7 @@ export function MasterView({
       const dd = (di[a.day] ?? 99) - (di[b.day] ?? 99);
       return dd || timeToMin(a.time.split("-")[0]) - timeToMin(b.time.split("-")[0]);
     });
-  }, [slots]);
+  }, [scopedSlots]);
 
   const currentWeekType = useMemo(
     () => getWeekType(fmtDate(new Date()), biweeklyAnchors),
@@ -191,7 +224,7 @@ export function MasterView({
   if (tab === MASTER_TAB.EXCEL) {
     return (
       <div style={{ marginTop: 12 }}>
-        <TabSwitcher tab={tab} setTab={setTab} />
+        <TabSwitcher tab={tab} setTab={setTab} picker={picker} />
         <ExcelGridView
           slots={slots}
           saveSlots={saveSlots}
@@ -199,7 +232,7 @@ export function MasterView({
           biweeklyAnchors={biweeklyAnchors}
           isAdmin={isAdmin}
           timetables={timetables}
-          activeTimetableId={activeTimetableId}
+          timetableId={pinnedTimetableId}
           partTimeStaff={partTimeStaff}
           teacherKana={teacherKana}
           subjects={subjects}
@@ -217,7 +250,7 @@ export function MasterView({
   if (tab === MASTER_TAB.BIWEEKLY) {
     return (
       <div style={{ marginTop: 12 }}>
-        <TabSwitcher tab={tab} setTab={setTab} />
+        <TabSwitcher tab={tab} setTab={setTab} picker={picker} />
         <BiweeklyTab
           biweeklyAnchors={biweeklyAnchors}
           sortedAnchors={sortedAnchors}
@@ -239,9 +272,9 @@ export function MasterView({
 
   return (
     <div style={{ marginTop: 12 }}>
-      <TabSwitcher tab={tab} setTab={setTab} />
+      <TabSwitcher tab={tab} setTab={setTab} picker={picker} />
       <MasterListTab
-        slots={slots}
+        slots={scopedSlots}
         filtered={filtered}
         dayGroups={dayGroups}
         grades={grades}
@@ -253,7 +286,7 @@ export function MasterView({
         setFilterTeacher={setFilterTeacher}
         filterSubj={filterSubj}
         setFilterSubj={setFilterSubj}
-        onNew={onNew}
+        onNew={() => onNew?.(pinnedTimetableId)}
         onEdit={onEdit}
         onDel={onDel}
         isAdmin={isAdmin}

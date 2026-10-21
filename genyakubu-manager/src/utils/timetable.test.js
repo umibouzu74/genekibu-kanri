@@ -15,9 +15,12 @@ import {
   getCutoffGroupLabelsWithSlots,
   isTimetableInEffectOn,
   getTimetableStatusOn,
-  pickDefaultTimetableId,
-  resolveActiveTimetableId,
-  suggestTimetableSwitch,
+  currentTimetableIdsForGrade,
+  filterSlotsCurrentOn,
+  filterSlotsCurrentOrUpcoming,
+  filterSlotsOfTimetable,
+  describeCurrentTimetables,
+  defaultTimetableIdOn,
 } from "./timetable";
 
 describe("expandGradeRange", () => {
@@ -137,13 +140,16 @@ describe("filterSlotsForDate", () => {
   });
 });
 
-// ヘッダの時間割セレクタ: 期切替のあと端末が旧期を表示したままになるのを
-// 気付かせる / 選んでいない端末は今日有効な時間割を既定にする
-describe("時間割セレクタの状態と既定", () => {
+// 「今の時間割」: 日付を持たない画面 (講師一覧・週計・全講師一覧など) の時間割。
+// 端末ごとの選択は持たず、日付から決める (期切替のあと閲覧用の端末だけ旧期の
+// まま、が起きないように)
+describe("今の時間割 (日付から決める)", () => {
   const TERM1 = { id: 1, name: "1学期", type: "regular", startDate: "2026-04-01", endDate: "2026-08-31", grades: [] };
   const TERM2 = { id: 2, name: "2学期", type: "regular", startDate: "2026-09-01", endDate: null, grades: [] };
   const TERM3 = { id: 3, name: "3学期", type: "regular", startDate: "2027-01-08", endDate: null, grades: [] };
   const CHU3 = { id: 4, name: "中3 2学期", type: "regular", startDate: "2026-09-01", endDate: null, grades: ["中3"] };
+  const FUZOKU = { id: 5, name: "附属", type: "regular", startDate: null, endDate: null, grades: ["附中1", "附中2"] };
+  const slot = (id, grade, timetableId) => ({ id, day: "月", time: "19:00-20:20", grade, cls: "", room: "", subj: "英語", teacher: "A", note: "", timetableId });
 
   it("学年を絞った時間割も自分の対象学年で見るので、期間の内側なら有効", () => {
     // isTimetableActiveForDate を別の学年で引くと false になるケース
@@ -162,57 +168,99 @@ describe("時間割セレクタの状態と既定", () => {
     expect(getTimetableStatusOn(noBounds, "2026-09-26")).toBe("active");
   });
 
-  it("既定は今日有効な時間割の先頭。どれも有効でなければ従来どおり id=1", () => {
-    expect(pickDefaultTimetableId([TERM1, TERM2], "2026-09-26")).toBe(2);
-    expect(pickDefaultTimetableId([TERM1, TERM2], "2026-05-01")).toBe(1);
-    // 複数有効なら並び順の先頭 (どれが本命かは推測しない)
-    expect(pickDefaultTimetableId([TERM1, CHU3, TERM2], "2026-09-26")).toBe(4);
-    // 夏休みのように今日有効なものが無い → id=1
-    const summer = [{ ...TERM1, endDate: "2026-07-20" }, TERM2];
-    expect(pickDefaultTimetableId(summer, "2026-08-10")).toBe(1);
-    // id=1 が無ければ先頭 (セレクタの表示のフォールバックと揃える)
-    expect(pickDefaultTimetableId([{ ...TERM3, endDate: "2027-03-20" }, { ...TERM2, id: 5, endDate: "2026-12-20" }], "2027-04-01")).toBe(3);
-    expect(pickDefaultTimetableId([], "2026-09-26")).toBe(1);
+  it("その日その学年に有効な時間割 (境界日を含む)", () => {
+    expect(currentTimetableIdsForGrade([TERM1, TERM2], "中1", "2026-08-31")).toEqual([1]);
+    expect(currentTimetableIdsForGrade([TERM1, TERM2], "中1", "2026-09-01")).toEqual([2]);
+    // 学年を絞った時間割は対象学年だけ
+    expect(currentTimetableIdsForGrade([TERM1, CHU3, TERM2], "中3", "2026-09-26")).toEqual([4, 2]);
+    expect(currentTimetableIdsForGrade([TERM1, CHU3, TERM2], "中1", "2026-09-26")).toEqual([2]);
+    // 共通学年 ("中1-3") は範囲を広げて照合する
+    expect(currentTimetableIdsForGrade([TERM1, CHU3], "中1-3", "2026-09-26")).toEqual([4]);
   });
 
-  it("保存された選択は今日有効でなくても切り替えない", () => {
-    expect(resolveActiveTimetableId([TERM1, TERM2], 1, "2026-09-26")).toBe(1);
-    expect(resolveActiveTimetableId([TERM1, TERM2], 2, "2026-05-01")).toBe(2);
+  it("期と期の間は次に始まる時間割、無ければ最後に終わった時間割", () => {
+    const early = { ...TERM1, endDate: "2026-07-20" };
+    // 夏休み: 1学期は終わり 2学期はまだ → 2学期
+    expect(currentTimetableIdsForGrade([early, TERM2], "中1", "2026-08-10")).toEqual([2]);
+    // 次が無い (年度末で次の年度をまだ作っていない) → 最後に終わった時間割
+    const t2Ended = { ...TERM2, endDate: "2027-03-20" };
+    expect(currentTimetableIdsForGrade([early, t2Ended], "中1", "2027-03-30")).toEqual([2]);
+    // 開始前のものが複数あれば一番早いもの
+    expect(currentTimetableIdsForGrade([early, TERM3, TERM2], "中1", "2026-08-10")).toEqual([2]);
+    // 学年の合う時間割が 1 つも無ければ空
+    expect(currentTimetableIdsForGrade([CHU3], "高1", "2026-09-26")).toEqual([]);
   });
 
-  it("保存が無い / 保存した時間割がもう無いときは今日有効な時間割", () => {
-    expect(resolveActiveTimetableId([TERM1, TERM2], null, "2026-09-26")).toBe(2);
-    expect(resolveActiveTimetableId([TERM1, TERM2], undefined, "2026-05-01")).toBe(1);
-    // 別の端末で削除された時間割を指したままだと集計ビューが空になる
-    expect(resolveActiveTimetableId([TERM1, TERM2], 7, "2026-09-26")).toBe(2);
+  it("コマは学年ごとに今の時間割で絞る (保存された選択に左右されない)", () => {
+    const slots = [
+      slot(1, "中1", 1),
+      slot(2, "中1", 2),
+      slot(3, "中3", 1),
+      slot(4, "中3", 4),
+      slot(5, "附中1", 5),
+      // timetableId 無し = 既定の時間割 (id=1)
+      { ...slot(6, "高1"), timetableId: undefined },
+      // 削除済みの時間割のコマは出さない (日付で見る画面と同じ)
+      slot(7, "中1", 99),
+    ];
+    const tts = [TERM1, CHU3, TERM2, FUZOKU];
+    expect(filterSlotsCurrentOn(slots, tts, "2026-05-01").map((s) => s.id)).toEqual([1, 3, 5, 6]);
+    expect(filterSlotsCurrentOn(slots, tts, "2026-10-21").map((s) => s.id)).toEqual([2, 4, 5]);
+    // 時間割が 1 つ以下なら切り替わる相手が無いので絞らない (以前のセレクタと同じ)
+    expect(filterSlotsCurrentOn(slots, [], "2026-10-21")).toBe(slots);
+    expect(filterSlotsCurrentOn(slots, [TERM1], "2026-10-21")).toBe(slots);
   });
 
-  it("表示中が終了していて今日有効な時間割があれば、切り替え先を出す", () => {
-    const s = suggestTimetableSwitch([TERM1, TERM2], 1, "2026-09-26");
-    expect(s.current.id).toBe(1);
-    expect(s.status).toBe("ended");
-    expect(s.suggestion.id).toBe(2);
-    expect(s.otherCount).toBe(0);
+  it("講師の一覧用: 今の時間割 + これから始まる時間割 (終わった時間割は入れない)", () => {
+    const slots = [slot(1, "中1", 1), slot(2, "中1", 2), slot(3, "中3", 4), slot(4, "中1", 4)];
+    // 8/26: 1学期は有効、2学期・中3 2学期は 9/1 から
+    expect(
+      filterSlotsCurrentOrUpcoming(slots, [TERM1, CHU3, TERM2], "2026-08-26").map((s) => s.id)
+    ).toEqual([1, 2, 3]);
+    // 10/21: 1学期は終わっている
+    expect(
+      filterSlotsCurrentOrUpcoming(slots, [TERM1, CHU3, TERM2], "2026-10-21").map((s) => s.id)
+    ).toEqual([2, 3]);
   });
 
-  it("開始前の時間割を表示中でも出す (status = upcoming)", () => {
-    const s = suggestTimetableSwitch([TERM1, TERM2], 2, "2026-08-25");
-    expect(s.status).toBe("upcoming");
-    expect(s.suggestion.id).toBe(1);
+  it("選んだ時間割のコマ (timetableId 無しは id=1)", () => {
+    const slots = [slot(1, "中1", 2), { ...slot(2, "中1"), timetableId: undefined }];
+    expect(filterSlotsOfTimetable(slots, 1).map((s) => s.id)).toEqual([2]);
+    expect(filterSlotsOfTimetable(slots, 2).map((s) => s.id)).toEqual([1]);
   });
 
-  it("表示中が有効 / 他に有効な時間割が無いときは出さない", () => {
-    expect(suggestTimetableSwitch([TERM1, TERM2], 2, "2026-09-26")).toBeNull();
-    // 1学期終了後・3学期開始前で他に有効なものが無い
-    const t2Ended = { ...TERM2, endDate: "2026-12-20" };
-    expect(suggestTimetableSwitch([TERM1, t2Ended, TERM3], 2, "2026-12-28")).toBeNull();
-    expect(suggestTimetableSwitch([TERM1, TERM2], 99, "2026-09-26")).toBeNull();
+  it("内訳: コマを出している時間割と、同じ学年が 2 つの時間割から出る重なり", () => {
+    const slots = [slot(1, "中1", 1), slot(2, "中1", 2), slot(3, "附中1", 5)];
+    // 1学期に終了日が入っていない → 中1 が二重
+    const open1 = { ...TERM1, endDate: null };
+    const d = describeCurrentTimetables(slots, [open1, TERM2, FUZOKU], "2026-10-21");
+    expect(d.timetables.map((x) => [x.timetable.id, x.status])).toEqual([
+      [1, "active"],
+      [2, "active"],
+      [5, "active"],
+    ]);
+    expect(d.overlaps).toEqual([{ grade: "中1", timetables: [open1, TERM2] }]);
+    // 期切替で終了日が入っていれば重ならない。学年を分けた並走 (附属) も重なりではない
+    const ok = describeCurrentTimetables(slots, [TERM1, TERM2, FUZOKU], "2026-10-21");
+    expect(ok.timetables.map((x) => x.timetable.id)).toEqual([2, 5]);
+    expect(ok.overlaps).toEqual([]);
+    // 期と期の間は開始前の状態を返す
+    const gap = describeCurrentTimetables(slots, [{ ...TERM1, endDate: "2026-07-20" }, TERM2], "2026-08-10");
+    expect(gap.timetables.map((x) => [x.timetable.id, x.status])).toEqual([[2, "upcoming"]]);
   });
 
-  it("有効な候補が複数なら並び順の先頭 + 残りの件数", () => {
-    const s = suggestTimetableSwitch([TERM1, CHU3, TERM2], 1, "2026-09-26");
-    expect(s.suggestion.id).toBe(4);
-    expect(s.otherCount).toBe(1);
+  it("新しいコマの既定の時間割は今の時間割のうちコマの多いもの", () => {
+    const slots = [slot(1, "中1", 1), slot(2, "中1", 2)];
+    expect(defaultTimetableIdOn(slots, [TERM1, TERM2], "2026-10-21")).toBe(2);
+    expect(defaultTimetableIdOn(slots, [TERM1, TERM2], "2026-05-01")).toBe(1);
+    // 附属 (学年を分けた並走) が並び順で先でも、コマの多い本体の時間割を選ぶ
+    const withFuzoku = [slot(3, "附中1", 5), slot(4, "中1", 2), slot(5, "中2", 2)];
+    expect(defaultTimetableIdOn(withFuzoku, [FUZOKU, TERM1, TERM2], "2026-10-21")).toBe(2);
+    // 同数なら並び順の先頭
+    expect(defaultTimetableIdOn([slot(6, "附中1", 5), slot(7, "中1", 2)], [FUZOKU, TERM2], "2026-10-21")).toBe(5);
+    // コマがまだ無い時間割でも今日有効なら既定にする
+    expect(defaultTimetableIdOn([], [TERM1, TERM2], "2026-10-21")).toBe(2);
+    expect(defaultTimetableIdOn([], [], "2026-10-21")).toBe(1);
   });
 });
 

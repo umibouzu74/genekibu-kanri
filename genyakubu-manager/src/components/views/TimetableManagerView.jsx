@@ -607,13 +607,13 @@ function canSave(checks, ackKey) {
   return true;
 }
 
-// 同じ名前の時間割があるときの注意 (保存は妨げない。ヘッダの時間割セレクタで
-// 見分けが付かなくなるだけ)
+// 同じ名前の時間割があるときの注意 (保存は妨げない。ヘッダの「今の時間割」の
+// 表示やコースマスター管理の時間割の選択で見分けが付かなくなるだけ)
 function DuplicateNameNote({ duplicate }) {
   if (!duplicate) return null;
   return (
     <div role="status" style={{ fontSize: 11, color: "#8a4a00", marginTop: 2 }}>
-      ⚠ 同じ名前の時間割「{duplicate.name}」があります (時間割の切替で見分けにくくなります)
+      ⚠ 同じ名前の時間割「{duplicate.name}」があります (時間割の表示・選択で見分けにくくなります)
     </div>
   );
 }

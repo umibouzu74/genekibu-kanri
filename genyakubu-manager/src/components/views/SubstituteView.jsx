@@ -41,7 +41,6 @@ export function SubstituteView({
   subjects,
   subjectCategories,
   timetables,
-  activeTimetableId,
   biweeklyAnchors,
   teacherSubjects,
   classSets,
@@ -484,7 +483,6 @@ export function SubstituteView({
           biweeklyAnchors={biweeklyAnchors || []}
           isAdmin={isAdmin}
           timetables={timetables || []}
-          activeTimetableId={activeTimetableId}
           partTimeStaff={partTimeStaff}
           teacherKana={teacherKana}
           subjects={subjects || []}

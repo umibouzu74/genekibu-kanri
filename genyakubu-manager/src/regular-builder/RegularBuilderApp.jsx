@@ -80,9 +80,8 @@ export default function RegularBuilderApp({
   /** 期切替のオプション「表示期間設定も新しい期に合わせる」で書き戻す */
   saveDisplayCutoff,
   classSets,
-  /** ヘッダの時間割セレクタ。期切替の反映後にここを新しい時間割へ向ける */
-  activeTimetableId,
-  onActivateTimetable,
+  /** 今の時間割 (反映ダイアログの期切替で既定の「前の時間割」) */
+  defaultTimetableId,
   /** 反映 (置き換え) で消えたコマに紐づく本体データの後始末 (App.jsx) */
   onSlotsReflected,
   isAdmin,
@@ -1941,8 +1940,7 @@ export default function RegularBuilderApp({
           displayCutoff={displayCutoff}
           saveDisplayCutoff={saveDisplayCutoff}
           classSets={classSets}
-          activeTimetableId={activeTimetableId}
-          onActivateTimetable={onActivateTimetable}
+          defaultTimetableId={defaultTimetableId}
           onSlotsReflected={onSlotsReflected}
           onClose={() => setShowReflect(false)}
         />

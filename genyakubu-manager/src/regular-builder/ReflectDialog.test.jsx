@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-// 反映ダイアログの期切替 (1学期 → 2学期)。表示が切り替わるには
-//   ① 新時間割の開始日 + 旧時間割の終了日 (日付ベースのビュー)
-//   ② ヘッダの時間割セレクタ (集計ベースのビュー)
-// の両方が要るので、その配線が外れていないことを画面から固定する。
+// 反映ダイアログの期切替 (1学期 → 2学期)。本体の表示はどの画面も時間割の
+// 開始日・終了日で決まる (日付を持たない画面も今日の日付で「今の時間割」を
+// 決める) ので、新時間割の開始日 + 旧時間割の終了日が揃って入ることを
+// 画面から固定する。端末ごとの表示の切替 (旧ヘッダの時間割セレクタ) は無い。
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ReflectDialog } from "./ReflectDialog";
@@ -20,7 +20,6 @@ const TIMETABLES = [
 function renderDialog(props = {}) {
   const saveTimetables = vi.fn();
   const saveSlots = vi.fn();
-  const onActivateTimetable = vi.fn();
   const saveDisplayCutoff = vi.fn();
   const { container } = render(
     <ToastProvider render={() => null}>
@@ -32,9 +31,8 @@ function renderDialog(props = {}) {
           saveTimetables={saveTimetables}
           saveSlots={saveSlots}
           saveProject={() => {}}
-          activeTimetableId={1}
+          defaultTimetableId={1}
           saveDisplayCutoff={saveDisplayCutoff}
-          onActivateTimetable={onActivateTimetable}
           onClose={() => {}}
           {...props}
         />
@@ -42,13 +40,11 @@ function renderDialog(props = {}) {
     </ToastProvider>
   );
   const dates = () => [...container.querySelectorAll('input[type="date"]')];
-  return { saveTimetables, saveSlots, onActivateTimetable, saveDisplayCutoff, dates };
+  return { saveTimetables, saveSlots, saveDisplayCutoff, dates };
 }
 
 const switchCheckbox = () =>
   screen.getByRole("checkbox", { name: /期切替として反映する/ });
-const activateCheckbox = () =>
-  screen.getByRole("checkbox", { name: /表示中の時間割を/ });
 
 describe("ReflectDialog (期切替)", () => {
   it("切替日を入れると旧時間割の終了日 (前日) を予告する", () => {
@@ -58,12 +54,12 @@ describe("ReflectDialog (期切替)", () => {
     expect(
       screen.getByText(/終了日を 2026-08-31 に設定します/)
     ).toBeInTheDocument();
-    // 期切替では表示の追従も既定でオン
-    expect(activateCheckbox()).toBeChecked();
+    // 端末ごとに表示を切り替える選択肢はもう無い (日付で自動的に切り替わる)
+    expect(screen.queryByRole("checkbox", { name: /表示中の時間割を/ })).toBeNull();
   });
 
-  it("実行すると新時間割の追加・旧時間割の終了・表示の切替が揃って起きる", async () => {
-    const { saveTimetables, saveSlots, onActivateTimetable, dates } = renderDialog();
+  it("実行すると新時間割の追加と旧時間割の終了が揃って起きる", async () => {
+    const { saveTimetables, saveSlots, dates } = renderDialog();
     fireEvent.click(switchCheckbox());
     fireEvent.change(dates()[0], { target: { value: "2026-09-01" } });
     fireEvent.click(screen.getByRole("button", { name: "切り替える" }));
@@ -76,7 +72,6 @@ describe("ReflectDialog (期切替)", () => {
     expect(saved[1]).toMatchObject({ name: "2026 2学期", startDate: "2026-09-01" });
     // 旧時間割のコマは消さない
     expect(saveSlots.mock.calls[0][0]).toHaveLength(2);
-    expect(onActivateTimetable).toHaveBeenCalledWith(2);
   });
 
   it("切替日が無いと実行できない", () => {
@@ -168,14 +163,12 @@ describe("ReflectDialog (期切替)", () => {
   });
 
   it("期切替を使わなければ旧時間割に触らない", async () => {
-    const { saveTimetables, onActivateTimetable, dates } = renderDialog();
+    const { saveTimetables, dates } = renderDialog();
     fireEvent.change(dates()[0], { target: { value: "2026-09-01" } });
     fireEvent.click(screen.getByRole("button", { name: "反映する" }));
 
     await waitFor(() => expect(saveTimetables).toHaveBeenCalled());
     expect(saveTimetables.mock.calls[0][0][0]).toEqual(TIMETABLES[0]);
-    // 表示の追従は既定オフ (明示的に選んだときだけ切り替える)
-    expect(onActivateTimetable).not.toHaveBeenCalled();
   });
 });
 

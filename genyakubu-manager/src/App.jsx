@@ -39,7 +39,11 @@ import { useTimetablesCrud } from "./hooks/useTimetablesCrud";
 import { useStaffCrud } from "./hooks/useStaffCrud";
 import { useExamPrepSchedulesCrud } from "./hooks/useExamPrepSchedulesCrud";
 import { useDataIO } from "./hooks/useDataIO";
-import { filterSlotsByActiveTimetable, resolveActiveTimetableId } from "./utils/timetable";
+import {
+  defaultTimetableIdOn,
+  filterSlotsCurrentOn,
+  filterSlotsCurrentOrUpcoming,
+} from "./utils/timetable";
 import { useToday } from "./hooks/useToday";
 import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
 import { visibilityForTeacher } from "./utils/teacherTags";
@@ -81,7 +85,8 @@ import "./styles/appShell.css";
 import { Modal } from "./components/Modal";
 import { SlotForm } from "./components/SlotForm";
 import { Sidebar } from "./components/Sidebar";
-import { TimetableSelector } from "./components/TimetableSelector";
+import { CurrentTimetableBadge } from "./components/CurrentTimetableBadge";
+import { TIMETABLE_SECTION } from "./constants/timetableSections";
 
 import { Dashboard } from "./components/views/Dashboard";
 import { AllView } from "./components/views/AllView";
@@ -478,38 +483,26 @@ export default function App() {
   const eventNewTokenRef = useRef(0);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
-  // ヘッダの時間割セレクタ = 集計ベースのビュー (週間・月間・一覧など) の
-  // 「現在の時間割」。選択は端末ごとに localStorage へ保存する。
-  // null = この端末ではまだ選んでいない (保存が無い)。そのときは固定の id=1
-  // ではなく今日有効な時間割を表示する (utils/timetable.resolveActiveTimetableId)。
-  // この既定は保存せず毎回導出する — 選んでいない端末は期切替の後も今の期に
-  // 追従し、時間割が Firebase から後で届いても初期化時の値に固まらない。
-  // 保存された選択は今日有効でなくても勝手に切り替えない (選んだのはその
-  // 端末の人。気付かせるのはセレクタの注意書きの役目)。
-  const [savedTimetableId, setSavedTimetableId] = useState(() => {
-    try {
-      const raw = localStorage.getItem(LS.activeTimetableId);
-      const n = raw == null ? NaN : Number(raw);
-      return Number.isFinite(n) && n > 0 ? n : null;
-    } catch {
-      return null;
-    }
-  });
   const todayStr = useToday();
-  const activeTimetableId = useMemo(
-    () => resolveActiveTimetableId(timetables, savedTimetableId, todayStr),
-    [timetables, savedTimetableId, todayStr]
-  );
-
-  const changeActiveTimetable = useCallback((id) => {
-    setSavedTimetableId(id);
-    try { localStorage.setItem(LS.activeTimetableId, String(id)); } catch { /* quota */ }
-  }, []);
-  // 表示中の時間割を削除したら「選んでいない」に戻す (今日有効な時間割へ
-  // フォールバックする。以前は id=1 を保存していた)
-  const clearActiveTimetable = useCallback(() => {
-    setSavedTimetableId(null);
+  // 「今の時間割」(週計・全講師一覧・タイムテーブルの通常表示など、日付を
+  // 持たない画面の時間割) は今日の日付から決める
+  // (utils/timetable.filterSlotsCurrentOn)。以前はヘッダのセレクタで端末ごとに
+  // 選んで localStorage に覚えていたため、期切替のあと閲覧用の端末だけ前の期の
+  // まま、が起きた (2026-10-21)。古い端末に残った選択はここで消す。
+  useEffect(() => {
     try { localStorage.removeItem(LS.activeTimetableId); } catch { /* private mode 等 */ }
+  }, []);
+  // 新しく作るコマの既定の時間割 (コマの追加・反映ダイアログの「前の時間割」)
+  const currentTimetableId = useMemo(
+    () => defaultTimetableIdOn(slots, timetables, todayStr),
+    [slots, timetables, todayStr]
+  );
+  // コースマスター管理で時間割を選んでから「＋ 追加」したときの時間割。
+  // それ以外の「＋ コマ追加」は今の時間割 (null)
+  const [newSlotTimetableId, setNewSlotTimetableId] = useState(null);
+  const openNewSlot = useCallback((timetableId) => {
+    setNewSlotTimetableId(timetableId ?? null);
+    setEditSlot("new");
   }, []);
 
   // ─── Runtime migration: biweeklyBase → biweeklyAnchors ─────────
@@ -564,9 +557,6 @@ export default function App() {
   const ttCrud = useTimetablesCrud({
     timetables, saveTimetables, slots, saveSlots,
     classSets, saveClassSets,
-    onRemoveActive: useCallback((deletedId) => {
-      if (activeTimetableId === deletedId) clearActiveTimetable();
-    }, [activeTimetableId, clearActiveTimetable]),
   });
   const adjCrud = useAdjustmentsCrud({ adjustments, saveAdjustments });
 
@@ -619,24 +609,29 @@ export default function App() {
   // (以前は 40 個の名前を並べていた)
   const dataIO = useDataIO({
     ...appData,
-    activeTimetableId,
     lsKeys: LS,
     setImporting,
     setShowDataMgr,
     setSelected,
     setView,
-    // インポート / 初期化は従来どおり state だけを差し替える (localStorage には
-    // 書かない。初期化は保存キーを消した後に 1 を入れている)
-    setActiveTimetableId: setSavedTimetableId,
     defaultView: START_VIEW,
   });
 
-  // Slots filtered by active timetable (for aggregate views that show
-  // the "current" timetable rather than a specific date).
+  // 今の時間割のコマ (日付を持たない画面用。サイドバーの講師ごとのコマ数・
+  // 講師の週計・全講師一覧)。日付を持つ画面 (ダッシュボード・月間・週間) は
+  // 全コマを渡し、画面の側で日ごとに時間割の有効期間を見る。
+  const currentSlots = useMemo(
+    () => filterSlotsCurrentOn(slots, timetables, todayStr),
+    [slots, timetables, todayStr]
+  );
+  // 講師の名前を並べる一覧 (サイドバー・まとめて印刷・講師ごとのタグの導出) は
+  // これから始まる時間割の講師も入れる。期切替は切替日より前に反映するので、
+  // その間も次の期から入る講師の月間を開いたり翌月の予定を刷ったりできるように。
+  // コマ数を数える用途には使わない (切替前は 2 つの期を数えてしまう)。
   // selectTeacher のタグ導出でも参照するため Navigation より前に置く。
-  const ttFilteredSlots = useMemo(
-    () => filterSlotsByActiveTimetable(slots, timetables, activeTimetableId),
-    [slots, timetables, activeTimetableId]
+  const rosterSlots = useMemo(
+    () => filterSlotsCurrentOrUpcoming(slots, timetables, todayStr),
+    [slots, timetables, todayStr]
   );
 
   // ─── Navigation / teacher selection ─────────────────────────────
@@ -654,10 +649,10 @@ export default function App() {
       visibilityForTeacher({
         visibility: base,
         teacher: t,
-        slots: ttFilteredSlots,
+        slots: rosterSlots,
         tags: availableTags,
       }),
-    [ttFilteredSlots, availableTags]
+    [rosterSlots, availableTags]
   );
   // ─── 欠勤組み換えの下書きを守るビュー移動ガード ─────────────────
   // AbsenceWorkflowView は lazy で、ビューを離れるとアンマウントされて
@@ -971,7 +966,7 @@ export default function App() {
   // 講師の所属 (今年度) で分けている端末では、現役部 常勤 → 現役部 非常勤 →
   // バイト → 予備校部 (教科別) の順に並べる
   const allTeacherGroups = useTeacherGroups({
-    slots: ttFilteredSlots,
+    slots: rosterSlots,
     partTimeStaff,
     subjects,
     teacherKana,
@@ -997,14 +992,14 @@ export default function App() {
     if (!selected) return { total: 0, byDay: {} };
     const byDay = {};
     let total = 0;
-    for (const s of ttFilteredSlots) {
+    for (const s of currentSlots) {
       if (!isSlotForTeacher(s, selected)) continue;
       const w = slotWeight(s.note);
       byDay[s.day] = (byDay[s.day] || 0) + w;
       total += w;
     }
     return { total, byDay };
-  }, [ttFilteredSlots, selected]);
+  }, [currentSlots, selected]);
   const selSlotCount = selDayCounts.total;
 
   // ─── Print ──────────────────────────────────────────────────────
@@ -1176,7 +1171,9 @@ export default function App() {
         canUseAdminData={handoverEnabled}
         teacherGroups={allTeacherGroups}
         subjectCategories={subjectCategories}
-        slots={slots}
+        /* 講師名の横のコマ数は今の時間割で数える (以前は全時間割のコマを
+           数えていたため、期切替の後は前の期の分まで足されていた) */
+        slots={currentSlots}
         subs={subs}
         isAdmin={isAdmin}
         onSignIn={signIn}
@@ -1245,16 +1242,16 @@ export default function App() {
             )}
             {selected && isAdmin && (
               <button
-                onClick={() => setEditSlot("new")}
+                onClick={() => openNewSlot(null)}
                 style={{ ...S.btn(false), background: "#e8f5e8", color: "#2a7a2a" }}
               >
                 ＋ コマ追加
               </button>
             )}
-            <TimetableSelector
+            <CurrentTimetableBadge
+              slots={slots}
               timetables={timetables}
-              activeTimetableId={activeTimetableId}
-              onChange={changeActiveTimetable}
+              onOpenTimetables={() => openTimetableSection(TIMETABLE_SECTION.LIST)}
             />
             {/* §M: 講習時間割作成 (BUILDER) はツールバー自前の 🖨️
                 (window.print() 系統) を持つ。popup 系のこのボタンは builder の
@@ -1396,7 +1393,6 @@ export default function App() {
               biweeklyAnchors={biweeklyAnchors}
               adjustments={adjustments}
               sessionOverrides={sessionOverrides}
-              activeTimetableId={activeTimetableId}
               partTimeStaff={partTimeStaff}
               teacherKana={teacherKana}
               subjects={subjects}
@@ -1459,10 +1455,10 @@ export default function App() {
             </nav>
           )}
           {view === VIEWS.ALL && !selected && (
-            <AllView slots={ttFilteredSlots} onSelectTeacher={selectTeacher} teacherKana={teacherKana} />
+            <AllView slots={currentSlots} onSelectTeacher={selectTeacher} teacherKana={teacherKana} />
           )}
           {view === VIEWS.MINUTES && !selected && (
-            // 日付ベースの集計なので時間割セレクタでは絞らない (有効期間は日ごとに見る)
+            // 日付ベースの集計なので今の時間割では絞らない (有効期間は日ごとに見る)
             <TeachingMinutesView
               slots={slots}
               subs={subs}
@@ -1488,12 +1484,11 @@ export default function App() {
               slots={slots}
               onEdit={setEditSlot}
               onDel={slotsCrud.del}
-              onNew={() => setEditSlot("new")}
+              onNew={openNewSlot}
               biweeklyAnchors={biweeklyAnchors}
               onSetBiweeklyAnchors={saveBiweeklyAnchors}
               isAdmin={isAdmin}
               timetables={timetables}
-              activeTimetableId={activeTimetableId}
               saveSlots={saveSlots}
               partTimeStaff={partTimeStaff}
               teacherKana={teacherKana}
@@ -1721,7 +1716,7 @@ export default function App() {
             />
           )}
           {view === VIEWS.YOTEIHYO && !selected && (
-            // 日付ベースの突き合わせなので時間割セレクタでは絞らない
+            // 日付ベースの突き合わせなので今の時間割では絞らない
             <YoteihyoCheckView
               slots={slots}
               holidays={holidays}
@@ -1771,7 +1766,7 @@ export default function App() {
           )}
           {view === VIEWS.LEAVE && !selected && (
             // 授業がある日の「代行・欠勤の登録なし」を数えるために本体のデータも渡す
-            // (日付ベースなので時間割セレクタでは絞らない)
+            // (日付ベースなので今の時間割では絞らない)
             <LeaveView
               staffLeave={staffLeave}
               onSave={saveStaffLeave}
@@ -1818,13 +1813,12 @@ export default function App() {
               /* 科目カラーを「教科」単位に揃えるための教科マスタ
                  (理科A / 理科B が別色になるのを防ぐ) */
               subjects={subjects}
-              /* 期切替の点検 (表示期間設定・授業セット) と、反映後に
-                 ヘッダの時間割セレクタを新しい方へ向けるための配線 */
+              /* 期切替の点検 (表示期間設定・授業セット) と、期切替の既定の
+                 「前の時間割」(今の時間割) */
               displayCutoff={displayCutoff}
               saveDisplayCutoff={saveDisplayCutoff}
               classSets={classSets}
-              activeTimetableId={activeTimetableId}
-              onActivateTimetable={changeActiveTimetable}
+              defaultTimetableId={currentTimetableId}
               onSlotsReflected={handleSlotsReflected}
               isAdmin={isAdmin}
             />
@@ -1850,7 +1844,6 @@ export default function App() {
               subjects={subjects}
               subjectCategories={subjectCategories}
               timetables={timetables}
-              activeTimetableId={activeTimetableId}
               biweeklyAnchors={biweeklyAnchors}
               teacherSubjects={teacherSubjects}
               classSets={classSets}
@@ -1935,7 +1928,6 @@ export default function App() {
               subjects={subjects}
               slots={slots}
               timetables={timetables}
-              activeTimetableId={activeTimetableId}
               subs={subs}
               holidays={holidays}
               examPeriods={examPeriods}
@@ -1962,8 +1954,7 @@ export default function App() {
           {selected && view === VIEWS.WEEK && (
             <WeekView
               teacher={selected}
-              slots={ttFilteredSlots}
-              allSlots={slots}
+              slots={slots}
               subs={subs}
               adjustments={adjustments}
               onEdit={setEditSlot}
@@ -2047,7 +2038,7 @@ export default function App() {
             onCancel={() => setEditSlot(null)}
             suggestions={slotsCrud.suggestions}
             timetables={timetables}
-            activeTimetableId={activeTimetableId}
+            defaultTimetableId={newSlotTimetableId ?? currentTimetableId}
           />
         </Modal>
       )}

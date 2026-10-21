@@ -54,8 +54,8 @@ export function validateTimetableName(form) {
 
 /**
  * 同じ名前 (trim 後の完全一致) の別の時間割。無ければ null。
- * 名前の重複は禁止しない (ヘッダの時間割セレクタで見分けが付かなくなる
- * だけなので、警告に留める)。
+ * 名前の重複は禁止しない (ヘッダの「今の時間割」の表示やコースマスター管理の
+ * 時間割の選択で見分けが付かなくなるだけなので、警告に留める)。
  * @param {string} name
  * @param {import("../types").Timetable[]} timetables
  * @param {{excludeId?: number | string | null}} [opts]
