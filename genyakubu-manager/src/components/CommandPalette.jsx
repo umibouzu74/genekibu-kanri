@@ -312,6 +312,7 @@ export function CommandPalette({
       // 学校の予定表 (Excel) と休講・振替の登録を比べる
       { key: views.YOTEIHYO, label: "予定表チェック (学校の予定表と休講・振替を比べる)" },
       { key: views.EVENTS, label: "イベントカレンダー" },
+      { key: views.YEAR_CAL, label: "年間カレンダー (予備校部・現役部の予定)" },
       { key: views.MASTER, label: "コースマスター管理" },
       { key: views.SUBS, label: "授業管理" },
       { key: views.CONFIRMED_SUBS, label: "代行確定一覧" },

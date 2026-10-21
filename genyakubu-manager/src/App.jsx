@@ -158,6 +158,9 @@ const DayScheduleManager = lazy(() =>
 const EventCalendarView = lazy(() =>
   import("./components/views/EventCalendarView").then((m) => ({ default: m.EventCalendarView }))
 );
+const YearCalendarView = lazy(() =>
+  import("./components/views/YearCalendarView").then((m) => ({ default: m.YearCalendarView }))
+);
 const FuzokuPlanView = lazy(() =>
   import("./components/views/FuzokuPlanView").then((m) => ({ default: m.FuzokuPlanView }))
 );
@@ -220,6 +223,7 @@ const VIEW_TITLES = {
   [VIEWS.MASTER]: "コースマスター管理",
   [VIEWS.HOLIDAYS]: "休講・テスト期間・イベント",
   [VIEWS.EVENTS]: "イベントカレンダー",
+  [VIEWS.YEAR_CAL]: "年間カレンダー",
   [VIEWS.SUBS]: "授業管理",
   [VIEWS.CONFIRMED_SUBS]: "代行確定一覧",
   [VIEWS.ABSENCE_FLOW]: "欠勤組み換え",
@@ -288,6 +292,8 @@ export default function App() {
     saveFuzokuPlan,
     offsiteLessons,
     saveOffsiteLessons,
+    yobikoEvents,
+    saveYobikoEvents,
     handoverNotes,
     saveHandoverNotes,
     handoverEnabled,
@@ -1679,6 +1685,20 @@ export default function App() {
                   eventNewTokenRef.current += 1;
                   setEventNewRequest({ kind, token: eventNewTokenRef.current, date: date || null });
                 });
+              }}
+            />
+          )}
+          {view === VIEWS.YEAR_CAL && !selected && (
+            <YearCalendarView
+              yobikoEvents={yobikoEvents}
+              onSaveYobikoEvents={isAdmin ? saveYobikoEvents : undefined}
+              holidays={holidays}
+              examPeriods={examPeriods}
+              specialEvents={specialEvents}
+              isAdmin={isAdmin}
+              onSelectDate={openDashboardAt}
+              onEditGenyakuEvent={(kind, id) => {
+                selectView(VIEWS.HOLIDAYS, () => setEventEditRequest({ kind, id }));
               }}
             />
           )}

@@ -18,6 +18,7 @@ import {
   isSub,
   isSubject,
   isSubjectCategory,
+  isYobikoEvent,
   isYoteihyoConfirmation,
   isYoteihyoMappingEntry,
   migrateExportBundle,
@@ -1132,6 +1133,34 @@ describe("v20 → v21: offsiteLessons (他校舎の授業)", () => {
     expect(v.ok).toBe(false);
     expect(v.path).toBe("offsiteLessons[1]");
     expect(validateExportBundle({ offsiteLessons: {} }).ok).toBe(false);
+  });
+});
+
+describe("v24 → v25: yobikoEvents (予備校部の予定)", () => {
+  const rec = { id: 1, name: "", startDate: "2026-10-04", endDate: "2026-10-04", kind: "closed" };
+
+  it("既定値で埋めない (無ければ現状維持)", () => {
+    const out = migrateExportBundle({ schemaVersion: 24 }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out).not.toHaveProperty("yobikoEvents");
+  });
+
+  it("isYobikoEvent: 日の種別は名称なしで通し、種別・日付の崩れは弾く", () => {
+    expect(isYobikoEvent(rec)).toBe(true);
+    expect(isYobikoEvent({ ...rec, kind: "event", name: "冬期講習Ⅰ期", endDate: "2026-12-27", memo: "❶", source: "S" })).toBe(true);
+    expect(isYobikoEvent({ ...rec, kind: "holiday" })).toBe(false);
+    expect(isYobikoEvent({ ...rec, startDate: "10/4" })).toBe(false);
+    expect(isYobikoEvent({ ...rec, endDate: undefined })).toBe(false);
+    expect(isYobikoEvent({ ...rec, name: undefined })).toBe(false);
+    expect(isYobikoEvent({ ...rec, source: 1 })).toBe(false);
+  });
+
+  it("validateExportBundle は崩れた yobikoEvents を弾く", () => {
+    expect(validateExportBundle({ yobikoEvents: [rec] }).ok).toBe(true);
+    const v = validateExportBundle({ yobikoEvents: [rec, { id: 2 }] });
+    expect(v.ok).toBe(false);
+    expect(v.path).toBe("yobikoEvents[1]");
+    expect(validateExportBundle({ yobikoEvents: {} }).ok).toBe(false);
   });
 });
 

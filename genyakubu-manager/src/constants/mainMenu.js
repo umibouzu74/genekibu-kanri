@@ -124,6 +124,7 @@ export const MAIN_MENU = Object.freeze([
       eventSection(EVENT_KIND.EXAM, "学校のテスト期間 (授業を止める期間と特訓の日程)"),
       eventSection(EVENT_KIND.SPECIAL, "校外行事・式典・告知などの予定"),
       navItem(VIEWS.EVENTS, "休講・テスト期間・イベント・振替を月のカレンダーで"),
+      navItem(VIEWS.YEAR_CAL, "予備校部と現役部の予定を 1 枚に (上 = 予備校部、下 = 現役部)"),
       navItem(VIEWS.YOTEIHYO, "学校の予定表 (Excel) と休講・振替の登録を突き合わせる"),
       navItem(VIEWS.FUZOKU_PLAN, "附属コースの月間の時程・確認テスト"),
     ],
