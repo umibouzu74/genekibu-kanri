@@ -33,11 +33,15 @@ export function useExamPrepSchedulesCrud({
     [examPrepSchedules, saveExamPrepSchedules, toasts]
   );
 
+  // テスト期間の削除に伴って、その特訓シフトを消す。id の配列も受ける (出典ごとの
+  // まとめて削除。1 件ずつ呼ぶと、どれも同じ古い一覧から書いて最後の 1 件しか
+  // 消えないため、1 回の保存にまとめる)
   const cascadeDeletePeriod = useCallback(
-    (examPeriodId) => {
-      saveExamPrepSchedules(
-        removeSchedulesForPeriod(examPrepSchedules, examPeriodId)
-      );
+    (examPeriodIdOrIds) => {
+      const ids = Array.isArray(examPeriodIdOrIds) ? examPeriodIdOrIds : [examPeriodIdOrIds];
+      let next = examPrepSchedules;
+      for (const id of ids) next = removeSchedulesForPeriod(next, id);
+      saveExamPrepSchedules(next);
     },
     [examPrepSchedules, saveExamPrepSchedules]
   );

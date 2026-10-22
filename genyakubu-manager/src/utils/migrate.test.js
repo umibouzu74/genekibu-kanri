@@ -196,6 +196,30 @@ describe("migrateExamPeriods", () => {
     expect(migrateExamPeriods(null)).toBe(null);
     expect(migrateExamPeriods(undefined)).toBe(undefined);
   });
+
+  it("考査日 (表示専用) を並べ替え・重複除去し、範囲外と不正な日付を落とす (冪等)", () => {
+    const [ep] = migrateExamPeriods([
+      {
+        id: 1,
+        name: "桜井2学期中間",
+        startDate: "2026-10-06",
+        endDate: "2026-10-16",
+        stopsClasses: false,
+        examDates: ["2026-10-14", "2026-10-13", "2026-10-14", "2026-10-05", "2026-10-17", "2026-02-30", 3, "x"],
+      },
+    ]);
+    expect(ep.examDates).toEqual(["2026-10-13", "2026-10-14"]);
+    expect(migrateExamPeriods([ep])[0]).toEqual(ep);
+  });
+
+  it("考査日が空になったらキーごと外す。持たない記録には足さない", () => {
+    const [a, b] = migrateExamPeriods([
+      { id: 1, name: "a", startDate: "2026-10-06", endDate: "2026-10-16", examDates: ["2027-01-01"] },
+      { id: 2, name: "b", startDate: "2026-10-06", endDate: "2026-10-16" },
+    ]);
+    expect(a).not.toHaveProperty("examDates");
+    expect(b).not.toHaveProperty("examDates");
+  });
 });
 
 describe("migrateExamPrepSchedules", () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { upgradeSpecialEventType, upgradeSpecialEventTypes } from "./specialEventTypes";
 import { migrateSpecialEvents } from "./migrate";
 import { migrateExportBundle, validateExportBundle } from "./schema";
+import { parseSpecialEventType } from "./specialEventImport";
 
 const M3 = ["中3", "附中3"];
 const M123 = ["中1", "中2", "中3"];
@@ -161,5 +162,32 @@ describe("v23 → v24 (バックアップ)", () => {
       ],
     });
     expect(v.ok).toBe(false);
+  });
+});
+
+describe("模試 (mock、v26)", () => {
+  const mock = {
+    id: 1,
+    name: "桜井 3年第8回校外模試(進研マーク)",
+    startDate: "2026-10-30",
+    endDate: "2026-10-31",
+    eventType: "mock",
+    targetGrades: ["高3"],
+    memo: "",
+    tags: ["桜井"],
+  };
+
+  it("読み込み・移行で other に落ちない", () => {
+    expect(upgradeSpecialEventType(mock)).toBe(mock);
+    expect(migrateSpecialEvents([mock])[0].eventType).toBe("mock");
+    const v = validateExportBundle(migrateExportBundle({ schemaVersion: 25, specialEvents: [mock] }));
+    expect(v.ok).toBe(true);
+    expect(v.data.specialEvents[0].eventType).toBe("mock");
+  });
+
+  it("まとめて登録の種別「模試」を読む", () => {
+    expect(parseSpecialEventType("模試")).toBe("mock");
+    expect(parseSpecialEventType("✏️ 模試")).toBe("mock");
+    expect(parseSpecialEventType("mock")).toBe("mock");
   });
 });

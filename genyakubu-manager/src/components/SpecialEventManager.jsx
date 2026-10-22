@@ -21,6 +21,7 @@ import { formatDateRange } from "../utils/dateHelpers";
 import { specialEventsToTsv } from "../utils/specialEventImport";
 import { SpecialEventDisplaySettings } from "./SpecialEventDisplaySettings";
 import { SpecialEventBulkImportDialog } from "./SpecialEventBulkImportDialog";
+import { MOCK_EVENT_TYPE, OPTIONAL_MOCK_TAG } from "../utils/schoolSchedule";
 import { S, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { TAG_META } from "../constants/eventKinds";
@@ -384,6 +385,13 @@ export function SpecialEventManager({
               );
             })}
           </div>
+          {eventType === MOCK_EVENT_TYPE && (
+            <div style={{ fontSize: 10, color: "#888", margin: "-4px 0 10px", lineHeight: 1.6 }}>
+              学校名のタグ (例: 桜井) を付けると、年間カレンダーの現役部で学校ごとのバッジ・学校別の
+              タイムラインにまとまります。冠模試・希望者だけの模試には「{OPTIONAL_MOCK_TAG}」タグも
+              付けてください (既定では出さず、出すときは点線)。
+            </div>
+          )}
 
           {/* 名称 */}
           <div style={{ marginBottom: 10 }}>
