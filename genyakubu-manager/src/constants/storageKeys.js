@@ -19,6 +19,9 @@ export const LS = {
   // 「今の時間割」は日付から決める (utils/timetable.filterSlotsCurrentOn)。
   // 古い端末に残った値を起動時・初期化で消すためだけに残してある
   activeTimetableId: "genyakubu-active-timetable",
+  // この端末で最後にクラウド (Firebase) から読めた日時 (ミリ秒)。読めないときの
+  // 警告に「◯日時点のデータ」と出すため (firebase/cloudState)
+  lastCloudRead: "genyakubu-last-cloud-read",
   examPeriods: "genyakubu-exam-periods",
   teacherSubjects: "genyakubu-teacher-subjects",
   // 講師名 → よみ。バイトにも常勤講師にも付けたいので partTimeStaff の

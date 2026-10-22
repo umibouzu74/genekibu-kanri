@@ -86,6 +86,7 @@ import { Modal } from "./components/Modal";
 import { SlotForm } from "./components/SlotForm";
 import { Sidebar } from "./components/Sidebar";
 import { CurrentTimetableBadge } from "./components/CurrentTimetableBadge";
+import { CloudReadWarning } from "./components/CloudReadWarning";
 import { TIMETABLE_SECTION } from "./constants/timetableSections";
 
 import { Dashboard } from "./components/views/Dashboard";
@@ -1195,6 +1196,9 @@ export default function App() {
         className="app-main"
         style={{ flex: 1, overflow: "auto", padding: "16px 24px", minWidth: 0 }}
       >
+        {/* クラウドのデータを読めていないとき (古いデータ・見本のデータを
+            表示中) の警告。どの画面でも一番上に出す */}
+        <CloudReadWarning />
         <div
           style={{
             display: "flex",

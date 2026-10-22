@@ -1,20 +1,23 @@
-import { useEffect, useState } from "react";
-import { db, authReady, authFailed, isConfigured } from "../firebase/config";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { db, authReady, isConfigured } from "../firebase/config";
 import { ref, onValue, off } from "firebase/database";
 import { subscribeSyncActivity } from "../hooks/useSyncedStorage";
+import { getCloudState, subscribeCloudState } from "../firebase/cloudState";
 import { colors } from "../styles/tokens";
 
 // ─── SyncStatus ─────────────────────────────────────────────────────
 // A small indicator showing Firebase connection state.
 //   Green  = connected
 //   Red    = offline / disconnected
-//   Orange = authentication failed
+//   Orange = authentication failed / クラウドのデータを読めていない
 //   Grey   = Firebase not configured (localStorage-only mode)
 //   Blue pulse = actively writing (pending sync)
+// 「同期中」は接続 (ソケット) だけでなく、データを読めていることまで見る
+// (2026-10-22。読み取りを拒否されても緑のままで、古いデータに気付けなかった)
 export function SyncStatus({ isAdmin }) {
   const [connected, setConnected] = useState(false);
-  const [authError, setAuthError] = useState(false);
   const [pending, setPending] = useState(0);
+  const cloud = useSyncExternalStore(subscribeCloudState, getCloudState, getCloudState);
 
   useEffect(() => {
     if (!isConfigured || !db) return;
@@ -22,10 +25,6 @@ export function SyncStatus({ isAdmin }) {
     let unmounted = false;
     authReady.then(() => {
       if (unmounted) return;
-      if (authFailed) {
-        setAuthError(true);
-        return;
-      }
 
       const connRef = ref(db, ".info/connected");
       onValue(connRef, (snap) => {
@@ -50,11 +49,23 @@ export function SyncStatus({ isAdmin }) {
     );
   }
 
-  if (authError) {
+  if (cloud.authError) {
     return (
-      <div style={wrap} title="Firebase認証に失敗しました（ローカル保存中）">
+      <div style={wrap} title={`ログインの準備に失敗しました（${cloud.authError}）。この端末に残っているデータを表示しています`}>
         <span style={{ ...dot, background: "#e6a700" }} />
         <span style={label}>認証エラー</span>
+      </div>
+    );
+  }
+
+  if (cloud.readErrors.size > 0) {
+    return (
+      <div
+        style={wrap}
+        title={`クラウドのデータを読めていません（${cloud.readErrors.size} 件）。この端末に残っているデータを表示しています`}
+      >
+        <span style={{ ...dot, background: "#e6a700" }} />
+        <span style={label}>読み込みエラー</span>
       </div>
     );
   }

@@ -1,7 +1,23 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { db, authReady, isConfigured } from "../firebase/config";
-import { ref, onValue, set, off, get } from "firebase/database";
+import { ref, onValue, set, get } from "firebase/database";
 import { stableStringify } from "../utils/stableStringify";
+import {
+  clearCloudReadError,
+  getAuthGeneration,
+  reportCloudRead,
+  reportCloudReadError,
+  subscribeAuthGeneration,
+} from "../firebase/cloudState";
+
+/**
+ * ログインの世代 (firebase/cloudState)。ユーザが変わるたびに進むので、
+ * onValue の購読はこれを依存に入れて張り直す (RTDB はログアウトの間などに
+ * 権限が無くなると購読を取り消し、権限が戻っても張り直さない)
+ */
+export function useAuthGeneration() {
+  return useSyncExternalStore(subscribeAuthGeneration, getAuthGeneration, getAuthGeneration);
+}
 
 // ─── Pending sync activity counter ──────────────────────────────────
 // Each in-flight Firebase write increments this counter. SyncStatus
@@ -144,6 +160,7 @@ export function useSyncedStorage(
   // 1 回だけ。2 回目以降の null は (旧版のタブが [] を書いた等) 無視する。
   // 繰り返し seed すると端末同士で書き戻し合いになる。
   const seededRef = useRef(false);
+  const authGeneration = useAuthGeneration();
 
   // ── 1. Load from localStorage (instant, works offline) ──────────
   useEffect(() => {
@@ -170,18 +187,25 @@ export function useSyncedStorage(
   }, [enabled]);
 
   // ── 2. Attach Firebase listener ─────────────────────────────────
+  // ログインの世代が変わったら張り直す (ログアウト → 匿名で入り直した後も
+  // 新しい値が届くように)。読めた / 読めなかったは cloudState に報告し、
+  // 読めないまま古いデータを黙って出し続けないようにする
   useEffect(() => {
     if (!enabled || !isConfigured || !db) return;
 
     let unsubscribed = false;
-    const dbRef = ref(db, fbPath(key, root));
+    let detach = null;
+    const path = fbPath(key, root);
+    const dbRef = ref(db, path);
+    clearCloudReadError(path);
 
     authReady.then(() => {
       if (unsubscribed) return;
 
-      onValue(
+      detach = onValue(
         dbRef,
         (snapshot) => {
+          reportCloudRead(path);
           const serverVal = snapshot.val();
 
           if (serverVal == null) {
@@ -234,16 +258,20 @@ export function useSyncedStorage(
         },
         (err) => {
           console.warn(`[useSyncedStorage] onValue error "${key}":`, err);
+          reportCloudReadError(path, err);
         }
       );
     });
 
     return () => {
       unsubscribed = true;
-      off(dbRef);
+      // onValue の戻り値で自分の購読だけ外す。off(dbRef) は同じパスの他の購読
+      // (同じキーを別の画面が読んでいる等) まで外すので、ログインの世代で
+      // 張り直すたびにそれらを止めてしまう
+      detach?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- key/migrate/root are stable across renders; enabled で購読し直す
-  }, [enabled]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- key/migrate/root are stable across renders; enabled・ログインの世代で購読し直す
+  }, [enabled, authGeneration]);
 
   // 権限エラー後の巻き戻し: サーバの現在値を取り直して state / localStorage
   // に入れ直す (echo 判定用の ref もサーバ値に合わせる)
@@ -323,6 +351,7 @@ export function useSyncedStorageRaw(key, initialValue, { onError } = {}) {
   // JSON 版と同じく、null からの seed はセッション中 1 回だけ
   // (文字列は "" でも RTDB に残るので、null は本当に未初期化のときだけ)
   const seededRef = useRef(false);
+  const authGeneration = useAuthGeneration();
 
   // ── Load from localStorage ──────────────────────────────────────
   useEffect(() => {
@@ -340,18 +369,24 @@ export function useSyncedStorageRaw(key, initialValue, { onError } = {}) {
   }, []);
 
   // ── Firebase listener ───────────────────────────────────────────
+  // JSON 版と同じく、ログインの世代が変わったら張り直し、読めた / 読めなかったを
+  // cloudState に報告する
   useEffect(() => {
     if (!isConfigured || !db) return;
 
     let unsubscribed = false;
-    const dbRef = ref(db, fbPath(key));
+    let detach = null;
+    const path = fbPath(key);
+    const dbRef = ref(db, path);
+    clearCloudReadError(path);
 
     authReady.then(() => {
       if (unsubscribed) return;
 
-      onValue(
+      detach = onValue(
         dbRef,
         (snapshot) => {
+          reportCloudRead(path);
           const serverVal = snapshot.val();
 
           if (serverVal == null) {
@@ -380,16 +415,18 @@ export function useSyncedStorageRaw(key, initialValue, { onError } = {}) {
         },
         (err) => {
           console.warn(`[useSyncedStorageRaw] onValue error "${key}":`, err);
+          reportCloudReadError(path, err);
         }
       );
     });
 
     return () => {
       unsubscribed = true;
-      off(dbRef);
+      // JSON 版と同じく自分の購読だけ外す
+      detach?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: key/migrate are stable across renders
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- key is stable across renders; ログインの世代で購読し直す
+  }, [authGeneration]);
 
   // ── Setter ──────────────────────────────────────────────────────
   const update = useCallback(

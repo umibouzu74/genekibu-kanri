@@ -7,12 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const authMocks = vi.hoisted(() => ({
   onAuthStateChanged: vi.fn(),
   signInAnonymously: vi.fn(() => Promise.resolve()),
+  // getAuth が返すオブジェクト (currentUser を書き換えてログイン状態を表す)
+  authObj: { __auth: true, currentUser: null },
 }));
 
 vi.mock("firebase/app", () => ({ initializeApp: vi.fn(() => ({ __app: true })) }));
 vi.mock("firebase/database", () => ({ getDatabase: vi.fn(() => ({ __db: true })) }));
 vi.mock("firebase/auth", () => ({
-  getAuth: vi.fn(() => ({ __auth: true })),
+  getAuth: vi.fn(() => authMocks.authObj),
   onAuthStateChanged: authMocks.onAuthStateChanged,
   signInAnonymously: authMocks.signInAnonymously,
 }));
@@ -24,6 +26,7 @@ beforeEach(() => {
   vi.spyOn(console, "warn").mockImplementation(() => {});
   captured = null;
   unsubscribe.mockClear();
+  authMocks.authObj.currentUser = null;
   authMocks.signInAnonymously.mockReset();
   authMocks.signInAnonymously.mockImplementation(() => Promise.resolve());
   authMocks.onAuthStateChanged.mockReset();
@@ -94,5 +97,68 @@ describe("firebase/config の認証初期化", () => {
     expect(mod.db).toBeNull();
     await mod.authReady;
     expect(authMocks.onAuthStateChanged).not.toHaveBeenCalled();
+  });
+
+  // 2026-10-22: 確定した後も見張り、誰もいなくなったら匿名で入り直す。
+  // ユーザが変わったら世代を進め、購読する側 (useSyncedStorage) が張り直す
+  describe("確定した後の見張り", () => {
+    let anonCount = 0;
+    beforeEach(() => {
+      anonCount = 0;
+      // 本物と同じく、サインインが済むまで currentUser は変わらない
+      authMocks.signInAnonymously.mockImplementation(() => {
+        anonCount += 1;
+        const n = anonCount;
+        return Promise.resolve().then(() => {
+          authMocks.authObj.currentUser = { uid: `anon${n}`, isAnonymous: true };
+        });
+      });
+    });
+
+    async function settleAsAnonymous() {
+      const mod = await loadConfig();
+      const cloud = await import("./cloudState");
+      captured.next(null);
+      await mod.authReady;
+      // authReady の後に常駐の見張りが登録される (captured はそれに置き換わる)
+      return { mod, cloud, watch: captured };
+    }
+
+    it("誰もいなくなったら (ログアウト・消えたセッション) 匿名で入り直す。同時に 2 本は走らせない", async () => {
+      const { mod, watch } = await settleAsAnonymous();
+      expect(authMocks.signInAnonymously).toHaveBeenCalledTimes(1);
+      authMocks.authObj.currentUser = null;
+      watch.next(null);
+      // useAuth.signOutAdmin も同じ関数で入り直す。見張りの 1 本が走っている間は
+      // それを待つだけ
+      await mod.ensureAnonymousSession();
+      expect(authMocks.signInAnonymously).toHaveBeenCalledTimes(2);
+      expect(authMocks.authObj.currentUser.uid).toBe("anon2");
+    });
+
+    it("ユーザが変わったら世代を進める。管理者のログインは匿名で置き換えない", async () => {
+      const { cloud, watch } = await settleAsAnonymous();
+      expect(cloud.getAuthGeneration()).toBe(0);
+      // 起動時と同じユーザの通知は無視する
+      watch.next({ uid: "anon1", isAnonymous: true });
+      expect(cloud.getAuthGeneration()).toBe(0);
+      authMocks.authObj.currentUser = { uid: "admin", isAnonymous: false };
+      watch.next({ uid: "admin", isAnonymous: false });
+      expect(cloud.getAuthGeneration()).toBe(1);
+      expect(authMocks.signInAnonymously).toHaveBeenCalledTimes(1);
+    });
+
+    it("匿名サインインの失敗は画面用の状態に残り、入り直せたら消える", async () => {
+      authMocks.signInAnonymously.mockImplementationOnce(() => {
+        const err = new Error("disabled");
+        err.code = "auth/operation-not-allowed";
+        return Promise.reject(err);
+      });
+      const { mod, cloud } = await settleAsAnonymous();
+      expect(mod.authFailed).toBe(true);
+      expect(cloud.getCloudState().authError).toBe("auth/operation-not-allowed");
+      await mod.ensureAnonymousSession();
+      expect(cloud.getCloudState().authError).toBeNull();
+    });
   });
 });
