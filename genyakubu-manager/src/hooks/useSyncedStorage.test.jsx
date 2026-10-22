@@ -16,12 +16,22 @@ vi.mock("../firebase/config", () => ({
 }));
 
 import { useSyncedStorage } from "./useSyncedStorage";
-import { onValue, set, off } from "firebase/database";
+import { onValue, set } from "firebase/database";
+import {
+  bumpAuthGeneration,
+  getCloudState,
+  resetCloudStateForTest,
+} from "../firebase/cloudState";
+
+let detach = vi.fn();
 
 beforeEach(() => {
+  resetCloudStateForTest();
   vi.spyOn(console, "warn").mockImplementation(() => {});
   set.mockImplementation(() => Promise.resolve());
-  onValue.mockImplementation(() => {});
+  // onValue は自分の購読だけを外す関数を返す (本物と同じ)
+  detach = vi.fn();
+  onValue.mockImplementation(() => detach);
 });
 
 afterEach(() => {
@@ -162,11 +172,11 @@ describe("useSyncedStorage", () => {
       expect(onValue).toHaveBeenCalledTimes(1);
     });
 
-    it("unmount → off が呼ばれる", async () => {
+    it("unmount → 自分の購読だけ外す (onValue の戻り値)", async () => {
       const { unmount } = renderHook(() => useSyncedStorage("k10", []));
       await flushMicrotasks();
       unmount();
-      expect(off).toHaveBeenCalled();
+      expect(detach).toHaveBeenCalledTimes(1);
     });
 
     it("authReady 解決前に unmount すれば onValue は attach されない", async () => {
@@ -226,6 +236,42 @@ describe("useSyncedStorage の root / enabled (管理者だけが読めるデー
     // ログアウト → 表示を初期値に戻し、購読を外す
     rerender({ enabled: false });
     expect(result.current[0]).toEqual([]);
-    expect(off).toHaveBeenCalledWith({ __path: "adminData/adm" });
+    expect(detach).toHaveBeenCalledTimes(1);
+  });
+
+  // 2026-10-22: 読めた / 読めなかったを画面用の状態に報告し、ログインの世代が
+  // 変わったら購読を張り直す (RTDB はログアウトの間に購読を取り消して戻さない)
+  describe("読み取りの報告と張り直し", () => {
+    it("読み取りを拒否されたら報告し、世代が変わったら張り直して読めたら消す", async () => {
+      const { result } = renderHook(() => useSyncedStorage("kg", []));
+      await flushMicrotasks();
+      expect(onValue).toHaveBeenCalledTimes(1);
+      const onErr = onValue.mock.calls[0][2];
+      act(() => {
+        onErr(Object.assign(new Error("permission_denied"), { code: "PERMISSION_DENIED" }));
+      });
+      expect(getCloudState().readErrors.get("appData/kg")).toBe("PERMISSION_DENIED");
+      expect(getCloudState().received).toBe(false);
+
+      act(() => bumpAuthGeneration());
+      await flushMicrotasks();
+      expect(detach).toHaveBeenCalledTimes(1);
+      expect(onValue).toHaveBeenCalledTimes(2);
+      // 張り直す時点で前のエラーは消す (結果は次の報告で決まる)
+      expect(getCloudState().readErrors.has("appData/kg")).toBe(false);
+
+      const onNext = onValue.mock.calls[1][1];
+      act(() => onNext({ val: () => [{ id: 1 }] }));
+      expect(getCloudState().received).toBe(true);
+      expect(result.current[0]).toEqual([{ id: 1 }]);
+    });
+
+    it("まだ何も書かれていないキー (null) も読めたことにする", async () => {
+      renderHook(() => useSyncedStorage("kn", []));
+      await flushMicrotasks();
+      const onNext = onValue.mock.calls[0][1];
+      act(() => onNext({ val: () => null }));
+      expect(getCloudState().received).toBe(true);
+    });
   });
 });

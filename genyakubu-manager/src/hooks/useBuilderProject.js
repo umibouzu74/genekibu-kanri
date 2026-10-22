@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { db, authReady, isConfigured } from "../firebase/config";
-import { ref, onValue, off } from "firebase/database";
+import { ref, onValue } from "firebase/database";
+import { useAuthGeneration } from "./useSyncedStorage";
+import {
+  clearCloudReadError,
+  reportCloudRead,
+  reportCloudReadError,
+} from "../firebase/cloudState";
 import {
   FIREBASE_PROJECT_PATH,
   STORAGE_KEY_PROJECT,
@@ -24,6 +30,8 @@ import { parseBuilderProject } from "../utils/builderLessons";
 // ならオフラインでも SDK のローカルエコーで即時反映される。
 export function useBuilderProject() {
   const [project, setProject] = useState(null);
+  // useSyncedStorage と同じく、ログインの世代が変わったら張り直す
+  const authGeneration = useAuthGeneration();
 
   useEffect(() => {
     try {
@@ -38,27 +46,33 @@ export function useBuilderProject() {
     if (!isConfigured || !db) return undefined;
 
     let unsubscribed = false;
+    let detach = null;
     const dbRef = ref(db, FIREBASE_PROJECT_PATH);
+    clearCloudReadError(FIREBASE_PROJECT_PATH);
 
     authReady.then(() => {
       if (unsubscribed) return;
-      onValue(
+      detach = onValue(
         dbRef,
         (snapshot) => {
+          reportCloudRead(FIREBASE_PROJECT_PATH);
           const p = parseBuilderProject(snapshot.val());
           if (p) setProject(p);
         },
         (err) => {
           console.warn("[useBuilderProject] onValue error:", err);
+          reportCloudReadError(FIREBASE_PROJECT_PATH, err);
         }
       );
     });
 
     return () => {
       unsubscribed = true;
-      off(dbRef);
+      // 自分の購読だけ外す。同じパスは講習時間割作成 (useHistoryStack) も読んで
+      // いて、off(dbRef) だとログインの世代で張り直すたびにそちらまで止まる
+      detach?.();
     };
-  }, []);
+  }, [authGeneration]);
 
   return project;
 }

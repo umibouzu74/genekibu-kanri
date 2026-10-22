@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { auth, isConfigured, authReady } from "../firebase/config";
+import { auth, isConfigured, authReady, ensureAnonymousSession } from "../firebase/config";
 import {
   signInWithEmailAndPassword,
-  signInAnonymously,
   signOut as fbSignOut,
   onAuthStateChanged,
 } from "firebase/auth";
@@ -41,7 +40,8 @@ export function useAuth() {
   const signOutAdmin = useCallback(async () => {
     if (!auth) return;
     await fbSignOut(auth);
-    await signInAnonymously(auth);
+    // config の見張りも入り直すので、同じ 1 本を待つ (匿名ユーザを 2 つ作らない)
+    await ensureAnonymousSession();
   }, []);
 
   return { user, isAdmin, loading, signIn, signOutAdmin };
