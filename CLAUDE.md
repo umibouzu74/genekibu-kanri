@@ -1925,8 +1925,8 @@ PrintButton (window.print) 系統で足りる (Excel 出力は作らない)。
 
 - **種別は `constants/specialEvents.js` の `SPECIAL_EVENT_TYPES` の 1 か所** (schema v24):
   school 🏫 学校の予定 / jukuTest 📝 塾のテスト / entrance 🎓 入試 / course 📚 講習 /
-  parents 👪 保護者会 / staff 🏢 社内 / other 📌 その他。`teacherMonth` が月間予定に
-  出すかの既定値 (学校の予定・入試だけ出さない)
+  parents 👪 保護者会 / staff 🏢 社内 / mock ✏️ 模試 (2026-10-22、schema v26) / other 📌 その他。
+  `teacherMonth` が月間予定に出すかの既定値 (学校の予定・入試・模試は出さない)
   - **種別を足すときは必ずこの配列に入れる**。`migrate.migrateSpecialEvents` は未知の
     eventType を "other" に落とす。古い版を開いたままの端末も新しい種別を "other" に
     潰すので、リリースノートに「全端末で再読み込み」を書く
@@ -2030,6 +2030,74 @@ PrintButton (window.print) 系統で足りる (Excel 出力は作らない)。
   期間の続きの日を薄くするのは画面だけ (`.year-cal-cont`。紙面の小さい字をさらに薄く
   しない)。紙面の見出しは表示中の段だけを書き、トップバーの 🖨 で刷ったときの印刷
   ジョブ名は `data-print-title`
+- 読み上げ用の `.year-cal-sr` (absolute) は `.year-cal-month` (position: relative) の中に
+  収める (2026-10-22)。無いと右端の欄の分だけページ全体が横にはみ出し、スマホ幅で揺れる
+
+## 学校の考査・模試 (年間カレンダーの学校バッジ / 学校別タイムライン、2026-10-22)
+
+高校部は学校ごとにテストの日程が違う。年間カレンダーの現役部に学校ごとの
+**考査発表〜考査**と**模試**を「データは全部入れて、画面では要約して見せる」
+(期間の毎日に 1 件ずつ帯を並べると、3 校分のテスト期間と模試で読めなくなる)。
+組み立ては **`utils/schoolSchedule.js` (純関数) の 1 か所**。
+
+- **考査日 `ExamPeriod.examDates` は表示専用** (schema v26)。高校の学校別テストは
+  `startDate` = 考査発表日で登録し、考査がある日を examDates に持つ。その日の状態は
+  `examDayState` (発表 / 発表後 / 考査 n 日目 / 期間中の休み。考査日が無ければ期間全体を
+  `period` = 従来の見え方)。**授業停止 (`examPeriodStopsClassesOn`)・特訓・隔週の週送り・
+  第N回には使わない — この判定に混ぜないこと**
+  - 保存形は昇順・重複なし・期間内。空ならキーごと持たない (`migrate.normalizeExamDates`
+    を読み込みの `migrateExamPeriods` で通す)
+  - フォーム (ExamPeriodManager の「考査日 (任意・表示用)」) は MultiDateCalendar
+    (`minDate` = 開始日)。**終了日が最後の考査日より前なら保存を止める (自動では伸ばさない)**。
+    「終了日を最後の考査日に合わせる」ボタンで直す
+- **模試は特別イベントの種別 `mock`** (✏️ 模試、藍色。講師の月間予定には既定で出さない)
+- **学校キー = 予約タグを除いた tags の先頭** (`schoolKeyOf`)。新しいフィールドは作らない
+  (ExamPeriod と SpecialEvent は同じタグ空間)。予約タグ = **「希望者」(`OPTIONAL_MOCK_TAG`)**
+  と部のタグ (中学・中学部・高校・高校部。学校ではない)。模試に「希望者」タグ = 希望者・
+  冠模試 (東大京大OP・希望者だけの小論文模試)。既定では出さず、出すときは点線
+- **バッジにまとめる対象は 2 つだけ**: 授業を止めない (`stopsClasses === false`) + 学校キーの
+  あるテスト期間 (`isSchoolBadgeExam`)、種別 mock + 学校キーのある特別イベント
+  (`isSchoolBadgeMock`)。それ以外 (授業を止めるテスト期間・学校タグの無い記録・休講・
+  他の種別) は従来どおり 1 件ずつ。**バッジにした記録は `genyakuEntries(…,
+  { excludeSchoolBadged: true })` で 1 件ずつから外す** (二重に出さない。バッジの絞り込みで
+  隠したものも 1 件ずつには戻らない)
+- 1 日 × 1 学校 = チップ 1 つ (`buildSchoolBadges`)。同じ学校のテスト期間が重なる日 (発表日が
+  学年で違う 1学期期末を 2 行で入れた場合) は 考査日 > 発表 > 発表後 > 休み の強い方を
+  見た目に使い、内訳には全部出す
+- **状態は色だけに頼らない**: チップの文字 (「桜井 発表」「桜井❷」「模」) + aria-label / title の
+  全文 (`describeSchoolBadge`)。期間の続きを薄くする `.year-cal-cont` はバッジに使わない。
+  紙面にも刷る (print-color-adjust)
+- 押すと内訳のポップオーバー (`yearCalendar/SchoolSchedulePopover`、no-print)。閲覧者も
+  見られる。管理者は記録ごとに「編集」= `onEditGenyakuEvent` (現役部の記録と同じ経路)
+- **学校別タイムラインは年間カレンダーのツールバーの切替「表示: カレンダー｜学校別」**
+  (`yearCalendar/SchoolTimeline` + `buildSchoolTimeline`)。**タブにはしていない** =
+  サイドバー・メインメニュー・Cmd+K の定数には足していない。タブにするなら「サイドバーの
+  導線」「メインメニュー」の決まりに従う
+  - 期間 (1 / 3 / 6 か月・年度) と ◀ ▶ はカレンダーと共有。行 = 学校、上段 = テスト期間
+    (開始日〜終了日の淡い帯・考査日の塗り・発表日に ▼)、下段 = 模試 (対象学年で色分け、
+    希望者は点線)。重なる帯は段を分ける。最上段は「考査中」の学校数
+  - **位置は日数に対する割合 (%)** — JS で幅を測らない (画面幅・紙面に追従)。画面で狭い
+    ときだけ min-width で横スクロール。印刷は学校の行の途中で改ページしない
+  - 祝日の色付けはしない (全員が読める祝日のデータが無い。staffLeave のカレンダーは
+    adminData なので使わない)
+- **絞り込み (学年 [全学年 / 高1・2 / 高3]・発表〜考査・模試・希望者・冠模試) はバッジと
+  タイムラインだけに効く** (休講など 1 件ずつの記録には効かせない)。学年は記録の
+  targetGrades と交わるか (空 = 全学年は常に出す)。保存は sessionStorage
+  (`SS_YEAR_CAL_KEY` の `display` / `schoolFilter`。`normalizeSchoolFilter` で不正値は既定)。
+  localStorage・使用統計は使わない
+- 学校の並びはタグ名の五十音で固定 (A18: 使用頻度・履歴で並べ替えない)
+- **テスト期間の 📋 まとめて登録** (`utils/examPeriodImport` + `ExamPeriodBulkImportDialog`。
+  表の読み取り・日付・学年は `specialEventImport` の前半を使う): 列 学校 | 名称 | 発表日 |
+  考査日 | 終了日 (空 = 最後の考査日) | 対象学年 | 授業を止める (空 = しない) | 出典。
+  startDate = 発表日 (空なら最初の考査日)、tags = [学校]。重複 (同じ学校・名称・発表日) は
+  既定で飛ばす。登録直後の「元に戻す」は足した id だけ
+  - `ExamPeriod.source` (出典) で一覧の絞り込み・まとめて削除。**テスト期間の削除は特訓
+    シフトへの cascade があるので確認ダイアログ** (削除 UX のルール。Undo にしない)。
+    cascade は `examPrepCrud.cascadeDeletePeriod(ids)` の 1 回の保存で (1 件ずつ呼ぶと
+    どれも古い一覧から書いて最後の 1 件しか消えない)
+- 付録 B のデータ (2026 年度の桜井・第一の行事予定表から読み取った考査・模試) は
+  `utils/testdata/schoolSchedule2026.js` にテスト専用で置き、受け入れ条件 (11・12 月の
+  バッジ、高1・2 / 冠模試の絞り込み、2 校重なる日) を固定している
 
 ## Firebase 同期の「空」と「未初期化」 (2026-09-04 確定)
 
