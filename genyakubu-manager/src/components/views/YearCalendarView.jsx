@@ -6,7 +6,7 @@ import { useRemoveManyWithUndo, useRemoveWithUndo } from "../../hooks/useCrudRes
 import { MonthNav } from "../MonthNav";
 import { PrintButton } from "../PrintButton";
 import { nextNumericId } from "../../utils/schema";
-import { formatDateRange } from "../../utils/dateHelpers";
+import { fmtMDWeekday, formatDateRange } from "../../utils/dateHelpers";
 import { fiscalYearOf } from "../../utils/teacherAffiliations";
 import {
   fiscalYearStartYm,
@@ -34,6 +34,18 @@ import { colors } from "../../styles/tokens";
 import { YearCalendarMonth } from "./yearCalendar/YearCalendarMonth";
 import { YobikoEventDialog } from "./yearCalendar/YobikoEventDialog";
 import { YobikoBulkImportDialog } from "./yearCalendar/YobikoBulkImportDialog";
+import { SchoolBadgeLegend } from "./yearCalendar/SchoolBadges";
+import { SchoolSchedulePopover } from "./yearCalendar/SchoolSchedulePopover";
+import { SchoolTimeline, SchoolTimelineLegend } from "./yearCalendar/SchoolTimeline";
+import { SCHOOL_SCHEDULE_CSS } from "./yearCalendar/schoolScheduleStyle";
+import {
+  SCHOOL_GRADE_FILTERS,
+  buildSchoolBadges,
+  describeSchoolFilter,
+  normalizeSchoolFilter,
+  schoolKeyOf,
+  stripSchoolPrefix,
+} from "../../utils/schoolSchedule";
 
 // 年間カレンダー: 1 日の欄を上 = 予備校部 / 線 / 下 = 現役部 に分けて、両方の
 // 予定を 1 枚で見る (2026-10-21)。予備校部の予定は utils/yobikoEvents
@@ -49,6 +61,13 @@ import { YobikoBulkImportDialog } from "./yearCalendar/YobikoBulkImportDialog";
 // 予備校部の予定の登録・編集・削除は管理者だけ。削除は cascade が無いので
 // removeWithUndo。現役部の記録はクリックで「休講・テスト期間・イベント」の
 // 編集へ (イベントカレンダーと同じ導線)。
+//
+// 学校の考査・模試 (2026-10-22、utils/schoolSchedule): 授業を止めない学校の
+// テスト期間と学校の模試は、現役部の欄の先頭に学校ごとのバッジ 1 行にまとめ
+// (1 件ずつは出さない)、表示の切替「学校別」では行 = 学校のタイムラインにする。
+// 絞り込み (学年・発表〜考査・模試・希望者) はバッジとタイムラインだけに効く。
+// 表示・絞り込みは期間と同じく sessionStorage (使用統計は取らない)。バッジ・
+// 帯を押すと内訳のポップオーバー (管理者は記録ごとに「編集」)。
 
 export const SS_YEAR_CAL_KEY = "genyakubu:yearCalendar";
 const COUNT_OPTIONS = [1, 3, 6, 12];
@@ -59,6 +78,12 @@ const ORIENT_OPTIONS = [
   { key: "portrait", label: "縦" },
 ];
 const DEFAULT_ORIENT = "landscape";
+// 表示: カレンダー (日ごと) / 学校別 (学校の考査・模試を学校ごとの横棒で比べる)
+const DISPLAY_OPTIONS = [
+  { key: "calendar", label: "カレンダー" },
+  { key: "school", label: "学校別" },
+];
+const DEFAULT_DISPLAY = "calendar";
 
 function loadViewState(todayYm) {
   const fallback = {
@@ -66,6 +91,8 @@ function loadViewState(todayYm) {
     count: DEFAULT_COUNT,
     lanes: { yobiko: true, genyaku: true },
     orient: DEFAULT_ORIENT,
+    display: DEFAULT_DISPLAY,
+    schoolFilter: normalizeSchoolFilter(null),
   };
   try {
     const raw = JSON.parse(sessionStorage.getItem(SS_YEAR_CAL_KEY) || "null");
@@ -75,7 +102,15 @@ function loadViewState(todayYm) {
     const yobiko = raw.lanes?.yobiko !== false;
     const genyaku = raw.lanes?.genyaku !== false;
     const orient = ORIENT_OPTIONS.some((o) => o.key === raw.orient) ? raw.orient : DEFAULT_ORIENT;
-    return { ym, count, lanes: yobiko || genyaku ? { yobiko, genyaku } : fallback.lanes, orient };
+    const display = DISPLAY_OPTIONS.some((o) => o.key === raw.display) ? raw.display : DEFAULT_DISPLAY;
+    return {
+      ym,
+      count,
+      lanes: yobiko || genyaku ? { yobiko, genyaku } : fallback.lanes,
+      orient,
+      display,
+      schoolFilter: normalizeSchoolFilter(raw.schoolFilter),
+    };
   } catch {
     return fallback;
   }
@@ -105,13 +140,20 @@ export function YearCalendarView({
   const todayStr = useToday();
   const todayYm = todayStr.slice(0, 7);
   const [viewState, setViewStateRaw] = useState(() => loadViewState(todayYm));
-  const setViewState = (patch) =>
+  // 内訳のポップオーバー ({ key, x, y, title, items, opener })。期間・表示を
+  // 変えたら閉じる (開いたチップが消える)
+  const [popover, setPopover] = useState(null);
+  const setViewState = (patch) => {
+    setPopover(null);
     setViewStateRaw((cur) => {
       const next = { ...cur, ...(typeof patch === "function" ? patch(cur) : patch) };
       saveViewState(next);
       return next;
     });
-  const { ym, count, lanes, orient } = viewState;
+  };
+  const { ym, count, lanes, orient, display, schoolFilter } = viewState;
+  const setSchoolFilter = (patch) =>
+    setViewState((s) => ({ schoolFilter: { ...s.schoolFilter, ...patch } }));
 
   const months = useMemo(() => monthsFrom(ym, count), [ym, count]);
   const from = monthRange(months[0]).from;
@@ -122,10 +164,55 @@ export function YearCalendarView({
     [yobikoEvents, from, to]
   );
   const marksByDate = useMemo(() => yobikoDayMarks(yobikoEvents, from, to), [yobikoEvents, from, to]);
+  // 学校のテスト期間・模試はバッジにまとめるので、1 件ずつの記録からは外す
   const genyakuByDate = useMemo(
-    () => spreadByDate(genyakuEntries({ holidays, examPeriods, specialEvents }), from, to),
+    () =>
+      spreadByDate(
+        genyakuEntries({ holidays, examPeriods, specialEvents }, { excludeSchoolBadged: true }),
+        from,
+        to
+      ),
     [holidays, examPeriods, specialEvents, from, to]
   );
+  const schoolBadgesByDate = useMemo(
+    () => buildSchoolBadges({ examPeriods, specialEvents, filter: schoolFilter }, from, to),
+    [examPeriods, specialEvents, schoolFilter, from, to]
+  );
+
+  const editGenyaku =
+    isAdmin && onEditGenyakuEvent
+      ? (kind, record) => {
+          setPopover(null);
+          onEditGenyakuEvent(kind === "exam" ? EVENT_KIND.EXAM : EVENT_KIND.SPECIAL, record.id);
+        }
+      : null;
+  const togglePopover = (key, el, make) => {
+    if (popover?.key === key) {
+      setPopover(null);
+      return;
+    }
+    const r = el.getBoundingClientRect();
+    setPopover({ key, x: r.left, y: r.bottom + 4, opener: el, ...make() });
+  };
+  const openBadge = (ds, badge, el) =>
+    togglePopover(`${ds}|${badge.school}`, el, () => ({
+      title: `${fmtMDWeekday(ds)} ${badge.school}`,
+      items: [
+        ...badge.exams.map(({ exam, state }) => ({ kind: "exam", record: exam, state, ds })),
+        ...badge.mocks.map((ev) => ({ kind: "mock", record: ev })),
+      ],
+    }));
+  const openTimelineItem = (item, el) =>
+    togglePopover(`${item.kind}|${item.record.id}`, el, () => {
+      const school = schoolKeyOf(item.record);
+      return {
+        title:
+          item.kind === "exam"
+            ? `${school} ${stripSchoolPrefix(item.record.name, school)}`
+            : `${school} 模試`,
+        items: [item],
+      };
+    });
 
   // ← / → で前後へ (12 か月の表示は 1 年ずつ)、t で今月 (12 か月の表示は今年度) から。
   // 入力中・ダイアログ中は効かない
@@ -181,10 +268,18 @@ export function YearCalendarView({
     lanes.yobiko && lanes.genyaku
       ? `上: ${YEAR_CAL_LANES.yobiko.label} / 下: ${YEAR_CAL_LANES.genyaku.label}`
       : YEAR_CAL_LANES[lanes.yobiko ? "yobiko" : "genyaku"].label;
+  const isSchoolView = display === "school";
+  const filterCaption = describeSchoolFilter(schoolFilter);
+  // 紙面の見出しの (…) の中身。学校の予定の絞り込みは効いている表示だけに添える
+  const printCaption = isSchoolView
+    ? ["学校別の考査・模試", filterCaption].filter(Boolean).join(" / ")
+    : [laneCaption, lanes.genyaku && filterCaption ? `学校の予定: ${filterCaption}` : ""]
+        .filter(Boolean)
+        .join(" / ");
 
   return (
     <div className="year-cal-view">
-      <style>{YEAR_CAL_CSS + yearCalPageRule(orient)}</style>
+      <style>{YEAR_CAL_CSS + SCHOOL_SCHEDULE_CSS + yearCalPageRule(orient)}</style>
       <div
         className="no-print"
         style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}
@@ -221,20 +316,44 @@ export function YearCalendarView({
             年度
           </button>
         </div>
-        <div role="group" aria-label="表示する段" style={{ display: "inline-flex", gap: 8, fontSize: 12 }}>
-          {["yobiko", "genyaku"].map((lane) => (
-            <label key={lane} style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={lanes[lane]}
-                // 両方外すと何も出ないので、最後の 1 つは外せない
-                disabled={lanes[lane] && !lanes[lane === "yobiko" ? "genyaku" : "yobiko"]}
-                onChange={(e) => setViewState((s) => ({ lanes: { ...s.lanes, [lane]: e.target.checked } }))}
-              />
-              {YEAR_CAL_LANES[lane].label}
-            </label>
+        <div role="group" aria-label="表示" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+          <span style={{ fontSize: 11, color: colors.inkMuted }}>表示</span>
+          {DISPLAY_OPTIONS.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              aria-pressed={display === o.key}
+              onClick={() => setViewState({ display: o.key })}
+              title={
+                o.key === "school"
+                  ? "学校の考査・模試を、行 = 学校の横棒で比べる (どの学校がいつ忙しいか)"
+                  : "日ごとのカレンダー (上: 予備校部 / 下: 現役部)"
+              }
+              style={{ ...S.btn(display === o.key), fontSize: 11, padding: "4px 10px" }}
+            >
+              {o.label}
+            </button>
           ))}
         </div>
+        {!isSchoolView && (
+          <div role="group" aria-label="表示する段" style={{ display: "inline-flex", gap: 8, fontSize: 12 }}>
+            {["yobiko", "genyaku"].map((lane) => (
+              <label key={lane} style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                <input
+                  type="checkbox"
+                  checked={lanes[lane]}
+                  // 両方外すと何も出ないので、最後の 1 つは外せない
+                  disabled={lanes[lane] && !lanes[lane === "yobiko" ? "genyaku" : "yobiko"]}
+                  onChange={(e) => setViewState((s) => ({ lanes: { ...s.lanes, [lane]: e.target.checked } }))}
+                />
+                {YEAR_CAL_LANES[lane].label}
+              </label>
+            ))}
+          </div>
+        )}
+        {(isSchoolView || lanes.genyaku) && (
+          <SchoolFilterControls filter={schoolFilter} onChange={setSchoolFilter} />
+        )}
         <div role="group" aria-label="印刷の向き" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
           <span style={{ fontSize: 11, color: colors.inkMuted }}>印刷の向き</span>
           {ORIENT_OPTIONS.map((o) => (
@@ -255,12 +374,21 @@ export function YearCalendarView({
 
       {/* 紙面だけの見出し (画面はトップバーの題と期間の操作で足りる)。トップバーの
           🖨 (popup) で刷ったときの印刷ジョブ名も data-print-title から */}
-      <h2 className="year-cal-print-title" data-print-title={`年間カレンダー ${rangeLabel}`}>
-        {rangeLabel} ({laneCaption})
+      <h2
+        className="year-cal-print-title"
+        data-print-title={`${isSchoolView ? "学校別の考査・模試" : "年間カレンダー"} ${rangeLabel}`}
+      >
+        {rangeLabel} ({printCaption})
       </h2>
-      <Legend lanes={lanes} />
+      {isSchoolView ? (
+        <div className="year-cal-legend" style={{ margin: "4px 0 10px" }}>
+          <SchoolTimelineLegend />
+        </div>
+      ) : (
+        <Legend lanes={lanes} showSchoolBadges={lanes.genyaku && schoolBadgesByDate.size > 0} />
+      )}
 
-      {lanes.yobiko && yobikoEvents.length === 0 && (
+      {!isSchoolView && lanes.yobiko && yobikoEvents.length === 0 && (
         <div className="no-print" style={{ fontSize: 12, color: colors.inkMuted, margin: "6px 0 10px" }}>
           予備校部の予定はまだありません。
           {canEdit
@@ -269,29 +397,57 @@ export function YearCalendarView({
         </div>
       )}
 
-      <div className="year-cal-months">
-        {months.map((m) => (
-          <YearCalendarMonth
-            key={m}
-            ym={m}
-            todayStr={todayStr}
-            lanes={lanes}
-            yobikoByDate={yobikoByDate}
-            marksByDate={marksByDate}
-            genyakuByDate={genyakuByDate}
-            onSelectDate={onSelectDate}
-            onAddYobiko={canEdit ? (date) => setDialog({ date }) : null}
-            onEditYobiko={canEdit ? (event) => setDialog({ event }) : null}
-            onEditGenyaku={
-              isAdmin && onEditGenyakuEvent
-                ? (it) => onEditGenyakuEvent(it.kind, it.source.id)
-                : null
-            }
-          />
-        ))}
-      </div>
+      {isSchoolView ? (
+        <SchoolTimeline
+          examPeriods={examPeriods}
+          specialEvents={specialEvents}
+          filter={schoolFilter}
+          from={from}
+          to={to}
+          todayStr={todayStr}
+          openKey={popover?.key}
+          onOpen={openTimelineItem}
+        />
+      ) : (
+        <div className="year-cal-months">
+          {months.map((m) => (
+            <YearCalendarMonth
+              key={m}
+              ym={m}
+              todayStr={todayStr}
+              lanes={lanes}
+              yobikoByDate={yobikoByDate}
+              marksByDate={marksByDate}
+              genyakuByDate={genyakuByDate}
+              schoolBadgesByDate={schoolBadgesByDate}
+              openBadgeKey={popover?.key}
+              onOpenBadge={openBadge}
+              onSelectDate={onSelectDate}
+              onAddYobiko={canEdit ? (date) => setDialog({ date }) : null}
+              onEditYobiko={canEdit ? (event) => setDialog({ event }) : null}
+              onEditGenyaku={
+                isAdmin && onEditGenyakuEvent
+                  ? (it) => onEditGenyakuEvent(it.kind, it.source.id)
+                  : null
+              }
+            />
+          ))}
+        </div>
+      )}
 
-      {canEdit && (
+      {popover && (
+        <SchoolSchedulePopover
+          x={popover.x}
+          y={popover.y}
+          title={popover.title}
+          items={popover.items}
+          opener={popover.opener}
+          onClose={() => setPopover(null)}
+          onEdit={editGenyaku}
+        />
+      )}
+
+      {canEdit && !isSchoolView && (
         <YobikoEventPanel
           yobikoEvents={yobikoEvents}
           from={from}
@@ -342,7 +498,8 @@ export function YearCalendarView({
 }
 
 // 凡例 (紙面にも載せる)。予備校部は日の種別の塗り、現役部は記録の種類
-function Legend({ lanes }) {
+// (学校の考査・模試のバッジがある期間はその見方も)
+function Legend({ lanes, showSchoolBadges }) {
   const chip = (key, label, style) => (
     <span
       key={key}
@@ -402,6 +559,43 @@ function Legend({ lanes }) {
           })}
         </div>
       )}
+      {lanes.genyaku && showSchoolBadges && <SchoolBadgeLegend />}
+    </div>
+  );
+}
+
+// 学校の予定 (考査・模試) の絞り込み。バッジとタイムラインだけに効く
+// (休講など 1 件ずつの記録には効かせない)
+function SchoolFilterControls({ filter, onChange }) {
+  const check = (key, label, title) => (
+    <label key={key} title={title} style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+      <input type="checkbox" checked={filter[key]} onChange={(e) => onChange({ [key]: e.target.checked })} />
+      {label}
+    </label>
+  );
+  return (
+    <div
+      role="group"
+      aria-label="学校の予定"
+      style={{ display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12 }}
+    >
+      <span style={{ fontSize: 11, color: colors.inkMuted }}>学校の予定</span>
+      {check("exam", "発表〜考査", "授業を休止しない学校のテスト期間 (考査発表〜考査)")}
+      {check("mock", "模試", "種別「模試」の特別イベント")}
+      {check("optional", "希望者・冠模試", "「希望者」タグの模試 (東大京大OP・希望者だけの小論文模試など)")}
+      <span role="group" aria-label="学校の予定の学年" style={{ display: "inline-flex", gap: 2 }}>
+        {SCHOOL_GRADE_FILTERS.map((g) => (
+          <button
+            key={g.key}
+            type="button"
+            aria-pressed={filter.grade === g.key}
+            onClick={() => onChange({ grade: g.key })}
+            style={{ ...S.btn(filter.grade === g.key), fontSize: 11, padding: "3px 8px" }}
+          >
+            {g.label}
+          </button>
+        ))}
+      </span>
     </div>
   );
 }
@@ -579,7 +773,9 @@ const YEAR_CAL_CSS = `
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
-.year-cal-month { overflow-x: auto; }
+/* position: relative = 読み上げ用の .year-cal-sr (absolute) をこの枠の中に収める
+   (無いと右端の欄の分だけページ全体が横にはみ出し、スマホ幅で横に揺れる) */
+.year-cal-month { overflow-x: auto; position: relative; }
 .year-cal-lane-col { width: 4.8em; }
 .year-cal-table thead th {
   font-size: 12px;

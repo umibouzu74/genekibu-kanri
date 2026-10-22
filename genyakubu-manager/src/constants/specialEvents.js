@@ -7,6 +7,12 @@
 // 実際の値は全員共通の設定 (LS.specialEventDisplay) が持つ
 // (utils/specialEventDisplay)。学校の始業式や入試日程まで全員の月間予定に
 // 出ると見づらいので、学校の予定・入試は既定で出さない。
+//
+// 模試 (mock) は 2026-10-22 (schema v26) に追加。学校ごとの校外模試・学力
+// テストで、学校タグ (+ 冠模試・希望者だけの模試は「希望者」タグ) を付けると
+// 年間カレンダーの学校バッジ・学校別タイムラインにまとまる (utils/schoolSchedule)。
+// 学校の予定と同じく講師の月間予定には既定で出さない。色は学校の予定 (空色) と
+// 見分けが付くよう藍色。
 export const SPECIAL_EVENT_TYPES = Object.freeze([
   { key: "school", label: "学校の予定", icon: "🏫", bg: "#e0ecf8", fg: "#1a4a7a", accent: "#3a7ac4", teacherMonth: false },
   { key: "jukuTest", label: "塾のテスト", icon: "📝", bg: "#fbe0ec", fg: "#9a2a5a", accent: "#c44a8a", teacherMonth: true },
@@ -14,6 +20,7 @@ export const SPECIAL_EVENT_TYPES = Object.freeze([
   { key: "course", label: "講習", icon: "📚", bg: "#dff3f1", fg: "#17605a", accent: "#2f9a90", teacherMonth: true },
   { key: "parents", label: "保護者会", icon: "👪", bg: "#fff4d4", fg: "#8a6a10", accent: "#caa030", teacherMonth: true },
   { key: "staff", label: "社内", icon: "🏢", bg: "#e6e9f0", fg: "#3a4560", accent: "#6a7590", teacherMonth: true },
+  { key: "mock", label: "模試", icon: "✏️", bg: "#e7e7fb", fg: "#2e2f86", accent: "#5b5fd6", teacherMonth: false },
   { key: "other", label: "その他", icon: "📌", bg: "#e8e8e8", fg: "#444", accent: "#888", teacherMonth: true },
 ]);
 

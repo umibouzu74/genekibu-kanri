@@ -51,7 +51,7 @@ import type {
 import { SPECIAL_EVENT_TYPE_BY_KEY } from "../constants/specialEvents";
 import { upgradeSpecialEventTypes } from "./specialEventTypes";
 
-export const CURRENT_SCHEMA_VERSION = 25;
+export const CURRENT_SCHEMA_VERSION = 26;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -227,6 +227,13 @@ export function isExamPeriod(x: unknown): x is ExamPeriod {
     if (!(x.classExceptions as unknown[]).every((e) => isExamClassException(e)))
       return false;
   }
+  // 考査日 (表示専用)。並び・範囲・重複は読み込みの migrateExamPeriods が
+  // 整えるので、ここでは日付の文字列の配列であることだけを見る
+  if (x.examDates !== undefined) {
+    if (!Array.isArray(x.examDates)) return false;
+    if (!(x.examDates as unknown[]).every((d) => isIsoDate(d))) return false;
+  }
+  if (x.source !== undefined && !isString(x.source)) return false;
   return true;
 }
 
@@ -1163,6 +1170,12 @@ export function migrateExportBundle(raw: unknown): unknown {
 
   // v24 → v25: yobikoEvents (予備校部の予定: 年間カレンダーの上半分。休校日・
   //             出勤者休日・行事) を追加。既定値で埋めない (無ければ現状維持)。
+
+  // v25 → v26: 特別イベントの種別に mock (模試) を、ExamPeriod に examDates
+  //             (考査日、表示専用) と source (出典) を追加。どれも足すだけで
+  //             既存データの変換は不要 (v12 / v18 と同じく「mock を理解する
+  //             schema」の切れ目として版を上げる)。古い版の端末は mock を
+  //             "other" に潰すので、リリース後は全端末で再読み込みしてもらう。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;

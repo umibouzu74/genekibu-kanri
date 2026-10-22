@@ -239,6 +239,14 @@ describe("type guards", () => {
     expect(isExamPeriod(null)).toBe(false);
   });
 
+  it("isExamPeriod: 考査日は日付の文字列の配列、出典は文字列", () => {
+    const base = { id: 1, name: "桜井2学期中間", startDate: "2026-10-06", endDate: "2026-10-16", targetGrades: [] };
+    expect(isExamPeriod({ ...base, examDates: ["2026-10-13", "2026-10-14"], source: "2026桜井" })).toBe(true);
+    expect(isExamPeriod({ ...base, examDates: "2026-10-13" })).toBe(false);
+    expect(isExamPeriod({ ...base, examDates: ["10/13"] })).toBe(false);
+    expect(isExamPeriod({ ...base, source: 1 })).toBe(false);
+  });
+
   it("isExamPrepSchedule requires examPeriodId and days with valid periods", () => {
     expect(
       isExamPrepSchedule({

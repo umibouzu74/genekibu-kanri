@@ -8,6 +8,8 @@ import { fmtDate, fmtDateWeekday, parseLocalDate } from "../utils/dateHelpers";
 //
 // - allowedWeekday ("月" など) を渡すとその曜日だけ押せる (不定期のコマは
 //   そのコマの曜日にしか実施しないため)
+// - minDate / maxDate ("YYYY-MM-DD") を渡すとその範囲の日だけ押せる (テスト
+//   期間の考査日は期間の中の日だけ)。範囲外でも選択中の日は押して外せる
 // - 選択中の日付の並べ替え・重複除去は呼び出し側 (選択の持ち主) の役目
 
 function monthOf(dateStr) {
@@ -36,11 +38,21 @@ function monthCells(ym) {
  *   selected: string[],
  *   onToggle: (date: string) => void,
  *   allowedWeekday?: string,
+ *   minDate?: string,
+ *   maxDate?: string,
  *   initialMonth?: string,
  *   label?: string,
  * }} props
  */
-export function MultiDateCalendar({ selected, onToggle, allowedWeekday, initialMonth, label }) {
+export function MultiDateCalendar({
+  selected,
+  onToggle,
+  allowedWeekday,
+  minDate,
+  maxDate,
+  initialMonth,
+  label,
+}) {
   const [ym, setYm] = useState(
     () => monthOf(initialMonth) || monthOf((selected || [])[0]) || fmtDate(new Date()).slice(0, 7)
   );
@@ -102,7 +114,10 @@ export function MultiDateCalendar({ selected, onToggle, allowedWeekday, initialM
         {monthCells(ym).map((d, i) => {
           if (!d) return <div key={`b${i}`} />;
           const dow = WEEKDAYS[parseLocalDate(d).getDay()];
-          const allowed = !allowedWeekday || dow === allowedWeekday;
+          const allowed =
+            (!allowedWeekday || dow === allowedWeekday) &&
+            (!minDate || d >= minDate) &&
+            (!maxDate || d <= maxDate);
           const on = sel.has(d);
           return (
             <button

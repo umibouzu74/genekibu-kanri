@@ -19,8 +19,14 @@ describe("normalizeSpecialEventDisplay", () => {
       course: true,
       parents: true,
       staff: true,
+      mock: false,
       other: true,
     });
+  });
+
+  it("前の版で保存した設定 (mock の無いもの) に模試の既定値 (出さない) を補う", () => {
+    const saved = { monthTypes: { school: false, jukuTest: true, entrance: false, course: true, parents: true, staff: true, other: true } };
+    expect(normalizeSpecialEventDisplay(saved).monthTypes.mock).toBe(false);
   });
 
   it("RTDB が消した空・欠けた種別を既定値で埋める (全種別の真偽値を必ず持つ)", () => {

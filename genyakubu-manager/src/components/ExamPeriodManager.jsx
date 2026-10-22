@@ -7,7 +7,7 @@ import {
   isValidDateStr,
 } from "../data";
 import { nextNumericId } from "../utils/schema";
-import { fmtDateWeekday, formatDateRange } from "../utils/dateHelpers";
+import { fmtDateWeekday, fmtMD, fmtMDWeekday, formatDateRange } from "../utils/dateHelpers";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
 import {
@@ -23,6 +23,13 @@ import { ExamPrepScheduleEditor } from "./ExamPrepScheduleEditor";
 import { findScheduleByExamPeriodId } from "../utils/examPrepHelpers";
 import { TAG_META } from "../constants/eventKinds";
 import { gradeChoices, isCommonGrade } from "../utils/gradeChoices";
+import { MultiDateCalendar } from "./MultiDateCalendar";
+import { describeExamDates, isSchoolBadgeExam } from "../utils/schoolSchedule";
+import { examPeriodSources } from "../utils/examPeriodImport";
+import { ExamPeriodBulkImportDialog } from "./ExamPeriodBulkImportDialog";
+
+// 出典のチップを選んだときの地の色 (テスト期間の橙の淡い色)
+const EXAM_LIGHT = "#fff3df";
 
 export function ExamPeriodManager({
   examPeriods,
@@ -55,11 +62,19 @@ export function ExamPeriodManager({
   const [exGrades, setExGrades] = useState([]);
   const [exMemo, setExMemo] = useState("");
   const [exError, setExError] = useState("");
+  // 考査日 (表示専用。年間カレンダーの学校バッジ・学校別タイムライン用)。
+  // 授業の休止・特訓・第N回には使わない (utils/schoolSchedule)
+  const [examDates, setExamDates] = useState([]);
+  const [showExamCal, setShowExamCal] = useState(false);
   const [tagsArr, setTagsArr] = useState([]);
   const [tagInput, setTagInput] = useState("");
   const [editId, setEditId] = useState(null);
   const [error, setError] = useState("");
   const [scheduleEditingEp, setScheduleEditingEp] = useState(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  // 出典で絞っている間は期間に関係なくその出典の全件を出す (改訂版の予定表が
+  // 来たら出典ごと消して入れ直す)
+  const [sourceFilter, setSourceFilter] = useState(null);
   const toasts = useToasts();
   const confirm = useConfirm();
 
@@ -128,6 +143,15 @@ export function ExamPeriodManager({
     setClassExceptions(classExceptions.filter((ex) => ex.date !== date));
     setExError("");
   };
+
+  const toggleExamDate = (d) => {
+    setExamDates((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort()));
+    if (error) setError("");
+  };
+  const lastExamDate = examDates[examDates.length - 1] || "";
+  // 終了日 (未入力も) が最後の考査日より前 = 保存を止める。自動では伸ばさない
+  const endBeforeLastExam = !!lastExamDate && (!endDate || endDate < lastExamDate);
+  const examBeforeStart = examDates.filter((d) => startDate && d < startDate);
 
   const toggleGrade = (g) => {
     if (allGrades) {
@@ -202,6 +226,18 @@ export function ExamPeriodManager({
       );
       return;
     }
+    if (examBeforeStart.length > 0) {
+      setError(
+        `考査日が開始日 (発表日) より前です: ${examBeforeStart.map(fmtMD).join(", ")} (外すか開始日を直してください)`
+      );
+      return;
+    }
+    if (lastExamDate && endDate < lastExamDate) {
+      setError(
+        `終了日が最後の考査日 (${fmtMD(lastExamDate)}) より前です。「終了日を最後の考査日に合わせる」を押すか、終了日を直してください`
+      );
+      return;
+    }
 
     const grades = allGrades ? [] : [...targetGrades];
     // 入力中のタグも保存対象に含める (Enter を押し忘れた場合の救済)
@@ -225,16 +261,23 @@ export function ExamPeriodManager({
         memo: ex.memo || "",
       })),
     };
+    // 考査日は空ならキーごと持たない (RTDB は空配列を消す)
+    const withExamDates = (rec) => {
+      const next = { ...rec, ...payload };
+      if (examDates.length > 0) next.examDates = [...examDates];
+      else delete next.examDates;
+      return next;
+    };
     if (editId != null) {
       const updated = examPeriods.map((ep) =>
-        ep.id === editId ? { ...ep, ...payload } : ep
+        ep.id === editId ? withExamDates(ep) : ep
       );
       onSave(updated);
       toasts.success("テスト期間を更新しました");
     } else {
       onSave([
         ...examPeriods,
-        { id: nextNumericId(examPeriods), ...payload },
+        withExamDates({ id: nextNumericId(examPeriods) }),
       ]);
       toasts.success("テスト期間を追加しました");
     }
@@ -267,6 +310,8 @@ export function ExamPeriodManager({
     setExGrades([]);
     setExMemo("");
     setExError("");
+    setExamDates([...(ep.examDates || [])].sort());
+    setShowExamCal(false);
     setTagsArr([...(ep.tags || [])]);
     setTagInput("");
     setEditId(ep.id);
@@ -288,6 +333,8 @@ export function ExamPeriodManager({
     setExGrades([]);
     setExMemo("");
     setExError("");
+    setExamDates([]);
+    setShowExamCal(false);
     setTagsArr([]);
     setTagInput("");
     setEditId(null);
@@ -315,12 +362,48 @@ export function ExamPeriodManager({
     toasts.success("テスト期間を削除しました");
   };
 
+  // 出典ごとのまとめて削除。テスト期間の削除は特訓シフトへの cascade がある
+  // ので、Undo ではなく確認ダイアログ (削除 UX のルール、confirmedRemove と同じ扱い)
+  const removeSource = async (src) => {
+    const targets = examPeriods.filter((ep) => ep.source === src);
+    if (targets.length === 0) return;
+    const withSchedule = targets.filter(
+      (ep) => (findScheduleByExamPeriodId(examPrepSchedules, ep.id)?.days || []).length > 0
+    );
+    const ok = await confirm({
+      title: "出典ごとに削除",
+      message:
+        `出典「${src}」のテスト期間 ${targets.length} 件を削除しますか？` +
+        (withSchedule.length > 0
+          ? `\n\n※特訓シフト設定のある ${withSchedule.length} 件 (${withSchedule
+              .map((ep) => ep.name)
+              .join("・")}) は、特訓シフトも同時に削除されます。`
+          : ""),
+      okLabel: "削除",
+      tone: "danger",
+    });
+    if (!ok) return;
+    if (withSchedule.length > 0 && examPrepCrud) {
+      examPrepCrud.cascadeDeletePeriod(withSchedule.map((ep) => ep.id));
+    }
+    const ids = new Set(targets.map((ep) => ep.id));
+    onSave((prev) => prev.filter((ep) => !ids.has(ep.id)));
+    if (editId != null && ids.has(editId)) resetForm();
+    setSourceFilter(null);
+    toasts.success(`出典「${src}」の ${targets.length} 件を削除しました`);
+  };
+
   const sorted = [...examPeriods].sort((a, b) =>
     a.startDate.localeCompare(b.startDate)
   );
+  const sources = examPeriodSources(examPeriods);
+  const activeSource =
+    sourceFilter && sources.some((x) => x.source === sourceFilter) ? sourceFilter : null;
   // 一覧の期間絞り込み (既定は今月以降)。編集・削除は全件が対象
   const period = useListPeriod();
-  const shown = period.apply(sorted, (ep) => [ep.startDate, ep.endDate]);
+  const shown = activeSource
+    ? sorted.filter((ep) => ep.source === activeSource)
+    : period.apply(sorted, (ep) => [ep.startDate, ep.endDate]);
 
   useEditTarget({
     editTargetId,
@@ -354,6 +437,26 @@ export function ExamPeriodManager({
       >
         テスト期間管理
       </div>
+
+      {isAdmin && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          <button
+            type="button"
+            onClick={() => setBulkOpen(true)}
+            title="学校の行事予定表から読み取った考査日程 (学校・名称・発表日・考査日…) の表を貼って、まとめて登録します"
+            style={{ ...S.btn(false), fontSize: 12, padding: "6px 12px" }}
+          >
+            📋 まとめて登録
+          </button>
+        </div>
+      )}
+      {bulkOpen && isAdmin && (
+        <ExamPeriodBulkImportDialog
+          examPeriods={examPeriods}
+          onSave={onSave}
+          onClose={() => setBulkOpen(false)}
+        />
+      )}
 
       {isAdmin && (
         <div
@@ -415,6 +518,82 @@ export function ExamPeriodManager({
               }}
               style={{ ...S.input, width: "auto" }}
             />
+          </div>
+
+          {/* 考査日 (任意・表示用) */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 4 }}>
+              <span style={{ fontSize: 12, fontWeight: 700 }}>考査日 (任意・表示用):</span>
+              <span style={{ fontSize: 12 }} aria-live="polite">
+                {examDates.length === 0
+                  ? "なし"
+                  : `${examDates.map(fmtMDWeekday).join("・")} (${examDates.length}日)`}
+              </span>
+              <button
+                type="button"
+                aria-expanded={showExamCal}
+                onClick={() => setShowExamCal((v) => !v)}
+                style={{ ...S.btn(showExamCal), fontSize: 11, padding: "3px 10px" }}
+              >
+                📅 {showExamCal ? "カレンダーを閉じる" : "カレンダーで選ぶ"}
+              </button>
+              {lastExamDate && endDate !== lastExamDate && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEndDate(lastExamDate);
+                    if (error) setError("");
+                  }}
+                  style={{ ...S.btn(false), fontSize: 11, padding: "3px 10px" }}
+                >
+                  終了日を最後の考査日 ({fmtMD(lastExamDate)}) に合わせる
+                </button>
+              )}
+              {examDates.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setExamDates([])}
+                  style={{ ...S.btn(false), fontSize: 11, padding: "3px 10px" }}
+                >
+                  すべて外す
+                </button>
+              )}
+            </div>
+            <div style={{ fontSize: 10, color: "#888", lineHeight: 1.6 }}>
+              高校の学校別テストは、開始日 = 考査発表日で登録し、実際に考査がある日をここで選びます。
+              年間カレンダーの学校バッジ・学校別タイムラインが「発表 / 発表後 / 考査 n 日目 /
+              期間中の休み」を出し分けます。授業の休止・特訓・第N回には関係しません。
+            </div>
+            {endBeforeLastExam && endDate && (
+              <div role="status" style={{ fontSize: 11, color: "#a03030", marginTop: 4 }}>
+                終了日 ({fmtMD(endDate)}) が最後の考査日 ({fmtMD(lastExamDate)}) より前です (このままでは保存できません)
+              </div>
+            )}
+            {examBeforeStart.length > 0 && (
+              <div role="status" style={{ fontSize: 11, color: "#a03030", marginTop: 4 }}>
+                開始日 (発表日) より前の考査日があります: {examBeforeStart.map(fmtMD).join(", ")}
+              </div>
+            )}
+            {examDates.length > 0 &&
+              !isSchoolBadgeExam({ startDate: startDate || "-", stopsClasses, tags: tagsArr }) && (
+                <div style={{ fontSize: 10, color: "#8a6a10", marginTop: 4 }}>
+                  ※ 学校バッジにまとめるのは「授業を休止する」が OFF で学校名のタグがあるテスト期間だけです
+                  (このままでは年間カレンダーに従来どおり 1 件ずつ出ます)。
+                </div>
+              )}
+            {showExamCal && (
+              <div style={{ marginTop: 6 }}>
+                <MultiDateCalendar
+                  // 開始日を変えたらその月から開き直す
+                  key={startDate || "-"}
+                  selected={examDates}
+                  onToggle={toggleExamDate}
+                  minDate={startDate || undefined}
+                  initialMonth={examDates[0] || startDate || undefined}
+                  label="考査日をカレンダーで選ぶ"
+                />
+              </div>
+            )}
           </div>
 
           {/* 対象学年 */}
@@ -849,7 +1028,61 @@ export function ExamPeriodManager({
         </div>
       )}
 
-      <ListPeriodFilter period={period} shown={shown.length} total={sorted.length} noun="テスト期間" />
+      {activeSource ? (
+        <div style={{ fontSize: 12, color: "#555", marginBottom: 8 }}>
+          出典「{activeSource}」の {shown.length} 件を表示しています (期間に関係なく全件)
+        </div>
+      ) : (
+        <ListPeriodFilter period={period} shown={shown.length} total={sorted.length} noun="テスト期間" />
+      )}
+      {/* 出典 (まとめて登録で付けたもの)。出典ごとに表示 / まとめて削除 */}
+      {sources.length > 0 && (
+        <div
+          role="group"
+          aria-label="出典で絞り込む"
+          style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}
+        >
+          <span style={{ fontSize: 11, color: "#888", marginRight: 2 }}>出典:</span>
+          {sources.map(({ source: src, count }) => (
+            <button
+              key={src}
+              type="button"
+              aria-pressed={activeSource === src}
+              onClick={() => setSourceFilter(activeSource === src ? null : src)}
+              style={{
+                fontSize: 11,
+                padding: "2px 8px",
+                borderRadius: 10,
+                cursor: "pointer",
+                background: activeSource === src ? EXAM_LIGHT : "#fff",
+                color: activeSource === src ? "#7a4a10" : "#555",
+                border: `1px solid ${activeSource === src ? "#e0a030" : "#ddd"}`,
+                fontWeight: activeSource === src ? 700 : 400,
+              }}
+            >
+              📄 {src} {count}
+            </button>
+          ))}
+          {isAdmin && activeSource && (
+            <button
+              type="button"
+              onClick={() => removeSource(activeSource)}
+              style={{
+                fontSize: 11,
+                padding: "2px 10px",
+                borderRadius: 10,
+                border: `1px solid ${colors.danger}`,
+                background: "#fff",
+                color: colors.danger,
+                cursor: "pointer",
+                marginLeft: 6,
+              }}
+            >
+              この出典の {shown.length} 件をまとめて削除
+            </button>
+          )}
+        </div>
+      )}
       {/* 一覧 */}
       <div
         style={{
@@ -910,6 +1143,14 @@ export function ExamPeriodManager({
                 <span style={{ fontSize: 11, color: "#666" }}>
                   {formatDateRange(ep.startDate, ep.endDate, { weekday: true })}
                 </span>
+                {describeExamDates(ep) && (
+                  <span
+                    title={`考査日: ${(ep.examDates || []).map(fmtMDWeekday).join("・")}`}
+                    style={{ fontSize: 11, color: "#7a4a10", fontWeight: 700 }}
+                  >
+                    {describeExamDates(ep)}
+                  </span>
+                )}
                 {ep.stopsClasses === false && (
                   <span
                     title="授業を休止しない (表示のみ)"
@@ -995,6 +1236,11 @@ export function ExamPeriodManager({
                         })}
                     </div>
                   )}
+                {ep.source && (
+                  <span style={{ fontSize: 10, color: "#999" }} title="出典">
+                    📄 {ep.source}
+                  </span>
+                )}
                 {(ep.tags || []).length > 0 && (
                   <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
                     {ep.tags.map((t) => (

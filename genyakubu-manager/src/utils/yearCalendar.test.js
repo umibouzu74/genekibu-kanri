@@ -89,6 +89,32 @@ describe("段の中身", () => {
     expect(m.get("2026-11-18")[0].note).toBe("");
   });
 
+  it("現役部: 学校バッジにまとめる記録は excludeSchoolBadged で外し、それ以外は残す", () => {
+    const input = {
+      holidays: [{ id: 1, date: "2026-11-03", label: "文化の日", scope: ["全部"] }],
+      examPeriods: [
+        // 学校のテスト (授業を止めない + 学校タグ) → バッジ
+        { id: 1, name: "桜井2学期期末", startDate: "2026-11-19", endDate: "2026-12-02", targetGrades: [], stopsClasses: false, tags: ["桜井"] },
+        // 授業を止めるテスト期間 / 学校タグの無いテスト期間 → 従来どおり
+        { id: 2, name: "中学 期末", startDate: "2026-11-25", endDate: "2026-11-27", targetGrades: ["中1"], tags: ["中学"] },
+        { id: 3, name: "高校 期末", startDate: "2026-12-08", endDate: "2026-12-08", targetGrades: [], stopsClasses: false },
+      ],
+      specialEvents: [
+        { id: 1, name: "3年第8回校外模試", startDate: "2026-10-30", endDate: "2026-10-31", eventType: "mock", targetGrades: ["高3"], tags: ["桜井"] },
+        { id: 2, name: "学校名の無い模試", startDate: "2026-11-01", endDate: "2026-11-01", eventType: "mock", targetGrades: [] },
+        { id: 3, name: "桜井 文化祭", startDate: "2026-11-07", endDate: "2026-11-07", eventType: "school", targetGrades: [], tags: ["桜井"] },
+      ],
+    };
+    expect(genyakuEntries(input).map((e) => e.key)).toEqual(["h-1", "e-1", "e-2", "e-3", "s-1", "s-2", "s-3"]);
+    expect(genyakuEntries(input, { excludeSchoolBadged: true }).map((e) => e.key)).toEqual([
+      "h-1",
+      "e-2",
+      "e-3",
+      "s-2",
+      "s-3",
+    ]);
+  });
+
   it("日付に広げる: 範囲で切り、始まり・終わりの印を付ける", () => {
     const m = spreadByDate(yobikoEntries(yobiko), "2026-12-25", "2026-12-31");
     expect([...m.keys()]).toEqual(["2026-12-25", "2026-12-26", "2026-12-27"]);

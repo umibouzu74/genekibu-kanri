@@ -2,6 +2,7 @@ import { DayNumberLink } from "../../DayNumberLink";
 import { YEAR_CAL_LANES } from "../../../constants/yobikoEvents";
 import { buildMonthWeeks, shortDate } from "../../../utils/yearCalendar";
 import { fmtDateWeekday, formatDateRange } from "../../../utils/dateHelpers";
+import { SchoolBadgeStrip } from "./SchoolBadges";
 
 const WEEK_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 const SUN_COLOR = "#c03030";
@@ -17,6 +18,8 @@ const SAT_HEAD = "#b3d1ff";
 //   現役部の段
 // 週は <tbody> 1 つにまとめ、紙面で週の途中で改ページしない。
 // 段の見出しは左の列 (紙面でも段が読めるように、色だけに頼らない)。
+// 現役部の欄の先頭には学校の考査・模試のバッジを 1 行 (schoolBadgesByDate。
+// utils/schoolSchedule)。バッジにした記録は genyakuByDate に入っていない。
 export function YearCalendarMonth({
   ym,
   todayStr,
@@ -24,6 +27,9 @@ export function YearCalendarMonth({
   yobikoByDate,
   marksByDate,
   genyakuByDate,
+  schoolBadgesByDate,
+  openBadgeKey,
+  onOpenBadge,
   onSelectDate,
   onAddYobiko,
   onEditYobiko,
@@ -101,6 +107,9 @@ export function YearCalendarMonth({
                     ds={ds}
                     items={ds ? genyakuByDate.get(ds) : null}
                     onEdit={onEditGenyaku}
+                    badges={ds ? schoolBadgesByDate?.get(ds) : null}
+                    openBadgeKey={openBadgeKey}
+                    onOpenBadge={onOpenBadge}
                   />
                 ))}
               </tr>
@@ -153,12 +162,15 @@ function DateCell({ ds, dow, isToday, marks, onSelectDate, onAddYobiko }) {
   );
 }
 
-function LaneCell({ ds, items, onEdit }) {
+function LaneCell({ ds, items, onEdit, badges, openBadgeKey, onOpenBadge }) {
   if (!ds) return <td className="year-cal-out" />;
   return (
     <td className="year-cal-cell">
       {/* 読み上げでは段の欄にも日付を (見出しは曜日と段だけで、何日か分からない) */}
-      {items?.length > 0 && <span className="year-cal-sr">{Number(ds.slice(8))}日 </span>}
+      {(items?.length > 0 || badges?.length > 0) && (
+        <span className="year-cal-sr">{Number(ds.slice(8))}日 </span>
+      )}
+      <SchoolBadgeStrip ds={ds} badges={badges} openKey={openBadgeKey} onOpen={onOpenBadge} />
       {(items || []).map((it) => (
         <LaneItem key={it.key} item={it} onEdit={onEdit} />
       ))}

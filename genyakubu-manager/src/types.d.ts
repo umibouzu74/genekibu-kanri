@@ -152,6 +152,16 @@ export interface ExamPeriod {
   // 特訓は始まっているのに授業は休みにならない日 (例: 9/19 土の中3) を表す。
   // stopsClasses=false のテスト期間では意味を持たない (元々授業を止めない)。
   classExceptions?: ExamClassException[];
+  // examDates: 期間のうち実際に考査がある日 (昇順・重複なし・startDate〜endDate
+  // の範囲内。空ならキーごと持たない)。**表示専用** — 高校の学校別テストは
+  // startDate = 考査発表日で登録するので、年間カレンダーの学校バッジ・学校別
+  // タイムラインが「発表 / 発表後 / 考査 n 日目 / 期間中の休み」を出し分ける
+  // のに使う (utils/schoolSchedule)。授業停止 (examPeriodStopsClassesOn)・特訓・
+  // 隔週の週送り・第N回には使わない。
+  examDates?: string[];
+  // 出典 (例: "2026桜井年間行事計画")。まとめて登録で付け、一覧で出典ごとに
+  // 表示・まとめて削除する (予定表の改訂版が来たら出典ごと入れ直す)
+  source?: string;
 }
 
 // テスト期間中に例外的に通常授業を行う日。
@@ -197,6 +207,7 @@ export type SpecialEventType =
   | "course" // 講習 (冬期講習・直前ポイント)
   | "parents" // 保護者会
   | "staff" // 社内 (教科会議・模試監督)
+  | "mock" // 模試 (学校ごとの校外模試・学力テスト。学校タグ + 「希望者」タグ)
   | "other";
 
 export interface SpecialEvent {

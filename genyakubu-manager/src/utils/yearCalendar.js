@@ -17,6 +17,7 @@ import { isYobikoDayMark, yobikoKindMeta } from "../constants/yobikoEvents";
 import { eachDateStrInRange } from "./dateHelpers";
 import { describeExamTargetGrades, describeHolidayScope } from "./eventTargets";
 import { yobikoEventLabel } from "./yobikoEvents";
+import { isSchoolBadgeExam, isSchoolBadgeMock } from "./schoolSchedule";
 
 const pad = (n) => String(n).padStart(2, "0");
 
@@ -70,8 +71,16 @@ export function buildMonthWeeks(ym) {
 //   meta: 色 ({ bg, fg, accent })
 //   dateNotes: 日付 → その日だけ名前に添える文字 (テスト期間の「📖 授業あり」)
 
-/** 現役部の段に出す記録 (休講・テスト期間・特別イベント) */
-export function genyakuEntries({ holidays = [], examPeriods = [], specialEvents = [] } = {}) {
+/**
+ * 現役部の段に出す記録 (休講・テスト期間・特別イベント)。
+ * excludeSchoolBadged: 学校バッジにまとめる記録 (授業を止めない学校のテスト
+ * 期間・学校の模試。utils/schoolSchedule) を外す。バッジと同じ記録を 1 件ずつ
+ * 二重に出さないため。バッジの絞り込みで隠したものも戻ってこない
+ */
+export function genyakuEntries(
+  { holidays = [], examPeriods = [], specialEvents = [] } = {},
+  { excludeSchoolBadged = false } = {}
+) {
   const out = [];
   for (const h of holidays || []) {
     if (!h?.date) continue;
@@ -90,6 +99,7 @@ export function genyakuEntries({ holidays = [], examPeriods = [], specialEvents 
   }
   for (const ep of examPeriods || []) {
     if (!ep?.startDate) continue;
+    if (excludeSchoolBadged && isSchoolBadgeExam(ep)) continue;
     const target = describeExamTargetGrades(ep, { short: true });
     // 授業を止めないテスト期間・例外的に授業を行う日は、イベントカレンダーと
     // 同じ言い方で添える (止める期間と同じ見た目だと、その日は授業が無いと読める)
@@ -122,6 +132,7 @@ export function genyakuEntries({ holidays = [], examPeriods = [], specialEvents 
   }
   for (const ev of specialEvents || []) {
     if (!ev?.startDate) continue;
+    if (excludeSchoolBadged && isSchoolBadgeMock(ev)) continue;
     const meta = specialEventTypeMeta(ev.eventType);
     out.push({
       key: `s-${ev.id}`,

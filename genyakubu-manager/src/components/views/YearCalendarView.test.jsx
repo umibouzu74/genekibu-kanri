@@ -9,6 +9,9 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { YearCalendarView, SS_YEAR_CAL_KEY } from "./YearCalendarView";
 import { ToastProvider } from "../../hooks/useToasts";
 import { ConfirmProvider } from "../../hooks/useConfirm";
+import { buildImportedExamPeriods, parseExamPeriodImport } from "../../utils/examPeriodImport";
+import { buildImportedEvents, parseSpecialEventImport } from "../../utils/specialEventImport";
+import { SCHOOL_EXAM_TSV, SCHOOL_MOCK_TSV } from "../../utils/testdata/schoolSchedule2026";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -42,7 +45,15 @@ const yobiko = [
   { id: 4, name: "進研模試(記述)", startDate: "2026-10-10", endDate: "2026-10-10", kind: "event", source: "予備校2026" },
 ];
 
-function Harness({ initial = yobiko, isAdmin = true, onSaveSpy, onEditGenyakuEvent, adminRef }) {
+function Harness({
+  initial = yobiko,
+  isAdmin = true,
+  onSaveSpy,
+  onEditGenyakuEvent,
+  adminRef,
+  exams = examPeriods,
+  events = specialEvents,
+}) {
   const [list, setList] = useState(initial);
   const [admin, setAdmin] = useState(isAdmin);
   if (adminRef) adminRef.current = setAdmin;
@@ -59,8 +70,8 @@ function Harness({ initial = yobiko, isAdmin = true, onSaveSpy, onEditGenyakuEve
           : undefined
       }
       holidays={holidays}
-      examPeriods={examPeriods}
-      specialEvents={specialEvents}
+      examPeriods={exams}
+      specialEvents={events}
       isAdmin={isAdmin}
       onEditGenyakuEvent={onEditGenyakuEvent}
     />
@@ -266,3 +277,152 @@ describe("YearCalendarView", () => {
     expect(within(month("2026年11月")).getByText("文化の日")).toBeTruthy();
   });
 });
+
+// 付録 B (2026 年度の桜井・第一) をまとめて登録の経路で読み込む。学校タグの無い
+// 「授業を止めない」テスト期間 (examPeriods の id 8) は従来どおり 1 件ずつ出る
+const schoolExams = [
+  ...examPeriods,
+  ...buildImportedExamPeriods(parseExamPeriodImport(SCHOOL_EXAM_TSV, { fiscalYear: 2026 }).rows, {
+    startId: 100,
+  }),
+];
+const schoolEvents = [
+  ...specialEvents,
+  ...buildImportedEvents(parseSpecialEventImport(SCHOOL_MOCK_TSV, { fiscalYear: 2026 }).rows, {
+    startId: 100,
+  }),
+];
+const viewAt = (state) => sessionStorage.setItem(SS_YEAR_CAL_KEY, JSON.stringify(state));
+const renderSchool = (props) => renderView({ exams: schoolExams, events: schoolEvents, ...props });
+// その日の学校バッジ (aria-label は「11/26 (木) 桜井 …」)
+const chipsOn = (md) =>
+  screen
+    .queryAllByRole("button", { name: new RegExp(`^${md.replace(/[()/]/g, "\\$&")} `) })
+    .filter((b) => b.classList.contains("ycs-chip"))
+    .map((b) => b.textContent);
+
+describe("YearCalendarView: 学校の考査・模試", () => {
+  it("11 月: 現役部の欄の先頭に学校ごとのバッジ 1 行。考査期間の毎日に名前が並ばない", () => {
+    viewAt({ ym: "2026-11", count: 1 });
+    renderSchool();
+    expect(chipsOn("11/19 (木)")).toEqual(["桜井 発表"]);
+    expect(chipsOn("11/20 (金)")).toEqual(["桜井"]);
+    expect(chipsOn("11/25 (水)")).toEqual(["桜井", "第一 発表"]);
+    expect(chipsOn("11/26 (木)")).toEqual(["桜井❶", "第一"]);
+    expect(chipsOn("11/28 (土)")).toEqual(["桜井", "第一"]);
+    expect(chipsOn("11/30 (月)")).toEqual(["桜井❸", "第一"]);
+    // 状態は見た目 (class) と aria-label の全文で読める
+    const [kimatsu] = screen.getAllByRole("button", { name: /^11\/27 \(金\) 桜井/ });
+    expect(kimatsu.getAttribute("aria-label")).toBe("11/27 (金) 桜井 2学期期末（高校部）考査2日目 11/26〜12/2");
+    expect(kimatsu.className).toContain("ycs-chip--exam");
+    // バッジにした記録は 1 件ずつ出さない。学校タグの無いテスト期間・休講・他の種別は従来どおり
+    const nov = month("2026年11月");
+    expect(within(nov).queryByText(/桜井2学期期末/)).toBeNull();
+    expect(within(nov).getByText("文化の日")).toBeTruthy();
+    expect(within(nov).getByText("👪 第2回保護者会 〜12/6")).toBeTruthy();
+    // 模試のある日は「模」の小札 (11/7 は第一の 1・2年進研記述。冠模試は既定で出さない)
+    expect(chipsOn("11/7 (土)")).toEqual(["第一模"]);
+  });
+
+  it("12 月: 12/2 は桜井❺と第一❶、12/3 は第一の休み、12/8 は第一❹", () => {
+    viewAt({ ym: "2026-12", count: 1 });
+    renderSchool();
+    expect(chipsOn("12/2 (水)")).toEqual(["桜井❺", "第一❶"]);
+    expect(chipsOn("12/3 (木)")).toEqual(["第一"]);
+    expect(screen.getAllByRole("button", { name: /^12\/3 \(木\) 第一/ })[0].className).toContain("ycs-chip--gap");
+    expect(chipsOn("12/8 (火)")).toEqual(["第一❹"]);
+  });
+
+  it("バッジを押すと内訳。管理者は記録ごとに編集へ", () => {
+    viewAt({ ym: "2026-11", count: 1 });
+    const onEdit = vi.fn();
+    renderSchool({ onEditGenyakuEvent: onEdit });
+    fireEvent.click(screen.getAllByRole("button", { name: /^11\/27 \(金\) 桜井/ })[0]);
+    const pop = screen.getByRole("dialog", { name: "11/27 (金) 桜井" });
+    expect(pop.textContent).toContain("考査 11/26 (木)・11/27 (金)・11/30 (月)・12/1 (火)・12/2 (水) (5日)");
+    expect(pop.textContent).toContain("発表 11/19 (木)");
+    fireEvent.click(within(pop).getByRole("button", { name: "桜井2学期期末 を編集" }));
+    const sakuraiKimatsu = schoolExams.find((e) => e.name === "桜井2学期期末");
+    expect(onEdit).toHaveBeenCalledWith("exam", sakuraiKimatsu.id);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("閲覧者も内訳は見られる (編集は出さない)", () => {
+    viewAt({ ym: "2026-11", count: 1 });
+    renderSchool({ isAdmin: false, onEditGenyakuEvent: vi.fn() });
+    fireEvent.click(screen.getAllByRole("button", { name: /^11\/7 \(土\) 第一/ })[0]);
+    const pop = screen.getByRole("dialog", { name: "11/7 (土) 第一" });
+    expect(pop.textContent).toContain("1・2年進研記述（高1・高2）");
+    expect(within(pop).queryByRole("button", { name: /編集/ })).toBeNull();
+    fireEvent.keyDown(pop, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("学年「高1・2」で 3 年のみの模試が消え、希望者・冠模試はオンで点線の「模」", () => {
+    viewAt({ ym: "2026-10", count: 1 });
+    renderSchool();
+    expect(chipsOn("10/30 (金)")).toEqual(["桜井模", "第一模"]);
+    expect(chipsOn("10/24 (土)")).toEqual(["桜井模"]);
+    const filters = screen.getByRole("group", { name: "学校の予定" });
+    fireEvent.click(within(filters).getByRole("button", { name: "高1・2" }));
+    expect(chipsOn("10/30 (金)")).toEqual([]);
+    expect(chipsOn("10/31 (土)")).toEqual(["桜井模"]);
+    fireEvent.click(within(filters).getByRole("button", { name: "全学年" }));
+    fireEvent.click(within(filters).getByRole("checkbox", { name: "希望者・冠模試" }));
+    expect(chipsOn("10/24 (土)")).toEqual(["桜井模", "第一模"]);
+    const daiichi = screen.getAllByRole("button", { name: /^10\/24 \(土\) 第一/ })[0];
+    expect(daiichi.querySelector(".ycs-mk--opt")).toBeTruthy();
+    expect(JSON.parse(sessionStorage.getItem(SS_YEAR_CAL_KEY)).schoolFilter).toEqual({
+      grade: "all",
+      exam: true,
+      mock: true,
+      optional: true,
+    });
+    // 種類のチェックを外すとバッジにならない (1 件ずつにも戻らない)
+    fireEvent.click(within(filters).getByRole("checkbox", { name: "模試" }));
+    expect(chipsOn("10/24 (土)")).toEqual([]);
+    expect(within(month("2026年10月")).queryByText(/全統マーク模試/)).toBeNull();
+  });
+
+  it("表示「学校別」: 学校の行のタイムライン。考査日が 2 校重なるのは 10/13〜16 と 12/2 だけ", () => {
+    renderSchool();
+    fireEvent.click(screen.getByRole("button", { name: "学校別" }));
+    expect(screen.queryByRole("region", { name: "2026年10月" })).toBeNull();
+    expect(screen.getByRole("group", { name: "桜井 の考査・模試" })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "第一 の考査・模試" })).toBeTruthy();
+    expect(screen.getByText("考査日が 2 校以上重なる日: 10/13〜16、12/2")).toBeTruthy();
+    // 段の切替はカレンダーだけのもの
+    expect(screen.queryByRole("group", { name: "表示する段" })).toBeNull();
+    const title = screen.getByRole("heading", { level: 2, hidden: true });
+    expect(title.textContent).toBe("2026年10月〜12月 (学校別の考査・模試)");
+    expect(title.getAttribute("data-print-title")).toBe("学校別の考査・模試 2026年10月〜12月");
+    // 帯を押すと内訳
+    const sakurai = screen.getByRole("group", { name: "桜井 の考査・模試" });
+    fireEvent.click(within(sakurai).getByRole("button", { name: /^桜井 2学期期末（高校部）/ }));
+    expect(screen.getByRole("dialog", { name: "桜井 2学期期末" }).textContent).toContain("発表 11/19 (木)");
+    // 絞り込みも効く (高3 → 12/2 の重なりは残る)
+    fireEvent.click(within(screen.getByRole("group", { name: "学校の予定" })).getByRole("button", { name: "高3" }));
+    expect(JSON.parse(sessionStorage.getItem(SS_YEAR_CAL_KEY))).toMatchObject({
+      display: "school",
+      schoolFilter: { grade: "3" },
+    });
+    expect(title.textContent).toBe("2026年10月〜12月 (学校別の考査・模試 / 高3)");
+  });
+
+  it("学校の記録が無ければ学校別は案内だけ", () => {
+    viewAt({ ym: "2026-10", count: 1, display: "school" });
+    renderView();
+    expect(screen.getByText(/この期間に表示する学校の考査・模試はありません/)).toBeTruthy();
+  });
+
+  it("sessionStorage の表示・絞り込みが読めなければ既定に戻す", () => {
+    viewAt({ ym: "2026-11", count: 1, display: "gantt", schoolFilter: { grade: "高1", exam: "x", optional: 1 } });
+    renderSchool();
+    expect(screen.getByRole("button", { name: "カレンダー" }).getAttribute("aria-pressed")).toBe("true");
+    const filters = screen.getByRole("group", { name: "学校の予定" });
+    expect(within(filters).getByRole("button", { name: "全学年" }).getAttribute("aria-pressed")).toBe("true");
+    expect(within(filters).getByRole("checkbox", { name: "発表〜考査" }).checked).toBe(true);
+    expect(within(filters).getByRole("checkbox", { name: "希望者・冠模試" }).checked).toBe(false);
+  });
+});
+

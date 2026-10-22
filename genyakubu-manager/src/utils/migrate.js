@@ -4,6 +4,7 @@
 
 import { SPECIAL_EVENT_TYPES } from "../constants/specialEvents";
 import { upgradeSpecialEventType } from "./specialEventTypes";
+import { isValidDateStr } from "./dateHelpers";
 
 const VALID_SPECIAL_EVENT_TYPES = new Set(SPECIAL_EVENT_TYPES.map((t) => t.key));
 
@@ -43,11 +44,39 @@ export const migrateSubs = (arr) =>
  */
 export const migrateExamPeriods = (arr) =>
   Array.isArray(arr)
-    ? arr.map((ep) => ({
-        ...ep,
-        targetGrades: Array.isArray(ep?.targetGrades) ? ep.targetGrades : [],
-      }))
+    ? arr.map((ep) => {
+        const out = {
+          ...ep,
+          targetGrades: Array.isArray(ep?.targetGrades) ? ep.targetGrades : [],
+        };
+        // 考査日 (表示専用) は昇順・重複なし・期間内の正しい日付だけ。空なら
+        // キーごと持たない (RTDB は空配列を消すので、空と未設定を区別しない)
+        if ("examDates" in out) {
+          const dates = normalizeExamDates(out.examDates, out.startDate, out.endDate);
+          if (dates.length > 0) out.examDates = dates;
+          else delete out.examDates;
+        }
+        return out;
+      })
     : arr;
+
+/**
+ * テスト期間の考査日を整える: 文字列で正しい日付のものだけ、startDate〜endDate
+ * (endDate が無ければ startDate) の範囲内、昇順・重複なし。冪等。
+ */
+export function normalizeExamDates(raw, startDate, endDate) {
+  if (!Array.isArray(raw)) return [];
+  const from = typeof startDate === "string" ? startDate : "";
+  const to = typeof endDate === "string" && endDate ? endDate : from;
+  const set = new Set();
+  for (const d of raw) {
+    if (typeof d !== "string" || !isValidDateStr(d)) continue;
+    if (from && d < from) continue;
+    if (to && d > to) continue;
+    set.add(d);
+  }
+  return [...set].sort();
+}
 
 /**
  * Restore `targetGrades: []` dropped by Firebase RTDB and ensure each
