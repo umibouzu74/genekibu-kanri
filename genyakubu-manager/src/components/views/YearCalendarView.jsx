@@ -43,6 +43,8 @@ import { YobikoBulkImportDialog } from "./yearCalendar/YobikoBulkImportDialog";
 // 動く (前年度 / 次年度)。「年度」ボタン・まとめて登録の年度の既定は、今日では
 // なく**見ている月の年度** (3 月に来年度の予定表を入れる)。
 // 印刷は PrintButton (window.print) 系統で、1 か月 = 1 ページ (2 か月目から改ページ)。
+// 紙の向きは既定で横 (曜日の欄が広くなり、行事の名前が折り返さない)。縦にも
+// 切り替えられる (@page の size は向きだけを決め、紙の大きさは印刷ダイアログで選ぶ)。
 //
 // 予備校部の予定の登録・編集・削除は管理者だけ。削除は cascade が無いので
 // removeWithUndo。現役部の記録はクリックで「休講・テスト期間・イベント」の
@@ -51,9 +53,20 @@ import { YobikoBulkImportDialog } from "./yearCalendar/YobikoBulkImportDialog";
 export const SS_YEAR_CAL_KEY = "genyakubu:yearCalendar";
 const COUNT_OPTIONS = [1, 3, 6, 12];
 const DEFAULT_COUNT = 3;
+// 印刷の向き。key は @page の size にそのまま書く
+const ORIENT_OPTIONS = [
+  { key: "landscape", label: "横" },
+  { key: "portrait", label: "縦" },
+];
+const DEFAULT_ORIENT = "landscape";
 
 function loadViewState(todayYm) {
-  const fallback = { ym: todayYm, count: DEFAULT_COUNT, lanes: { yobiko: true, genyaku: true } };
+  const fallback = {
+    ym: todayYm,
+    count: DEFAULT_COUNT,
+    lanes: { yobiko: true, genyaku: true },
+    orient: DEFAULT_ORIENT,
+  };
   try {
     const raw = JSON.parse(sessionStorage.getItem(SS_YEAR_CAL_KEY) || "null");
     if (!raw || typeof raw !== "object") return fallback;
@@ -61,7 +74,8 @@ function loadViewState(todayYm) {
     const count = COUNT_OPTIONS.includes(raw.count) ? raw.count : DEFAULT_COUNT;
     const yobiko = raw.lanes?.yobiko !== false;
     const genyaku = raw.lanes?.genyaku !== false;
-    return { ym, count, lanes: yobiko || genyaku ? { yobiko, genyaku } : fallback.lanes };
+    const orient = ORIENT_OPTIONS.some((o) => o.key === raw.orient) ? raw.orient : DEFAULT_ORIENT;
+    return { ym, count, lanes: yobiko || genyaku ? { yobiko, genyaku } : fallback.lanes, orient };
   } catch {
     return fallback;
   }
@@ -97,7 +111,7 @@ export function YearCalendarView({
       saveViewState(next);
       return next;
     });
-  const { ym, count, lanes } = viewState;
+  const { ym, count, lanes, orient } = viewState;
 
   const months = useMemo(() => monthsFrom(ym, count), [ym, count]);
   const from = monthRange(months[0]).from;
@@ -170,7 +184,7 @@ export function YearCalendarView({
 
   return (
     <div className="year-cal-view">
-      <style>{YEAR_CAL_CSS}</style>
+      <style>{YEAR_CAL_CSS + yearCalPageRule(orient)}</style>
       <div
         className="no-print"
         style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}
@@ -219,6 +233,21 @@ export function YearCalendarView({
               />
               {YEAR_CAL_LANES[lane].label}
             </label>
+          ))}
+        </div>
+        <div role="group" aria-label="印刷の向き" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+          <span style={{ fontSize: 11, color: colors.inkMuted }}>印刷の向き</span>
+          {ORIENT_OPTIONS.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              aria-pressed={orient === o.key}
+              onClick={() => setViewState({ orient: o.key })}
+              title={`${o.label}向きの紙に 1 か月ずつ刷る (紙の大きさは印刷ダイアログで選ぶ)`}
+              style={{ ...S.btn(orient === o.key), fontSize: 11, padding: "4px 10px" }}
+            >
+              {o.label}
+            </button>
           ))}
         </div>
         <PrintButton />
@@ -525,6 +554,15 @@ function YobikoEventPanel({
       )}
     </section>
   );
+}
+
+// 紙の向き。この画面を開いている間だけ <style> が文書にあるので、他の画面の
+// 印刷には効かない。トップバーの 🖨 (popup) で刷ったときも、本文ごと写した
+// この <style> が popup の既定 (A4 縦) より後ろにあるので、こちらの向きになる。
+// size は向きだけ (紙の大きさを書くと、Chrome の印刷ダイアログで用紙を選べなくなる)
+function yearCalPageRule(orient) {
+  const size = orient === "portrait" ? "portrait" : "landscape";
+  return `\n@media print {\n  @page { size: ${size}; margin: 8mm; }\n}\n`;
 }
 
 // 表の見た目と紙面。段の間 (予備校部 / 現役部) は太い線、週の境は濃い線。
