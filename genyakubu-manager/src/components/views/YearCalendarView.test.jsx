@@ -2,7 +2,7 @@
 // 年間カレンダー: 1 日の欄が上 = 予備校部 / 下 = 現役部 に分かれて並ぶ・予備校部の
 // 日の種別 (休校日) は日付の塗りと短い名前で出る・段を隠せる・管理者は日付の
 // 「＋」/ まとめて登録で予備校部の予定を入れ、Undo 付きで消せる・現役部の記録は
-// 編集画面へ、閲覧者は見るだけ、を固定する。
+// 編集画面へ、閲覧者は見るだけ・印刷の向き (既定は横)、を固定する。
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -134,6 +134,26 @@ describe("YearCalendarView", () => {
       count: 1,
       lanes: { yobiko: true, genyaku: false },
     });
+  });
+
+  it("印刷の向きは既定で横。縦に切り替えられ、sessionStorage に残る", () => {
+    const { container } = renderView();
+    const pageRule = () => container.querySelector(".year-cal-view > style").textContent;
+    const group = screen.getByRole("group", { name: "印刷の向き" });
+    expect(within(group).getByRole("button", { name: "横" }).getAttribute("aria-pressed")).toBe("true");
+    // 紙の大きさは書かない (印刷ダイアログで A4 / A3 / B4 を選べるように)
+    expect(pageRule()).toMatch(/@page\s*\{\s*size:\s*landscape;/);
+    fireEvent.click(within(group).getByRole("button", { name: "縦" }));
+    expect(pageRule()).toMatch(/@page\s*\{\s*size:\s*portrait;/);
+    expect(pageRule()).not.toMatch(/landscape/);
+    expect(JSON.parse(sessionStorage.getItem(SS_YEAR_CAL_KEY))).toMatchObject({ orient: "portrait" });
+  });
+
+  it("保存された向きが読めなければ横に戻す", () => {
+    sessionStorage.setItem(SS_YEAR_CAL_KEY, JSON.stringify({ ym: "2026-10", count: 1, orient: "sideways" }));
+    renderView();
+    const group = screen.getByRole("group", { name: "印刷の向き" });
+    expect(within(group).getByRole("button", { name: "横" }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("年度ボタンで 4 月〜3 月の 12 か月。◀ / ▶ は 1 年ずつ", () => {
