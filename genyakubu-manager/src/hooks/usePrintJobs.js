@@ -122,7 +122,9 @@ export function usePrintJobs({
           ? `${selected} 授業予定`
           : dateLabel;
 
-    const printStyles = buildPrintStyles({ hasTimetableGrid, hasMonthView });
+    // バイト出勤表 (授業時間の集計のタブ) は日付が横に並ぶので A4 横に詰める
+    const hasAttendanceSheet = !!el.querySelector(".pt-attendance-sheet");
+    const printStyles = buildPrintStyles({ hasTimetableGrid, hasMonthView, hasAttendanceSheet });
 
     let bodyHtml = el.innerHTML;
     if (hasTimetableGrid) {

@@ -33,19 +33,36 @@ export function formatPrintDate(dateStr, day = "") {
 }
 
 // 印刷時の用紙サイズ・余白ルール。
-// 月次カレンダーは横向き、それ以外 (タイムテーブル・通常ビュー) は縦向き。
-export function buildPageRule({ hasMonthView }) {
-  return hasMonthView
+// 月次カレンダーとバイト出勤表 (日付が横に 30 列並ぶ) は横向き、それ以外
+// (タイムテーブル・通常ビュー) は縦向き。
+export function buildPageRule({ hasMonthView, hasAttendanceSheet = false }) {
+  return hasMonthView || hasAttendanceSheet
     ? "@page{size:A4 landscape;margin:8mm}"
     : "@page{size:A4 portrait;margin:12mm 8mm}";
 }
 
+// バイト出勤表 (授業時間の集計のタブ、.pt-attendance-sheet) の紙面。画面は
+// 横スクロール・先頭列の固定・押しやすい大きさのセルなので、紙では
+// スクロールを外して 1 枚の幅に詰める (インラインの style より強くするため !important)
+export function attendancePrintCss() {
+  return `
+      .pt-attendance-scroll{overflow:visible !important}
+      .pt-attendance-sheet table{width:100% !important;min-width:0 !important}
+      .pt-attendance-sheet th,.pt-attendance-sheet td{position:static !important;min-width:0 !important;padding:2px !important;font-size:10px !important}
+      .pt-attendance-sheet th div{font-size:8px !important}
+      .pt-attendance-sheet th button{text-decoration:none !important}
+      .pt-attendance-sheet td button{min-width:0 !important;min-height:0 !important;padding:0 !important;font-size:11px !important}
+      .pt-attendance-sheet tr{break-inside:avoid}
+  `;
+}
+
 // printStyles 全体を組み立てる。handlePrint から呼ばれ、popup window の
 // <style> 内に直接挿入される。
-export function buildPrintStyles({ hasTimetableGrid, hasMonthView }) {
-  const pageRule = buildPageRule({ hasMonthView });
+export function buildPrintStyles({ hasTimetableGrid, hasMonthView, hasAttendanceSheet = false }) {
+  const pageRule = buildPageRule({ hasMonthView, hasAttendanceSheet });
   const tt = hasTimetableGrid ? timetablePrintCss() : "";
   const month = hasMonthView ? monthPrintCss() : "";
+  const attendance = hasAttendanceSheet ? attendancePrintCss() : "";
   return `
     body{font-family:"Hiragino Kaku Gothic Pro","Yu Gothic",sans-serif;padding:16px;font-size:11px}
     .excel-print-page-title{font-size:13px;font-weight:700;margin:0 0 6px;padding:0 0 4px;border-bottom:1px solid #aaa}
@@ -55,6 +72,7 @@ export function buildPrintStyles({ hasTimetableGrid, hasMonthView }) {
       *{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
       .no-print{display:none !important}
       ${tt}
+      ${attendance}
     }
     ${month}
   `;

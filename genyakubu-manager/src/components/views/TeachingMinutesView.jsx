@@ -19,10 +19,24 @@
 // 印刷はトップバーの 🖨 (popup 系統)。操作部は no-print。見出し (h2) に
 // 期間と選択を書いて紙面に載せ、印刷ジョブ名 (PDF の既定のファイル名) は
 // data-print-title で渡す (日付入力を「授業予定」の日付と取り違えないように)。
+//
+// タブ (constants/minutesTabs): 「授業時間」(講師ごとの分) と「バイト出勤表」
+// (バイトの出勤日数 × 単価の月の表。PartTimeAttendanceSheet)。どちらも同じ
+// computeTeachingMinutes の結果・同じ期間・同じ「合計に含める」種別を使う。
+// 締め日だけはタブごとに覚える (バイトの給与は 20 日締めが既定)。タブは App が
+// 持つ (サイドバー・メインメニュー・Cmd+K から直接バイト出勤表を開くため)。
 
-import { Fragment, useDeferredValue, useEffect, useId, useMemo, useState } from "react";
+import { Fragment, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { DAY_COLOR as DC } from "../../data";
 import { LS, SS } from "../../constants/storageKeys";
+import { MINUTE_KIND_COLOR as KIND_COLOR } from "../../constants/colors";
+import { MINUTES_TAB, MINUTES_TABS, normalizeMinutesTab } from "../../constants/minutesTabs";
+import { PartTimeAttendanceSheet } from "./PartTimeAttendanceSheet";
+import {
+  DEFAULT_ATTENDANCE_CLOSING_DAY,
+  latestClosedPeriodYm,
+  staffNamesOf,
+} from "../../utils/partTimeAttendance";
 import { S } from "../../styles/common";
 import { makeEventHelpers } from "./dashboardHelpers";
 import { useDateKeyNav } from "../../hooks/useDateKeyNav";
@@ -38,6 +52,7 @@ import {
   MINUTE_KIND_LABELS,
   computeTeachingMinutes,
   currentPeriodYm,
+  datesInRange,
   describeEntryNotes,
   formatMinutes,
   monthPeriod,
@@ -48,13 +63,6 @@ import {
 
 const CLOSING_DAYS = [0, 10, 15, 20, 25];
 
-const KIND_COLOR = {
-  own: "#2e6a9e",
-  sub: "#c05030",
-  extra: "#3d7a4a",
-  koshu: "#7a4a9e",
-  prep: "#9e6a2e",
-};
 // 期間内に授業の無い講師のボタンの文字色 (白地でコントラスト 4.5:1 以上)
 const MUTED = "#767676";
 
@@ -90,9 +98,19 @@ const writeLs = (key, value) => {
   if (s) writeStore(s, key, value);
 };
 
-function readClosingDay() {
-  const v = Number(readLs(LS.teachingMinutesClosingDay, 0));
-  return CLOSING_DAYS.includes(v) ? v : 0;
+// 締め日はタブごと (授業時間 = 既定は末日、バイト出勤表 = 既定 20 日)
+const CLOSING_DAY_KEY = {
+  [MINUTES_TAB.SUMMARY]: LS.teachingMinutesClosingDay,
+  [MINUTES_TAB.ATTENDANCE]: LS.partTimeAttendanceClosingDay,
+};
+const CLOSING_DAY_DEFAULT = {
+  [MINUTES_TAB.SUMMARY]: 0,
+  [MINUTES_TAB.ATTENDANCE]: DEFAULT_ATTENDANCE_CLOSING_DAY,
+};
+function readClosingDay(tab) {
+  const fallback = CLOSING_DAY_DEFAULT[tab];
+  const v = Number(readLs(CLOSING_DAY_KEY[tab], fallback));
+  return CLOSING_DAYS.includes(v) ? v : fallback;
 }
 function readIncluded() {
   const v = readLs(LS.teachingMinutesIncluded, null);
@@ -127,16 +145,33 @@ export function TeachingMinutesView({
   teacherKana = {},
   // 講師名クリックでその人の月間へ (第 2 引数 {month: "YYYY-MM"} でその月を開く)
   onSelectTeacher,
+  // 開いているタブ (constants/minutesTabs)。App が持つ。渡されないときはこの画面で持つ
+  tab: tabProp,
+  onTabChange,
 }) {
   const baseId = useId();
   const today = useToday();
-  const [closingDay, setClosingDayState] = useState(readClosingDay);
+  const [tabState, setTabState] = useState(MINUTES_TAB.SUMMARY);
+  const tab = normalizeMinutesTab(tabProp ?? tabState);
+  const isAttendance = tab === MINUTES_TAB.ATTENDANCE;
+  const selectTab = (next) => {
+    if (onTabChange) onTabChange(next);
+    else setTabState(next);
+  };
+  const [closingDays, setClosingDays] = useState(() => ({
+    [MINUTES_TAB.SUMMARY]: readClosingDay(MINUTES_TAB.SUMMARY),
+    [MINUTES_TAB.ATTENDANCE]: readClosingDay(MINUTES_TAB.ATTENDANCE),
+  }));
+  const closingDay = closingDays[tab];
   // 期間は「◯月分」(ym) から作るか、日付を直接入れるか。初期値は前に見ていた
-  // 期間、無ければ今日を含む月分
+  // 期間、無ければ今日を含む月分。バイト出勤表から始めるときは締め終わった
+  // 最新の月分 (給与を締めるのは締め日の後なので)
   const [initial] = useState(() => {
     const saved = readSavedPeriod();
     if (saved) return { ym: { y: saved.y, m: saved.m }, ...saved };
-    const cur = currentPeriodYm(today, closingDay);
+    const cur = isAttendance
+      ? latestClosedPeriodYm(today, closingDay)
+      : currentPeriodYm(today, closingDay);
     return { ym: cur, ...monthPeriod(cur.y, cur.m, closingDay) };
   });
   const [ym, setYm] = useState(initial.ym);
@@ -191,10 +226,24 @@ export function TeachingMinutesView({
     applyMonth(cur.y, cur.m);
   };
   const setClosingDay = (cd) => {
-    setClosingDayState(cd);
-    writeLs(LS.teachingMinutesClosingDay, cd);
+    setClosingDays((prev) => ({ ...prev, [tab]: cd }));
+    writeLs(CLOSING_DAY_KEY[tab], cd);
     applyMonth(ym.y, ym.m, cd);
   };
+  // タブを切り替えたら、「◯月分」で見ていたときはその月をそのタブの締め日で
+  // 作り直す (授業時間の 10 月分 = 10/1〜10/31 → バイト出勤表の 10 月分 =
+  // 9/21〜10/20)。日付を直接入れていたときはそのまま
+  const prevTab = useRef(tab);
+  useEffect(() => {
+    const from = prevTab.current;
+    prevTab.current = tab;
+    if (from === tab) return;
+    const fromPreset = monthPeriod(ym.y, ym.m, closingDays[from]);
+    if (fromPreset.startDate === startDate && fromPreset.endDate === endDate) {
+      applyMonth(ym.y, ym.m, closingDays[tab]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- タブが変わったときだけ
+  }, [tab]);
   // 日付を直接変えたら「◯月分」も終了日の月に合わせる (◀ ▶ が見えない月から
   // 動かないように)
   const changeEndDate = (v) => {
@@ -323,12 +372,21 @@ export function TeachingMinutesView({
     return t;
   }, [shownTeachers, rows, sums]);
 
+  // バイト出勤表の行 (講師管理のバイト一覧の並び順) と列 (期間の日付)
+  const staffNames = useMemo(() => staffNamesOf(partTimeStaff), [partTimeStaff]);
+  const sheetDates = useMemo(
+    () => datesInRange(queryStart, queryEnd).dates,
+    [queryStart, queryEnd]
+  );
+  // 表に出している講師 (バイト出勤表ではバイト全員)
+  const tableTeachers = isAttendance ? staffNames : shownTeachers;
+
   // 種別の列は期間内に 1 件でもあるものだけ出す (講習のない月に空列を並べない)。
   // 1 種類だけで合計に入っているなら内訳は合計と同じなので列ごと出さない。
   // 合計から外した種別が残っているときは必ず出す (前に外したまま保存された
   // 種別しか無い月に、合計が 0 なのにチェックを戻す場所が無くならないように)
   const presentKinds = MINUTE_KINDS.filter((k) =>
-    shownTeachers.some((t) => rows.get(t)?.countByKind[k] > 0)
+    tableTeachers.some((t) => rows.get(t)?.countByKind[k] > 0)
   );
   const kindCols =
     presentKinds.length > 1 || presentKinds.some((k) => !includedSet.has(k))
@@ -340,11 +398,11 @@ export function TeachingMinutesView({
   // 見ている人にこそ要る)。データの直し忘れ (代行未定・元講師の食い違い・
   // 隔週の相手) は選択に関係なく期間全体
   const notices = useMemo(() => {
-    const shown = new Set(shownTeachers);
+    const shown = new Set(tableTeachers);
     const noTime = [];
     const unconfirmed = [];
     const outsideDisplay = [];
-    for (const t of shownTeachers) {
+    for (const t of tableTeachers) {
       for (const e of rows.get(t)?.entries || []) {
         if (e.minutes == null) noTime.push({ ...e, teacher: t });
         if (e.unconfirmed) unconfirmed.push({ ...e, teacher: t });
@@ -353,7 +411,7 @@ export function TeachingMinutesView({
     }
     const overlaps = issues.overlaps.filter((o) => shown.has(o.teacher));
     return { noTime, unconfirmed, outsideDisplay, overlaps };
-  }, [shownTeachers, rows, issues.overlaps]);
+  }, [tableTeachers, rows, issues.overlaps]);
   const hasNotices =
     issues.pendingAbsences.length > 0 ||
     issues.subMismatches.length > 0 ||
@@ -419,6 +477,26 @@ export function TeachingMinutesView({
 
   return (
     <div style={{ marginTop: 12 }}>
+      <div
+        role="tablist"
+        aria-label="授業時間の集計のタブ"
+        className="no-print"
+        style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}
+      >
+        {MINUTES_TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.key}
+            onClick={() => selectTab(t.key)}
+            style={S.btn(tab === t.key)}
+          >
+            {t.icon} {t.label}
+          </button>
+        ))}
+      </div>
+
       {/* 期間 */}
       <div className="no-print" style={panel}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -494,7 +572,8 @@ export function TeachingMinutesView({
         )}
       </div>
 
-      {/* 講師の選択 */}
+      {/* 講師の選択 (バイト出勤表はバイト全員なので出さない) */}
+      {!isAttendance && (
       <div className="no-print" style={panel}>
         <div
           style={{
@@ -610,24 +689,36 @@ export function TeachingMinutesView({
           </div>
         )}
       </div>
+      )}
 
       {/* 見出し (紙面にもこの文字が載る。印刷ジョブ名は data-print-title) */}
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
-        <h2
-          data-print-title={rangeOk ? `授業時間の集計 ${periodLabel}` : "授業時間の集計"}
-          style={{ fontSize: 14, fontWeight: 800, margin: 0 }}
-        >
-          {rangeOk ? `${periodLabel} の授業時間${selectionLabel}` : "授業時間"}
-        </h2>
+        {isAttendance ? (
+          <h2
+            data-print-title={rangeOk ? `バイト出勤表 ${periodLabel}` : "バイト出勤表"}
+            style={{ fontSize: 14, fontWeight: 800, margin: 0 }}
+          >
+            {rangeOk ? `${periodLabel} のバイト出勤表` : "バイト出勤表"}
+          </h2>
+        ) : (
+          <h2
+            data-print-title={rangeOk ? `授業時間の集計 ${periodLabel}` : "授業時間の集計"}
+            style={{ fontSize: 14, fontWeight: 800, margin: 0 }}
+          >
+            {rangeOk ? `${periodLabel} の授業時間${selectionLabel}` : "授業時間"}
+          </h2>
+        )}
         <span style={{ flex: 1 }} />
-        <span className="no-print" style={{ display: "flex", gap: 8 }}>
-          <button type="button" onClick={exportSummary} disabled={!canExport} style={exportBtn}>
-            ⬇ 集計 CSV
-          </button>
-          <button type="button" onClick={exportDetail} disabled={!canExport} style={exportBtn}>
-            ⬇ 明細 CSV
-          </button>
-        </span>
+        {!isAttendance && (
+          <span className="no-print" style={{ display: "flex", gap: 8 }}>
+            <button type="button" onClick={exportSummary} disabled={!canExport} style={exportBtn}>
+              ⬇ 集計 CSV
+            </button>
+            <button type="button" onClick={exportDetail} disabled={!canExport} style={exportBtn}>
+              ⬇ 明細 CSV
+            </button>
+          </span>
+        )}
       </div>
       {result.truncated && (
         <div role="alert" style={{ marginBottom: 8, fontSize: 12, color: "#c03030" }}>
@@ -711,7 +802,11 @@ export function TeachingMinutesView({
           />
           <IssueList
             items={notices.noTime}
-            title={`終了時刻なしのコマが ${notices.noTime.length} 件あります (分には含めていません)`}
+            title={
+              isAttendance
+                ? `終了時刻なしのコマが ${notices.noTime.length} 件あります (出勤表ではその日に「要確認」の印を付けています)`
+                : `終了時刻なしのコマが ${notices.noTime.length} 件あります (分には含めていません)`
+            }
             describe={(e) => `${e.teacher} ${e.label}`}
           />
           <IssueList
@@ -727,7 +822,24 @@ export function TeachingMinutesView({
         </div>
       )}
 
-      {shownTeachers.length === 0 ? (
+      {isAttendance ? (
+        rangeOk ? (
+          <PartTimeAttendanceSheet
+            rows={rows}
+            dates={sheetDates}
+            partTimeStaff={partTimeStaff}
+            included={included}
+            slots={slots}
+            timetables={timetables}
+            startDate={sheetDates[0] || queryStart}
+            endDate={sheetDates[sheetDates.length - 1] || queryEnd}
+            onSelectTeacher={onSelectTeacher}
+            monthOf={monthOf}
+          />
+        ) : (
+          <div style={{ ...panel, textAlign: "center", color: "#888", padding: 40 }}>期間を指定してください</div>
+        )
+      ) : shownTeachers.length === 0 ? (
         <div style={{ ...panel, textAlign: "center", color: "#888", padding: 40 }}>
           {rangeOk ? "この期間に授業はありません" : "期間を指定してください"}
         </div>

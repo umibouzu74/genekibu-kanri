@@ -105,6 +105,20 @@ describe("月間予定の印刷・画像 (2026-10-15)", () => {
   });
 });
 
+// バイト出勤表は経理 (閲覧者) が出すことが多い (2026-10-23)。授業時間の集計の
+// タブだが、メニューから直接開けて、閲覧者にも出す
+describe("バイト出勤表 (2026-10-23)", () => {
+  it("講師・スタッフにタブの項目として並び、閲覧者にも出す", () => {
+    const staff = MAIN_MENU.find((c) => c.key === "staff");
+    const item = staff.items.find((i) => i.kind === "minutesTab");
+    expect(item).toMatchObject({ tab: "attendance", icon: "🧾", label: "バイト出勤表" });
+    expect(item.adminOnly).toBeFalsy();
+    const viewer = allItems(visibleMainMenu({ isAdmin: false, canUseAdminData: false }));
+    expect(viewer.some((i) => i.kind === "minutesTab")).toBe(true);
+    expect(viewer.some((i) => i.key === `nav:${VIEWS.MINUTES}`)).toBe(true);
+  });
+});
+
 describe("menuItemChord", () => {
   it("ビューへ移る項目はそのビューの g chord を返す", () => {
     const items = allItems(MAIN_MENU);

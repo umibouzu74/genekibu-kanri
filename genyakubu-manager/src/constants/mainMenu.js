@@ -19,6 +19,7 @@
 //   "masterTab" … コースマスター管理のタブへ (tab = MASTER_TAB)
 //   "subsTab"   … 授業管理のタブへ (tab = SUBS_TABS の tab)
 //   "staffTab"  … 講師管理のタブへ (tab = STAFF_TAB)
+//   "minutesTab" … 授業時間の集計のタブへ (tab = MINUTES_TAB)
 //   "koshuSeason" … 講習時間割作成をその季節で開く (season = timetable-builder/utils/seasons)
 
 import { VIEWS } from "./views";
@@ -28,6 +29,7 @@ import { MASTER_TAB, MASTER_TABS } from "./masterTabs";
 import { TIMETABLE_SECTION, TIMETABLE_SECTIONS } from "./timetableSections";
 import { SUBS_TABS } from "./subsTabs";
 import { STAFF_TAB, STAFF_TABS } from "./staffTabs";
+import { MINUTES_TAB, MINUTES_TABS } from "./minutesTabs";
 import { KOSHU_SEASONS } from "../timetable-builder/utils/seasons";
 import { VIEW_CHORD_BY_VIEW } from "./chords";
 import { MENU_CATEGORY, menuCategory } from "./menuCategories";
@@ -87,6 +89,12 @@ function masterTab(tab, desc) {
 function staffTab(tab, desc) {
   const t = STAFF_TABS.find((x) => x.key === tab);
   return { key: `staff:${tab}`, kind: "staffTab", tab, icon: t.icon, label: t.label, desc };
+}
+
+// 授業時間の集計のタブ (バイト出勤表)
+function minutesTab(tab, desc) {
+  const t = MINUTES_TABS.find((x) => x.key === tab);
+  return { key: `minutes:${tab}`, kind: "minutesTab", tab, icon: t.icon, label: t.label, desc };
 }
 
 // 講習時間割作成の季節 (春期 / 夏期 / 冬期)。季節ごとに別の時間割なので、
@@ -150,6 +158,7 @@ export const MAIN_MENU = Object.freeze([
     items: [
       navItem(VIEWS.ALL, "講師ごとの週のコマ数"),
       navItem(VIEWS.MINUTES, "期間内に講師ごとに教えた時間 (給与計算用)"),
+      minutesTab(MINUTES_TAB.ATTENDANCE, "バイトの出勤日数 × 単価の月の表 (給与用、Excel にも)"),
       navItem(VIEWS.STAFF, "バイトの登録・出勤状況、講師の担当教科とよみ、教科マスター"),
       staffTab(STAFF_TAB.AFFILIATION, "講師を現役部 常勤 / 現役部 非常勤 / 予備校部に分ける (年度ごと)"),
       navItem(VIEWS.LEAVE, "現役部 常勤の有給・半休を月の表で入れる / 年度の日数を見る"),

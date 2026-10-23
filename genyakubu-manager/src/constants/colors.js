@@ -102,3 +102,13 @@ export function gradeColor(g) {
   if (g.includes("高3")) return { b: "#c8c8f0", f: "#1a1a7a" };
   return { b: "#e8e8e8", f: "#444" };
 }
+
+// 授業時間の集計 / バイト出勤表の種別ごとの文字色 (白地でコントラスト 4.5:1 以上)。
+// キーは utils/teachingMinutes の MINUTE_KINDS
+export const MINUTE_KIND_COLOR = {
+  own: "#2e6a9e",
+  sub: "#c05030",
+  extra: "#3d7a4a",
+  koshu: "#7a4a9e",
+  prep: "#9e6a2e",
+};

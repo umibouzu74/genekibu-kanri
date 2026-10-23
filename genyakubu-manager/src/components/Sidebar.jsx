@@ -165,6 +165,9 @@ export function Sidebar({
   masterTab,
   onSelectStaffTab,
   staffTab,
+  // 授業時間の集計のタブ (授業時間 / バイト出勤表。constants/minutesTabs)
+  onSelectMinutesTab,
+  minutesTab,
   // 講習時間割作成の季節 (timetable-builder/utils/seasons)
   onSelectKoshuSeason,
   koshuSeason,
@@ -240,11 +243,13 @@ export function Sidebar({
     [VIEWS.TIMETABLE]: onSelectTimetableSection,
     [VIEWS.MASTER]: onSelectMasterTab,
     [VIEWS.STAFF]: onSelectStaffTab,
+    [VIEWS.MINUTES]: onSelectMinutesTab,
     [VIEWS.BUILDER]: onSelectKoshuSeason,
   };
   const sectionActiveKey = {
     [VIEWS.MASTER]: masterTab,
     [VIEWS.STAFF]: staffTab,
+    [VIEWS.MINUTES]: minutesTab,
     [VIEWS.BUILDER]: koshuSeason,
   };
 
