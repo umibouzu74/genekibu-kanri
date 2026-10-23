@@ -584,7 +584,10 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
 //   - legacy  … 季節に分ける前の単一 project をこの季節へ移す (この端末の旧キーは
 //               移した後に消す。クラウドの旧ノードは消さない)
 //   - missing … 始め方 (SeasonStartPanel) を出す。選ぶとその project で開く
-//   - loading … クラウドを読めるまで待つ
+//   - loading … クラウドを読めるまで待つ。長く読めない (オフライン) ときは、この端末に
+//               残っている季節に分ける前の project を人が選べば開ける (localFallback)
+// どの状態でも、この端末にその季節のキーがあればそれを開く (別のタブで先に移した /
+// 作った季節を、このタブの古い状態のまま上書きしない)。
 // seasonProjects が無い (単体で描く) ときは、この端末の値 (無ければ初期値) で開く
 function SeasonWorkspace({
   season,
@@ -600,18 +603,19 @@ function SeasonWorkspace({
   const storage = useMemo(() => seasonStorage(season), [season]);
   const entry = seasonProjects?.[season];
   const [started, setStarted] = useState<Project | null>(null);
+  // オフラインで、この端末に残っている控えから始めると人が選んだ project
+  const [fallback, setFallback] = useState<Project | null>(null);
   const [opened, setOpened] = useState<{ initialProject: Project | null; fromLegacy: boolean } | null>(null);
 
   // 開ける状態なら、その出どころ。開いたら 1 回だけ opened に控えて以後は変えない
   const candidate = useMemo(() => {
     if (started) return { initialProject: started, fromLegacy: false };
-    if (!seasonProjects) return { initialProject: null, fromLegacy: false };
-    if (entry?.status === 'ready') {
-      return { initialProject: hasLocalProject(storage.storageKey) ? null : (entry.project ?? null), fromLegacy: false };
-    }
+    if (!seasonProjects || hasLocalProject(storage.storageKey)) return { initialProject: null, fromLegacy: false };
+    if (entry?.status === 'ready') return { initialProject: entry.project ?? null, fromLegacy: false };
     if (entry?.status === 'legacy' && entry.project) return { initialProject: entry.project, fromLegacy: true };
+    if (fallback) return { initialProject: fallback, fromLegacy: true };
     return null;
-  }, [started, seasonProjects, entry, storage.storageKey]);
+  }, [started, fallback, seasonProjects, entry, storage.storageKey]);
   const decided = opened ?? candidate;
   useEffect(() => {
     if (!opened && candidate) setOpened(candidate);
@@ -637,17 +641,50 @@ function SeasonWorkspace({
   }, [fromLegacy, storage.storageKey, def.label, showToast]);
 
   const handleStart = useCallback((project: Project, message: string) => {
+    // 始め方を選んでいる間に、別のタブがこの季節を作っていたらそちらを開く (上書きしない)
+    if (hasLocalProject(storage.storageKey)) {
+      setOpened({ initialProject: null, fromLegacy: false });
+      showToast(`${def.label}は別のタブで先に作られていたので、その時間割を開きました`, 'warning', 7000);
+      return;
+    }
     setStarted(project);
     showToast(message, 'success', 7000);
-  }, [showToast]);
+  }, [showToast, storage.storageKey, def.label]);
+
+  // 読み込みが長いとき (オフラインなど) に出す案内
+  const isLoading = !decided && entry?.status !== 'missing';
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!isLoading) return undefined;
+    const id = setTimeout(() => setSlow(true), SLOW_LOADING_MS);
+    return () => clearTimeout(id);
+  }, [isLoading]);
 
   if (!decided) {
     if (entry?.status === 'missing') {
       return <SeasonStartPanel season={season} seasonProjects={seasonProjects} onStart={handleStart} />;
     }
+    const localFallback = entry?.localFallback;
     return (
-      <div role="status" className="bg-builder-surface p-6 rounded-lg border border-builder-border text-sm text-builder-ink-muted">
-        ☁️ {def.label}の時間割を読み込んでいます… (時間がかかるときはネットワークを確認してください)
+      <div role="status" className="bg-builder-surface p-6 rounded-lg border border-builder-border text-sm text-builder-ink-muted space-y-3">
+        <div>☁️ {def.label}の時間割を読み込んでいます… (時間がかかるときはネットワークを確認してください)</div>
+        {slow && (
+          <div className="text-builder-ink">
+            クラウドから読めていません (オフラインかもしれません)。つながると自動で開きます。
+            {localFallback && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFallback(localFallback)}
+                  className="px-3 py-1.5 text-sm font-bold rounded border border-builder-border bg-builder-surface text-builder-ink hover:bg-builder-surface-alt"
+                >この端末に残っている「{localFallback.name || def.label}」を開く</button>
+                <span className="text-xs text-builder-ink-muted">
+                  この端末に最後に保存した内容です。ほかの端末で新しく直していても、その分は入りません
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -659,6 +696,9 @@ function SeasonWorkspace({
     </ProjectProvider>
   );
 }
+
+// 読み込み中の画面で、オフラインの案内を出すまでの時間
+const SLOW_LOADING_MS = 10000;
 
 function hasLocalProject(storageKey: string): boolean {
   try {
@@ -694,8 +734,10 @@ export default function BuilderApp({
     () => ({ offsiteLessons, holidays, partTimeStaffNames }),
     [offsiteLessons, holidays, partTimeStaffNames],
   );
+  // UIProvider も季節ごとに作り直す (key)。開いたままの確認ダイアログが、季節を
+  // 切り替えた後に前の季節の操作 (リセット・作り直し) を実行しないように
   return (
-    <UIProvider>
+    <UIProvider key={season}>
       {/* koshu-builder: 罫線・ボタンの土台を講習側だけに当てる印 (tailwind.css) */}
       <div className="font-sans builder-root koshu-builder">
         <SeasonBar season={season} onSeasonChange={changeSeason} seasonProjects={seasonProjects} />

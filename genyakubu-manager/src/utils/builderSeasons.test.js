@@ -1,6 +1,6 @@
 // 講習の季節ごとの project の状態 (ready / legacy / missing / loading) の決め方。
 import { describe, expect, it } from "vitest";
-import { resolveLegacyProject, resolveSeasonProjects } from "./builderSeasons";
+import { isLegacyMigrated, resolveLegacyProject, resolveSeasonProjects } from "./builderSeasons";
 
 const project = (name, dates) => ({
   version: 4,
@@ -146,3 +146,37 @@ describe("resolveLegacyProject", () => {
     });
   });
 });
+
+// 校正レビュー (2026-10-23) で見つけた穴
+describe("resolveSeasonProjects — 旧キーの扱いの念押し", () => {
+  it("クラウドに季節が 1 つでもあれば、旧ノードが空でもこの端末の古い旧キーを生き返らせない", () => {
+    const out = resolveSeasonProjects({
+      configured: true,
+      cloud: { winter: received(winter), summer: received(null), spring: received(null) },
+      legacyCloud: received(null),
+      legacyLocal: { exists: true, project: summer },
+      today,
+    });
+    expect(out.summer.status).toBe("missing");
+  });
+
+  it("読み込み中の季節には、この端末の旧キー (その季節のもの) を localFallback に付ける", () => {
+    const out = resolveSeasonProjects({
+      configured: true,
+      cloud: {},
+      legacyLocal: { exists: true, project: winter },
+      today,
+    });
+    expect(out.winter).toMatchObject({ status: "loading", localFallback: winter });
+    expect(out.summer).toMatchObject({ status: "loading", localFallback: null });
+  });
+});
+
+describe("isLegacyMigrated", () => {
+  it("旧ノードの project の季節のノードに値があれば移行済み", () => {
+    expect(isLegacyMigrated({ cloud: { summer: received(summer) }, legacyCloud: received(summer), today })).toBe(true);
+    expect(isLegacyMigrated({ cloud: { winter: received(winter) }, legacyCloud: received(summer), today })).toBe(false);
+    expect(isLegacyMigrated({ cloud: { summer: received(summer) }, legacyCloud: received(null), today })).toBe(false);
+  });
+});
+

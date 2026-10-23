@@ -17,7 +17,7 @@ import {
   seasonStorage,
 } from "../timetable-builder/utils/seasons";
 import { parseBuilderProject } from "../utils/builderLessons";
-import { resolveSeasonProjects } from "../utils/builderSeasons";
+import { isLegacyMigrated, resolveSeasonProjects } from "../utils/builderSeasons";
 
 const LEGACY = "legacy";
 
@@ -46,7 +46,11 @@ function readLegacyLocal() {
 //   季節に分ける前の単一 project のノード (旧 appData/builder/schedule_project) を
 //   購読する。どの季節にどの project を使うかは utils/builderSeasons.resolveSeasonProjects
 // - マウント時: この端末の LocalStorage (季節のキー + 旧キー) を即時反映 (オフラインでも
-//   表示できる)。builder が同じタブで保存したときも読み直す (BUILDER_PROJECT_SAVED_EVENT)
+//   表示できる)。builder が同じタブで保存したとき (BUILDER_PROJECT_SAVED_EVENT) と、別の
+//   タブが書いたとき (storage イベント) も読み直す。別のタブで先に移した / 作った季節を、
+//   このタブの古い「legacy / missing」のまま開いて上書きしないため
+// - クラウドで移行が済んでいたら (旧ノードの project の季節のノードに値がある)、この端末に
+//   残った旧キーを消す (同じ project を 2 つ持って保存領域を食わない。クラウドには触らない)
 // - 解釈できないペイロード (壊れた JSON / 構造不正 / このクライアントより新しい
 //   スキーマ) は project = null にする (表示はこの端末の値 → それも無ければ出さない)
 //
@@ -63,17 +67,51 @@ export function useBuilderProjects() {
   // useSyncedStorage と同じく、ログインの世代が変わったら張り直す
   const authGeneration = useAuthGeneration();
 
-  // builder が同じタブで季節の project を保存したら、その季節だけ読み直す
+  // builder が同じタブ / 別のタブで季節の project を保存したら、その季節だけ読み直す。
+  // 旧キーが消えた (別のタブで移した) ときは旧キーも読み直す
   useEffect(() => {
-    const onSaved = (e) => {
-      const storageKey = e?.detail?.storageKey;
+    const reread = (storageKey) => {
+      if (storageKey == null) {
+        // 別のタブで localStorage.clear()
+        setLocal((prev) => {
+          const next = { ...prev, [LEGACY]: readLegacyLocal() };
+          for (const { key } of KOSHU_SEASONS) next[key] = readLocal(seasonStorage(key).storageKey);
+          return next;
+        });
+        return;
+      }
       const season = KOSHU_SEASONS.find((s) => seasonStorage(s.key).storageKey === storageKey);
-      if (!season) return;
-      setLocal((prev) => ({ ...prev, [season.key]: readLocal(storageKey) }));
+      if (season) {
+        setLocal((prev) => ({ ...prev, [season.key]: readLocal(storageKey) }));
+      } else if (LEGACY_PROJECT_STORAGE_KEYS.includes(storageKey)) {
+        setLocal((prev) => ({ ...prev, [LEGACY]: readLegacyLocal() }));
+      }
+    };
+    const onSaved = (e) => reread(e?.detail?.storageKey);
+    const onStorage = (e) => {
+      if (e.storageArea && e.storageArea !== window.localStorage) return;
+      reread(e.key);
     };
     window.addEventListener(BUILDER_PROJECT_SAVED_EVENT, onSaved);
-    return () => window.removeEventListener(BUILDER_PROJECT_SAVED_EVENT, onSaved);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(BUILDER_PROJECT_SAVED_EVENT, onSaved);
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
+
+  // クラウドで移行が済んでいたら、この端末に残った旧キーを消す
+  const legacyMigrated = isLegacyMigrated({ cloud, legacyCloud: cloud[LEGACY] });
+  const hasLegacyLocal = Boolean(local[LEGACY]?.exists);
+  useEffect(() => {
+    if (!legacyMigrated || !hasLegacyLocal) return;
+    try {
+      LEGACY_PROJECT_STORAGE_KEYS.forEach((k) => localStorage.removeItem(k));
+    } catch {
+      return;
+    }
+    setLocal((prev) => ({ ...prev, [LEGACY]: { exists: false, project: null } }));
+  }, [legacyMigrated, hasLegacyLocal]);
 
   useEffect(() => {
     if (!isConfigured || !db) return undefined;

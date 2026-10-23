@@ -46,4 +46,20 @@ describe("useBuilderProjects (Firebase 未設定)", () => {
     expect(result.current.spring).toMatchObject({ status: "ready", source: "local" });
     expect(result.current.spring.project.name).toBe("2027 春期");
   });
+
+  it("別のタブが季節を保存した / 旧キーを消したら読み直す (storage イベント)", () => {
+    localStorage.setItem("builder.schedule_project", JSON.stringify(project("2026 冬期", ["12/24(木)"])));
+    const { result } = renderHook(() => useBuilderProjects());
+    expect(result.current.winter.status).toBe("legacy");
+    // 別のタブで冬期へ移した
+    const key = seasonStorage("winter").storageKey;
+    localStorage.setItem(key, JSON.stringify(project("2026 冬期", ["12/24(木)"])));
+    localStorage.removeItem("builder.schedule_project");
+    act(() => {
+      window.dispatchEvent(new StorageEvent("storage", { key, storageArea: localStorage }));
+      window.dispatchEvent(new StorageEvent("storage", { key: "builder.schedule_project", storageArea: localStorage }));
+    });
+    expect(result.current.winter).toMatchObject({ status: "ready", source: "local" });
+  });
 });
+

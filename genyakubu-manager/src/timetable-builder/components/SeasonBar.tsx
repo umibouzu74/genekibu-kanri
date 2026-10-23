@@ -8,6 +8,8 @@ export interface SeasonProjectEntry {
   status: SeasonStatus;
   source?: 'cloud' | 'local' | 'legacy' | null;
   project?: Project | null;
+  /** loading のとき、この端末に残っている季節に分ける前の project (この季節のもの) */
+  localFallback?: Project | null;
 }
 export type SeasonProjects = Partial<Record<KoshuSeason, SeasonProjectEntry>>;
 

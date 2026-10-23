@@ -2,7 +2,7 @@
 // 講習の季節 (春期 / 夏期 / 冬期) ごとの時間割 (2026-10-23)。
 // 切替バーの表示、未作成の季節の始め方、季節に分ける前の project の移行を通しで見る。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import BuilderApp from './BuilderApp';
 import { seasonStorage } from './utils/seasons';
 
@@ -123,4 +123,67 @@ describe('BuilderApp の季節', () => {
     expect(screen.getByRole('status').textContent).toContain('春期講習の時間割を読み込んでいます');
     expect(screen.queryByRole('heading', { name: /まだありません/ })).toBeNull();
   });
+
+  // 校正レビュー (2026-10-23) で見つけた穴
+  it('別のタブで先に移した季節は、このタブの古い legacy のままでもこの端末の値を開く (上書きしない)', async () => {
+    const moved = { ...summer, name: '別のタブで直した夏期' };
+    localStorage.setItem(seasonStorage('summer').storageKey, JSON.stringify(moved));
+    render(
+      <BuilderApp
+        season="summer"
+        seasonProjects={{ summer: { status: 'legacy', source: 'legacy', project: summer } }}
+      />,
+    );
+    await waitFor(() => expect(screen.getByRole('heading', { name: '別のタブで直した夏期' })).toBeTruthy());
+    expect(JSON.parse(localStorage.getItem(seasonStorage('summer').storageKey)).name).toBe('別のタブで直した夏期');
+  });
+
+  it('始め方を選ぶ間に別のタブがその季節を作っていたら、そちらを開いて知らせる', async () => {
+    render(
+      <BuilderApp
+        season="winter"
+        seasonProjects={{ summer: { status: 'ready', project: summer }, winter: { status: 'missing' } }}
+      />,
+    );
+    localStorage.setItem(seasonStorage('winter').storageKey, JSON.stringify({ ...summer, name: '別のタブの冬期' }));
+    fireEvent.click(screen.getByRole('button', { name: /夏期講習「2026 夏期講習」の設定を写して始める/ }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: '別のタブの冬期' })).toBeTruthy());
+    expect(await screen.findByText(/別のタブで先に作られていた/)).toBeTruthy();
+  });
+
+  it('読み込みが長いと、この端末に残っている控え (季節に分ける前) を人が選べば開ける', async () => {
+    vi.useFakeTimers();
+    try {
+      render(
+        <BuilderApp
+          season="summer"
+          seasonProjects={{ summer: { status: 'loading', localFallback: summer } }}
+        />,
+      );
+      expect(screen.queryByRole('button', { name: /この端末に残っている/ })).toBeNull();
+      act(() => { vi.advanceTimersByTime(10000); });
+      fireEvent.click(screen.getByRole('button', { name: /この端末に残っている「2026 夏期講習」を開く/ }));
+    } finally {
+      vi.useRealTimers();
+    }
+    await waitFor(() => expect(screen.getByRole('button', { name: /自動作成/ })).toBeTruthy());
+    expect(JSON.parse(localStorage.getItem(seasonStorage('summer').storageKey)).name).toBe('2026 夏期講習');
+  });
+
+  it('確認ダイアログを開いたまま季節を切り替えると、ダイアログは閉じる (前の季節の操作を実行しない)', async () => {
+    localStorage.setItem(seasonStorage('summer').storageKey, JSON.stringify(summer));
+    const seasonProjects = {
+      summer: { status: 'ready', source: 'local', project: summer },
+      winter: { status: 'missing' },
+    };
+    const { rerender } = render(<BuilderApp season="summer" seasonProjects={seasonProjects} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /自動作成/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: '⚙️ 設定' }));
+    fireEvent.click(screen.getByRole('button', { name: /夏期講習のデータをリセット/ }));
+    expect(await screen.findByRole('button', { name: '全削除' })).toBeTruthy();
+    rerender(<BuilderApp season="winter" seasonProjects={seasonProjects} />);
+    expect(screen.queryByRole('button', { name: '全削除' })).toBeNull();
+    expect(localStorage.getItem(seasonStorage('summer').storageKey)).not.toBeNull();
+  });
 });
+
