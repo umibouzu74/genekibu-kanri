@@ -292,6 +292,8 @@ export default function App() {
     saveSpecialEvents,
     specialEventDisplay,
     saveSpecialEventDisplay,
+    attendanceSettings,
+    saveAttendanceSettings,
     extraLessons,
     saveExtraLessons,
     daySchedules,
@@ -1544,6 +1546,10 @@ export default function App() {
               onSelectTeacher={selectTeacher}
               tab={minutesTab}
               onTabChange={setMinutesTab}
+              attendanceSettings={attendanceSettings}
+              // 金額入りの Excel のパスワードを決められるのは管理者 (Firebase 未設定の
+              // 端末ではその端末の人 = canUseAdminData)
+              onSaveAttendanceSettings={handoverEnabled ? saveAttendanceSettings : undefined}
             />
           )}
           {view === VIEWS.MASTER && !selected && (

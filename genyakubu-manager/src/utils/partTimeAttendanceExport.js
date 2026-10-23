@@ -13,8 +13,8 @@
 // Excel だけ):
 //   - 金額なし: 単価・金額の列を作らない。鍵なし (…_日数のみ.xlsx)
 //   - 金額入り: 単価・金額の列あり。**開くのにパスワードが要る** (Excel の
-//     「ドキュメントの暗号化」と同じ。utils/officeEncryption)。パスワードは
-//     書き出すときに入れてもらうだけで、どこにも保存しない。**金額入りを鍵なしで
+//     「ドキュメントの暗号化」と同じ。utils/officeEncryption)。パスワードは管理者が
+//     決めた全員共通のもの (utils/partTimeAttendanceSettings)。**金額入りを鍵なしで
 //     作る経路を足さないこと**
 //
 // 表の中身は utils/partTimeAttendance.buildPartTimeAttendanceSheet (画面と同じ)。

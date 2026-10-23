@@ -31,6 +31,7 @@ import { migrateTeacherAffiliations } from "../utils/teacherAffiliations";
 import { EMPTY_STAFF_LEAVE, migrateStaffLeave } from "../utils/staffLeave";
 import { migrateCourseMapping } from "../utils/yoteihyo/courseMapping";
 import { migrateYoteihyoConfirmed } from "../utils/yoteihyo/confirmations";
+import { DEFAULT_ATTENDANCE_SETTINGS, sanitizeAttendanceSettings } from "../utils/partTimeAttendanceSettings";
 import {
   DEFAULT_SPECIAL_EVENT_DISPLAY,
   normalizeSpecialEventDisplay,
@@ -236,6 +237,13 @@ export function useAppData({ toasts, isAdmin }) {
     EMPTY_LIST,
     { migrate: migrateYoteihyoConfirmed, onError: onStorageError }
   );
+  // バイト出勤表の共有設定 (金額入りの Excel のパスワード。管理者が決めて全端末共通)。
+  // 閲覧用の端末 (経理) も金額入りを書き出すので appData/ に置く (強さは問わない)
+  const [attendanceSettings, saveAttendanceSettings] = useSyncedStorage(
+    LS.partTimeAttendanceSettings,
+    DEFAULT_ATTENDANCE_SETTINGS,
+    { migrate: sanitizeAttendanceSettings, onError: onStorageError }
+  );
   // 引継ぎメモ (責任者 → 後任)。閲覧者 (匿名ログイン) は appData/ を全部
   // 読めるので、管理者だけが読める adminData/ に置き、管理者のときだけ購読する。
   // 有給・半休も同じ (人事の記録)。handoverEnabled = 管理者だけのデータを扱えるか
@@ -325,6 +333,8 @@ export function useAppData({ toasts, isAdmin }) {
     saveYoteihyoCourseMapping,
     yoteihyoConfirmed,
     saveYoteihyoConfirmed,
+    attendanceSettings,
+    saveAttendanceSettings,
     eventVisibility,
     saveEventVisibility,
   };

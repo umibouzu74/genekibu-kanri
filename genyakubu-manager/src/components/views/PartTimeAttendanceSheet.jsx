@@ -13,8 +13,10 @@
 //   入れて金額を出すのは Excel の書き出しのダイアログ (AttendanceExportDialog) の
 //   「金額入り」だけで、そのファイルは開くのにパスワードが要る
 //   (utils/partTimeAttendanceExport)。**画面に金額・単価の列を戻さないこと**
-// - 単価・別の出勤にする空き時間・書き出しの種類はこの端末の好み (LS.partTimeAttendance*)。
-//   パスワードは保存しない
+// - 金額入りのパスワードは管理者が決めて固定する全員共通の設定 (settings.excelPassword、
+//   appData)。書き出す人は入れない。決めるのはダイアログの管理者だけの欄で、閲覧者には
+//   パスワードそのものを見せない。決まるまでは金額入りを選べない
+// - 単価・別の出勤にする空き時間・書き出しの種類はこの端末の好み (LS.partTimeAttendance*)
 // - 閲覧者 (経理) もそのまま使う。書き込みは端末の localStorage だけ
 // - 印刷はトップバーの 🖨 (popup 系統)。操作部・ダイアログは no-print、紙面は
 //   printStyles の attendance 用 CSS (A4 横) で詰める
@@ -28,7 +30,6 @@ import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useToasts } from "../../hooks/useToasts";
 import { dateToDay, fmtMD, parseLocalDate } from "../../utils/dateHelpers";
 import { MINUTE_KIND_LABELS, describeEntryNotes } from "../../utils/teachingMinutes";
-import { MAX_PASSWORD_LENGTH } from "../../utils/officeEncryption";
 import {
   ATTENDANCE_FLAG_LABELS,
   DEFAULT_GAP_MINUTES,
@@ -44,6 +45,7 @@ import {
   setAttendanceOverride,
   staffNamesOf,
 } from "../../utils/partTimeAttendance";
+import { MAX_EXCEL_PASSWORD_LENGTH, sanitizeAttendanceSettings } from "../../utils/partTimeAttendanceSettings";
 
 const WEEKDAY = ["日", "月", "火", "水", "木", "金", "土"];
 // 色 (どれも背景とのコントラスト 4.5:1 以上)
@@ -93,6 +95,9 @@ export function PartTimeAttendanceSheet({
   // 講師名でその月の月間へ (TeachingMinutesView と同じ)
   onSelectTeacher,
   monthOf,
+  // 共有設定 ({ excelPassword })。onSaveSettings は管理者のときだけ渡る
+  settings,
+  onSaveSettings,
 }) {
   const baseId = useId();
   const [gapMinutes, setGapMinutes] = useLocalStorage(
@@ -418,6 +423,8 @@ export function PartTimeAttendanceSheet({
           hints={hints}
           startDate={startDate}
           endDate={endDate}
+          settings={settings}
+          onSaveSettings={onSaveSettings}
           onClose={() => setExportOpen(false)}
         />
       )}
@@ -619,8 +626,9 @@ function CellDetailDialog({ teacher, cell, gapMinutes, onOverride, onClose }) {
 
 // Excel の書き出し。「金額なし」(日数だけ・鍵なし) か「金額入り」(単価・金額あり、
 // 開くのにパスワードが要る) を選ぶ。単価を見せるのはここ (金額入りを選んだとき) だけ。
-// パスワードは保存しない (この画面を閉じると消える)
-function AttendanceExportDialog({ sheet, hints, startDate, endDate, onClose }) {
+// 金額入りのパスワードは管理者が決めた全員共通のもの (settings.excelPassword)。
+// 管理者 (onSaveSettings あり) にだけパスワードの欄を出し、閲覧者には見せない
+function AttendanceExportDialog({ sheet, hints, startDate, endDate, settings, onSaveSettings, onClose }) {
   const baseId = useId();
   const toasts = useToasts();
   const [mode, setMode] = useLocalStorage(LS.partTimeAttendanceExportMode, EXPORT_MODE.DAYS, {
@@ -631,21 +639,13 @@ function AttendanceExportDialog({ sheet, hints, startDate, endDate, onClose }) {
   });
   // 単価の入力途中の文字 (空欄にして打ち直す間に 0 円にしない)
   const [priceText, setPriceText] = useState(null);
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
-  const withAmounts = mode === EXPORT_MODE.AMOUNTS;
-
-  const passwordProblem = !withAmounts
-    ? null
-    : password === ""
-      ? "パスワードを入れてください"
-      : password.length > MAX_PASSWORD_LENGTH
-        ? `パスワードは ${MAX_PASSWORD_LENGTH} 文字までです`
-        : confirm !== password
-          ? "確認用のパスワードが一致しません"
-          : null;
-  const canSubmit = !busy && !passwordProblem;
+  const password = sanitizeAttendanceSettings(settings).excelPassword;
+  const hasPassword = password !== "";
+  const canSetPassword = !!onSaveSettings;
+  // パスワードが決まるまでは、前に金額入りを選んでいても金額なしで書き出す
+  const withAmounts = mode === EXPORT_MODE.AMOUNTS && hasPassword;
+  const canSubmit = !busy;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -675,7 +675,7 @@ function AttendanceExportDialog({ sheet, hints, startDate, endDate, onClose }) {
     }
   };
 
-  const optionStyle = (on) => ({
+  const optionStyle = (on, disabled = false) => ({
     display: "flex",
     gap: 8,
     alignItems: "flex-start",
@@ -683,12 +683,14 @@ function AttendanceExportDialog({ sheet, hints, startDate, endDate, onClose }) {
     border: `1px solid ${on ? "#2e6a9e" : "#ddd"}`,
     borderRadius: 6,
     background: on ? "#eef5fc" : "#fff",
-    cursor: "pointer",
+    cursor: disabled ? "not-allowed" : "pointer",
+    color: disabled ? MUTED : undefined,
     fontSize: 13,
     lineHeight: 1.5,
   });
   const fieldLabel = { display: "block", fontSize: 12, fontWeight: 700, color: "#444", margin: "10px 0 4px" };
   const input = { ...S.input, padding: "6px 8px", fontSize: 14 };
+  const note = { fontSize: 11, color: MUTED, margin: "6px 0 0", lineHeight: 1.6 };
 
   return (
     <Modal
@@ -712,16 +714,24 @@ function AttendanceExportDialog({ sheet, hints, startDate, endDate, onClose }) {
               <b>金額なし</b> (日数だけ・パスワードなし)
             </span>
           </label>
-          <label style={optionStyle(withAmounts)}>
+          <label style={optionStyle(withAmounts, !hasPassword)}>
             <input
               type="radio"
               name={`${baseId}-mode`}
               checked={withAmounts}
               onChange={() => setMode(EXPORT_MODE.AMOUNTS)}
-              disabled={busy}
+              disabled={busy || !hasPassword}
+              aria-describedby={hasPassword ? undefined : `${baseId}-no-pw`}
             />
             <span>
               <b>金額入り</b> (単価・金額の列あり。開くときにパスワードが要る)
+              {!hasPassword && (
+                <span id={`${baseId}-no-pw`} style={{ display: "block", fontSize: 11 }}>
+                  {canSetPassword
+                    ? "下の「金額入りのパスワード」を決めると選べます"
+                    : "管理者がパスワードを決めると選べます"}
+                </span>
+              )}
             </span>
           </label>
         </fieldset>
@@ -748,42 +758,21 @@ function AttendanceExportDialog({ sheet, hints, startDate, endDate, onClose }) {
               disabled={busy}
               style={{ ...input, width: 120, textAlign: "right" }}
             />
-            <label htmlFor={`${baseId}-pw`} style={fieldLabel}>
-              パスワード
-            </label>
-            <input
-              id={`${baseId}-pw`}
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={busy}
-              aria-describedby={`${baseId}-pw-note`}
-              style={input}
-            />
-            <label htmlFor={`${baseId}-pw2`} style={fieldLabel}>
-              パスワード (確認)
-            </label>
-            <input
-              id={`${baseId}-pw2`}
-              type="password"
-              autoComplete="new-password"
-              value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
-              disabled={busy}
-              aria-invalid={confirm !== "" && confirm !== password}
-              style={input}
-            />
-            <p id={`${baseId}-pw-note`} style={{ fontSize: 11, color: MUTED, margin: "6px 0 0", lineHeight: 1.6 }}>
-              Excel で開くときにこのパスワードを聞かれます。パスワードはアプリに保存しません
-              (忘れたら書き出し直してください)。
-            </p>
-            {confirm !== "" && confirm !== password && (
-              <p role="alert" style={{ fontSize: 12, color: "#b42318", margin: "6px 0 0" }}>
-                確認用のパスワードが一致しません
-              </p>
-            )}
+            <p style={note}>Excel で開くときに、管理者が決めたパスワードを聞かれます。</p>
           </div>
+        )}
+
+        {canSetPassword && (
+          <ExcelPasswordSetting
+            current={password}
+            disabled={busy}
+            onSave={(next) => {
+              onSaveSettings(next ? { excelPassword: next } : {});
+              toasts.success(
+                next ? "金額入りの Excel のパスワードを保存しました" : "パスワードを外しました (金額入りは書き出せません)"
+              );
+            }}
+          />
         )}
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
@@ -793,7 +782,6 @@ function AttendanceExportDialog({ sheet, hints, startDate, endDate, onClose }) {
           <button
             type="submit"
             disabled={!canSubmit}
-            title={passwordProblem || undefined}
             style={{ ...S.btn(true), opacity: canSubmit ? 1 : 0.5, cursor: canSubmit ? "pointer" : "not-allowed" }}
           >
             {busy ? "書き出しています…" : "⬇ 書き出す"}
@@ -801,5 +789,56 @@ function AttendanceExportDialog({ sheet, hints, startDate, endDate, onClose }) {
         </div>
       </form>
     </Modal>
+  );
+}
+
+// 管理者だけの欄: 金額入りの Excel のパスワード (全員共通)。強さは問わない (生々しい金額を
+// 隠しておく程度の目的) ので、伏せ字にせずそのまま見せる
+function ExcelPasswordSetting({ current, disabled, onSave }) {
+  const id = useId();
+  // 触るまでは今の値を見せる (開いた後に他の端末の変更が届いても追いつく)
+  const [draft, setDraft] = useState(null);
+  const value = draft ?? current;
+  const tooLong = value.length > MAX_EXCEL_PASSWORD_LENGTH;
+  const changed = draft != null && draft !== current;
+  return (
+    <div style={{ borderTop: "1px solid #eee", marginTop: 14, paddingTop: 10 }}>
+      <label htmlFor={id} style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#444", marginBottom: 4 }}>
+        🔑 金額入りのパスワード (管理者だけが変えられます)
+      </label>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input
+          id={id}
+          type="text"
+          autoComplete="off"
+          spellCheck={false}
+          value={value}
+          onChange={(e) => setDraft(e.target.value)}
+          disabled={disabled}
+          placeholder="例: 12345"
+          style={{ ...S.input, padding: "6px 8px", fontSize: 14, flex: 1, minWidth: 0 }}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            onSave(value);
+            setDraft(null);
+          }}
+          disabled={disabled || !changed || tooLong}
+          style={{ ...S.btn(false), opacity: !changed || tooLong ? 0.5 : 1 }}
+        >
+          保存
+        </button>
+      </div>
+      <p style={{ fontSize: 11, color: MUTED, margin: "6px 0 0", lineHeight: 1.6 }}>
+        全員共通です。経理など書き出す人はパスワードを入れずに金額入りを書き出せ、ファイルを開くときに
+        このパスワードを聞かれます (開く人には伝えてください)。管理者以外にはこの欄は見えません。
+      </p>
+      {tooLong && (
+        <p role="alert" style={{ fontSize: 12, color: "#b42318", margin: "6px 0 0" }}>
+          パスワードは {MAX_EXCEL_PASSWORD_LENGTH} 文字までです
+        </p>
+      )}
+    </div>
   );
 }

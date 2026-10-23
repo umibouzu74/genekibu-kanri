@@ -149,6 +149,9 @@ export function TeachingMinutesView({
   // 開いているタブ (constants/minutesTabs)。App が持つ。渡されないときはこの画面で持つ
   tab: tabProp,
   onTabChange,
+  // バイト出勤表の共有設定 (金額入りの Excel のパスワード)。保存は管理者だけ (渡されないと読むだけ)
+  attendanceSettings,
+  onSaveAttendanceSettings,
 }) {
   const baseId = useId();
   const today = useToday();
@@ -849,6 +852,8 @@ export function TeachingMinutesView({
             endDate={sheetDates[sheetDates.length - 1] || queryEnd}
             onSelectTeacher={onSelectTeacher}
             monthOf={monthOf}
+            settings={attendanceSettings}
+            onSaveSettings={onSaveAttendanceSettings}
           />
         ) : (
           <div style={{ ...panel, textAlign: "center", color: "#888", padding: 40 }}>期間を指定してください</div>

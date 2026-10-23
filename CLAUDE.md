@@ -1810,10 +1810,21 @@ sessionStorage `SS.teachingMinutesTab`)。画面 `components/views/PartTimeAtten
   金額入りは Excel の「ドキュメントの暗号化」と同じ ECMA-376 Agile Encryption
   (`utils/officeEncryption.js`: AES-256 + SHA-512 × 100000 + HMAC、OLE2 コンテナも自前。
   exceljs に暗号化が無いため)。**シート保護 (列を隠してロック) にしない** — 暗号化では
-  ないので中身を unzip すれば読める。**パスワードはどこにも保存しない** (ダイアログに
-  入れるだけ。コードに既定のパスワードを書かない — 公開されているアプリのコードは誰でも
-  読める)。**金額入りを鍵なしで作る経路を足さない** (`buildPartTimeAttendanceFile` が
-  パスワード無しの金額入りを止める)
+  ないので中身を unzip すれば読める。**金額入りを鍵なしで作る経路を足さない**
+  (`buildPartTimeAttendanceFile` がパスワード無しの金額入りを止める)
+- **金額入りのパスワードは管理者が決めて固定する全員共通の設定** (2026-10-23、
+  `utils/partTimeAttendanceSettings` の `{ excelPassword }`、`LS.partTimeAttendanceSettings`、
+  appData、`database.rules.json` に列挙)。書き出す人はパスワードを入れない。決めるのは
+  書き出しのダイアログの管理者だけの欄 (`ExcelPasswordSetting`、canUseAdminData のとき =
+  App の `onSaveAttendanceSettings`)。閲覧者にはパスワードそのものを見せない。決まるまでは
+  金額入りを選べない
+  - **強さは問わない、との判断** (日数と単価が分かれば誰でも計算できる金額を、生々しいので
+    隠しておく程度の目的)。経理 (閲覧者) の端末でも金額入りを書き出すので adminData には
+    置けず、閲覧者も読める appData に置いている (技術的には閲覧者も読める)。秘密を守る
+    用途に流用しないこと。コードに既定のパスワードを書かない
+  - バックアップ (エクスポート / インポート) には含めない (配りやすいファイルにパスワードを
+    書かない)。データの初期化 (データ管理 / ErrorBoundary) でも消さない
+  - 空にして保存 = パスワードを外す (`{}` を保存。RTDB の空は useSyncedStorage のマーカー)
   - SHA-512 の 100000 回は WebCrypto で 1 回ずつ await すると 4 秒以上かかるので同期の
     SHA-512 を持つ (Node で約 1.2 秒)。定数は素数の平方根・立方根から計算している。
     AES・HMAC・乱数は WebCrypto

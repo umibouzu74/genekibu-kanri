@@ -109,9 +109,10 @@ export class ErrorBoundary extends Component {
   handleClear = () => {
     if (!confirm("localStorage を初期化してリロードします。よろしいですか？")) return;
     try {
-      // 引継ぎメモ・有給・半休は残す (データ管理の初期化と同じ扱い)
+      // 引継ぎメモ・有給・半休・バイト出勤表のパスワードは残す (データ管理の初期化と同じ扱い)
+      const keep = new Set([LS.handoverNotes, LS.staffLeave, LS.partTimeAttendanceSettings]);
       Object.values(LS)
-        .filter((k) => k !== LS.handoverNotes && k !== LS.staffLeave)
+        .filter((k) => !keep.has(k))
         .forEach((k) => localStorage.removeItem(k));
       Object.values(SS).forEach((k) => sessionStorage.removeItem(k));
     } catch {

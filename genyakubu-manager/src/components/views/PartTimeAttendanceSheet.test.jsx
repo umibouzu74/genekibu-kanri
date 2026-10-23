@@ -119,7 +119,7 @@ describe("バイト出勤表", () => {
   });
 
   it("画面には金額・単価を出さない (Excel の書き出しで金額入りを選んだときだけ単価が見える)", () => {
-    renderView({ tab: MINUTES_TAB.ATTENDANCE });
+    renderView({ tab: MINUTES_TAB.ATTENDANCE, attendanceSettings: { excelPassword: "12345" } });
     const sheet = document.querySelector(".pt-attendance-sheet");
     expect(sheet.textContent).not.toMatch(/円|金額|単価/);
     expect(screen.queryByRole("columnheader", { name: "金額" })).toBeNull();
@@ -127,17 +127,16 @@ describe("バイト出勤表", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "⬇ バイト出勤表 (Excel)" }));
     const dialog = screen.getByRole("dialog", { name: "バイト出勤表を Excel に書き出す" });
-    // 既定は金額なし。単価・パスワードの欄は出ない
+    // 既定は金額なし。単価の欄は出ない
     expect(within(dialog).getByRole("radio", { name: /金額なし/ }).checked).toBe(true);
     expect(within(dialog).queryByLabelText("単価 (円)")).toBeNull();
     fireEvent.click(within(dialog).getByRole("radio", { name: /金額入り/ }));
     expect(within(dialog).getByLabelText("単価 (円)").value).toBe("5500");
-    expect(within(dialog).getByLabelText("パスワード")).toBeTruthy();
   });
 
   it("金額なしはそのまま書き出す (単価・パスワードを渡さない)", async () => {
     downloadMock.mockClear();
-    renderView({ tab: MINUTES_TAB.ATTENDANCE });
+    renderView({ tab: MINUTES_TAB.ATTENDANCE, attendanceSettings: { excelPassword: "12345" } });
     fireEvent.click(screen.getByRole("button", { name: "⬇ バイト出勤表 (Excel)" }));
     const dialog = screen.getByRole("dialog", { name: "バイト出勤表を Excel に書き出す" });
     fireEvent.click(within(dialog).getByRole("button", { name: "⬇ 書き出す" }));
@@ -151,34 +150,80 @@ describe("バイト出勤表", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("金額入りはパスワードと確認が一致するまで書き出せず、単価は端末に覚える (パスワードは覚えない)", async () => {
+  it("金額入りは管理者が決めたパスワードで書き出す (書き出す人は入れない・閲覧者には見せない)", async () => {
     downloadMock.mockClear();
-    renderView({ tab: MINUTES_TAB.ATTENDANCE });
+    // 閲覧者 (onSaveAttendanceSettings なし)
+    renderView({ tab: MINUTES_TAB.ATTENDANCE, attendanceSettings: { excelPassword: "12345" } });
     fireEvent.click(screen.getByRole("button", { name: "⬇ バイト出勤表 (Excel)" }));
     const dialog = screen.getByRole("dialog", { name: "バイト出勤表を Excel に書き出す" });
     fireEvent.click(within(dialog).getByRole("radio", { name: /金額入り/ }));
-    const submit = within(dialog).getByRole("button", { name: "⬇ 書き出す" });
-    expect(submit.disabled).toBe(true);
+    // パスワードを入れる欄・決める欄は出ない (単価の数値欄だけ)
+    expect(within(dialog).queryAllByRole("textbox")).toHaveLength(0);
+    expect(dialog.querySelector('input[type="password"]')).toBeNull();
+    expect(dialog.textContent).not.toContain("12345");
 
     fireEvent.change(within(dialog).getByLabelText("単価 (円)"), { target: { value: "6000" } });
-    fireEvent.change(within(dialog).getByLabelText("パスワード"), { target: { value: "ishihara" } });
-    fireEvent.change(within(dialog).getByLabelText("パスワード (確認)"), { target: { value: "ishihar" } });
-    expect(within(dialog).getByRole("alert").textContent).toContain("一致しません");
-    expect(submit.disabled).toBe(true);
-    fireEvent.change(within(dialog).getByLabelText("パスワード (確認)"), { target: { value: "ishihara" } });
-    expect(submit.disabled).toBe(false);
-
-    fireEvent.click(submit);
+    fireEvent.click(within(dialog).getByRole("button", { name: "⬇ 書き出す" }));
     await waitFor(() => expect(downloadMock).toHaveBeenCalledTimes(1));
-    expect(downloadMock.mock.calls[0][0]).toMatchObject({ unitPrice: 6000, password: "ishihara" });
+    expect(downloadMock.mock.calls[0][0]).toMatchObject({ unitPrice: 6000, password: "12345" });
     expect(JSON.parse(localStorage.getItem(LS.partTimeAttendanceUnitPrice))).toBe(6000);
     expect(JSON.parse(localStorage.getItem(LS.partTimeAttendanceExportMode))).toBe("amounts");
-    // パスワードは端末のどこにも残さない
-    const stored = Object.keys(localStorage).map((k) => localStorage.getItem(k)).join("\n");
-    expect(stored).not.toContain("ishihara");
     // 画面に戻っても金額は出ない
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(document.querySelector(".pt-attendance-sheet").textContent).not.toMatch(/円|金額|単価/);
+  });
+
+  it("パスワードが決まるまで金額入りは選べない (前に金額入りを選んでいても金額なしで書き出す)", async () => {
+    downloadMock.mockClear();
+    localStorage.setItem(LS.partTimeAttendanceExportMode, JSON.stringify("amounts"));
+    renderView({ tab: MINUTES_TAB.ATTENDANCE, attendanceSettings: { excelPassword: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "⬇ バイト出勤表 (Excel)" }));
+    const dialog = screen.getByRole("dialog", { name: "バイト出勤表を Excel に書き出す" });
+    const amounts = within(dialog).getByRole("radio", { name: /金額入り/ });
+    expect(amounts.disabled).toBe(true);
+    expect(amounts.checked).toBe(false);
+    expect(dialog.textContent).toContain("管理者がパスワードを決めると選べます");
+    fireEvent.click(within(dialog).getByRole("button", { name: "⬇ 書き出す" }));
+    await waitFor(() => expect(downloadMock).toHaveBeenCalledTimes(1));
+    expect(downloadMock.mock.calls[0][0]).toMatchObject({ unitPrice: null, password: null });
+  });
+
+  it("管理者はダイアログの欄でパスワードを決めて保存でき、すぐ金額入りを選べる", async () => {
+    const saved = [];
+    function Harness() {
+      const [settings, setSettings] = useState({ excelPassword: "" });
+      return (
+        <ToastProvider>
+          <TeachingMinutesView
+            slots={slots}
+            partTimeStaff={partTimeStaff}
+            tab={MINUTES_TAB.ATTENDANCE}
+            attendanceSettings={settings}
+            onSaveAttendanceSettings={(next) => {
+              saved.push(next);
+              setSettings(next);
+            }}
+          />
+        </ToastProvider>
+      );
+    }
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "⬇ バイト出勤表 (Excel)" }));
+    const dialog = screen.getByRole("dialog", { name: "バイト出勤表を Excel に書き出す" });
+    expect(within(dialog).getByRole("radio", { name: /金額入り/ }).disabled).toBe(true);
+    const field = within(dialog).getByRole("textbox", { name: /金額入りのパスワード/ });
+    const save = within(dialog).getByRole("button", { name: "保存" });
+    expect(save.disabled).toBe(true);
+    fireEvent.change(field, { target: { value: "12345" } });
+    fireEvent.click(save);
+    expect(saved).toEqual([{ excelPassword: "12345" }]);
+    expect(within(dialog).getByRole("radio", { name: /金額入り/ }).disabled).toBe(false);
+    expect(field.value).toBe("12345");
+    // 空にして保存 = パスワードを外す (空のオブジェクト)
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "保存" }));
+    expect(saved.at(-1)).toEqual({});
+    expect(within(dialog).getByRole("radio", { name: /金額入り/ }).disabled).toBe(true);
   });
 
   it("空き時間のしきい値を広げると、離れたかたまりがつながる", () => {
