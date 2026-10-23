@@ -48,9 +48,9 @@ describe('seasonStorage', () => {
 });
 
 describe('seasonOfMonth', () => {
-  it('2〜5 月 = 春期、6〜9 月 = 夏期、10〜1 月 = 冬期', () => {
+  it('3〜5 月 = 春期、6〜9 月 = 夏期、10〜2 月 = 冬期 (2 月の入試直前の授業は冬期の時間割)', () => {
     expect([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(seasonOfMonth)).toEqual([
-      'winter', 'spring', 'spring', 'spring', 'spring',
+      'winter', 'winter', 'spring', 'spring', 'spring',
       'summer', 'summer', 'summer', 'summer',
       'winter', 'winter', 'winter',
     ]);

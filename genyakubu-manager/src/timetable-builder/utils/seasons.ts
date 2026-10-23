@@ -87,9 +87,10 @@ export function seasonStorage(season: KoshuSeason): SeasonStorage {
 }
 
 // 講習の季節の目安 (月 → 季節)。春期 = 3 月末〜4 月頭、夏期 = 7〜8 月、
-// 冬期 = 12 月末〜1 月頭。日付ラベルからの季節の推定に使う
+// 冬期 = 12 月末〜1 月頭。日付ラベルからの季節の推定に使う。2 月は冬期に寄せる
+// (中3 の入試直前の授業を冬期の時間割に入れることがあり、春期は入試の後の 3 月から)
 export function seasonOfMonth(month: number): KoshuSeason {
-  if (month >= 2 && month <= 5) return 'spring';
+  if (month >= 3 && month <= 5) return 'spring';
   if (month >= 6 && month <= 9) return 'summer';
   return 'winter';
 }

@@ -39,6 +39,10 @@ describe('inferProjectSeason', () => {
     expect(inferProjectSeason(project([], { updatedAt: '2026-11-01T00:00:00.000Z' }))).toBe('winter');
   });
 
+  it('2 月の入試直前の授業が多くても冬期 (2 月は春期にしない)', () => {
+    expect(inferProjectSeason(project(['12/24(木)', '1/5(火)', '2/1(月)', '2/2(火)', '2/3(水)']))).toBe('winter');
+  });
+
   it('同数のときは名前で決める', () => {
     expect(inferProjectSeason(project(['7/29(水)', '12/25(金)'], { name: '冬期' }))).toBe('winter');
   });
