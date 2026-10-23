@@ -43,6 +43,7 @@
       "genyakubu-teacher-affiliations": { ".validate": "newData.hasChildren()" },
       "genyakubu-yoteihyo-course-mapping": { ".validate": "newData.hasChildren()" },
       "genyakubu-yoteihyo-confirmed": { ".validate": "newData.hasChildren()" },
+      "genyakubu-part-time-attendance-settings": { ".validate": "newData.hasChildren()" },
       "genyakubu-regular-builder-project": { ".validate": "newData.hasChildren()" },
 
       "builder": {

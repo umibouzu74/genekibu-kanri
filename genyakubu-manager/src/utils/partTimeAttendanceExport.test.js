@@ -4,9 +4,12 @@ import ExcelJS from "exceljs";
 import {
   ATTENDANCE_SHEET_TITLE,
   FIRST_STAFF_ROW,
+  buildPartTimeAttendanceFile,
   buildPartTimeAttendanceWorkbook,
   layoutAttendanceColumns,
 } from "./partTimeAttendanceExport";
+import { decryptOfficeFileForTest } from "./officeEncryptionTestUtils";
+import { isCompoundFile } from "./yoteihyo/xlsReader";
 import { buildPartTimeAttendanceSheet } from "./partTimeAttendance";
 import { datesInRange } from "./teachingMinutes";
 
@@ -40,7 +43,7 @@ describe("layoutAttendanceColumns", () => {
   });
 });
 
-describe("buildPartTimeAttendanceWorkbook", () => {
+describe("buildPartTimeAttendanceWorkbook (金額入り = 単価を渡したとき)", () => {
   const rows = new Map([
     [
       "福武",
@@ -60,7 +63,6 @@ describe("buildPartTimeAttendanceWorkbook", () => {
     rows,
     staff: [{ name: "福武" }, { name: "奥村" }, { name: "杉原" }],
     dates,
-    unitPrice: 5500,
   });
   const hints = new Map([["福武", "（火H2・水T3・木T3・金H2）"]]);
   const wb = buildPartTimeAttendanceWorkbook({
@@ -68,6 +70,7 @@ describe("buildPartTimeAttendanceWorkbook", () => {
     hints,
     startDate: "2026-09-21",
     endDate: "2026-10-20",
+    unitPrice: 5500,
   });
   const ws = wb.getWorksheet("バイト出勤表");
   const { columns, lastCol } = layoutAttendanceColumns(dates);
@@ -152,5 +155,79 @@ describe("buildPartTimeAttendanceWorkbook", () => {
     const empty = buildPartTimeAttendanceSheet({ rows: new Map(), staff: [], dates });
     const w = buildPartTimeAttendanceWorkbook({ sheet: empty, startDate: dates[0], endDate: dates.at(-1) });
     expect(w.getWorksheet("バイト出勤表").getCell(FIRST_STAFF_ROW, 1).value).toBe("合計");
+  });
+});
+
+describe("金額なし (単価を渡さない)", () => {
+  const rows = new Map([
+    ["福武", { entries: [{ date: "2026-10-10", time: "14:00-15:00", kind: "own", label: "a" }] }],
+  ]);
+  const sheet = buildPartTimeAttendanceSheet({ rows, staff: [{ name: "福武" }, { name: "奥村" }], dates });
+  const ws = buildPartTimeAttendanceWorkbook({ sheet, startDate: dates[0], endDate: dates.at(-1) }).getWorksheet(
+    "バイト出勤表"
+  );
+  const { lastCol } = layoutAttendanceColumns(dates);
+  const daysCol = lastCol + 1;
+
+  it("単価・金額の列を作らない (日数と合計の日数だけ)", () => {
+    expect(ws.getCell(1, daysCol).value).toBeNull();
+    expect(ws.getCell(3, daysCol).value).toBe("日数");
+    expect(ws.getCell(3, daysCol + 1).value).toBeNull();
+    expect(ws.getCell(FIRST_STAFF_ROW, daysCol).value.result).toBe(1);
+    expect(ws.getCell(FIRST_STAFF_ROW, daysCol + 1).value).toBeNull();
+    const total = FIRST_STAFF_ROW + 2;
+    expect(ws.getCell(total, daysCol).value.result).toBe(1);
+    expect(ws.getCell(total, daysCol + 1).value).toBeNull();
+    const texts = [];
+    ws.eachRow((row) => row.eachCell((c) => texts.push(String(c.value))));
+    expect(texts.join(" ")).not.toMatch(/単価|金額/);
+  });
+});
+
+describe("buildPartTimeAttendanceFile", () => {
+  const rows = new Map([
+    [
+      "福武",
+      {
+        entries: [
+          { date: "2026-10-10", time: "14:00-15:00", kind: "own", label: "a" },
+          { date: "2026-10-10", time: "18:25-19:25", kind: "own", label: "b" },
+        ],
+      },
+    ],
+  ]);
+  const sheet = buildPartTimeAttendanceSheet({ rows, staff: [{ name: "福武" }], dates });
+  const base = { sheet, startDate: "2026-09-21", endDate: "2026-10-20" };
+
+  it("金額なしは鍵なしの .xlsx (zip)、名前に「日数のみ」", async () => {
+    const file = await buildPartTimeAttendanceFile(base);
+    expect(file.encrypted).toBe(false);
+    expect(file.fileName).toBe("アルバイトコマ数2026.9.21-10.20_日数のみ.xlsx");
+    expect([...file.bytes.subarray(0, 2)]).toEqual([0x50, 0x4b]); // "PK"
+  });
+
+  it("金額入りはパスワードが無いと作らない", async () => {
+    await expect(buildPartTimeAttendanceFile({ ...base, unitPrice: 5500 })).rejects.toThrow("パスワード");
+    await expect(buildPartTimeAttendanceFile({ ...base, unitPrice: 5500, password: "" })).rejects.toThrow(
+      "パスワード"
+    );
+  });
+
+  it("金額入りは開くのにパスワードが要り、開くと単価・金額が入っている", async () => {
+    const file = await buildPartTimeAttendanceFile({ ...base, unitPrice: 6000, password: "ishihara" });
+    expect(file.encrypted).toBe(true);
+    expect(file.fileName).toBe("アルバイトコマ数2026.9.21-10.20.xlsx");
+    // 暗号化したファイル (OLE2) で、そのままでは .xlsx (zip) として読めない
+    expect(isCompoundFile(file.bytes)).toBe(true);
+    expect(decryptOfficeFileForTest(file.bytes, "wrong")).toBeNull();
+
+    const plain = decryptOfficeFileForTest(file.bytes, "ishihara");
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(plain);
+    const ws = wb.getWorksheet("バイト出勤表");
+    const { lastCol } = layoutAttendanceColumns(dates);
+    expect(ws.getCell(1, lastCol + 1).value).toBe("単価");
+    expect(ws.getCell(1, lastCol + 2).value).toBe(6000);
+    expect(ws.getCell(FIRST_STAFF_ROW, lastCol + 2).value.result).toBe(12000);
   });
 });

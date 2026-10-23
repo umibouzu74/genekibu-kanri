@@ -21,7 +21,8 @@
 // data-print-title で渡す (日付入力を「授業予定」の日付と取り違えないように)。
 //
 // タブ (constants/minutesTabs): 「授業時間」(講師ごとの分) と「バイト出勤表」
-// (バイトの出勤日数 × 単価の月の表。PartTimeAttendanceSheet)。どちらも同じ
+// (バイトの出勤日数の月の表。金額は画面に出さず、パスワード付きの Excel だけ。
+// PartTimeAttendanceSheet)。どちらも同じ
 // computeTeachingMinutes の結果・同じ期間・同じ「合計に含める」種別を使う。
 // 締め日だけはタブごとに覚える (バイトの給与は 20 日締めが既定)。タブは App が
 // 持つ (サイドバー・メインメニュー・Cmd+K から直接バイト出勤表を開くため)。
@@ -148,6 +149,9 @@ export function TeachingMinutesView({
   // 開いているタブ (constants/minutesTabs)。App が持つ。渡されないときはこの画面で持つ
   tab: tabProp,
   onTabChange,
+  // バイト出勤表の共有設定 (金額入りの Excel のパスワード)。保存は管理者だけ (渡されないと読むだけ)
+  attendanceSettings,
+  onSaveAttendanceSettings,
 }) {
   const baseId = useId();
   const today = useToday();
@@ -168,7 +172,20 @@ export function TeachingMinutesView({
   // 最新の月分 (給与を締めるのは締め日の後なので)
   const [initial] = useState(() => {
     const saved = readSavedPeriod();
-    if (saved) return { ym: { y: saved.y, m: saved.m }, ...saved };
+    if (saved) {
+      // 前に別のタブで「◯月分」として見ていた期間なら、このタブの締め日で作り
+      // 直す (授業時間を見て画面を離れ、サイドバーからバイト出勤表を開いたときに
+      // 10/1〜10/31 のまま出さない。タブを切り替えたときの effect と同じ扱い)。
+      // tab の無い保存値はタブを足す前のもの = 授業時間
+      const savedTab = normalizeMinutesTab(saved.tab ?? MINUTES_TAB.SUMMARY);
+      if (savedTab !== tab) {
+        const fromPreset = monthPeriod(saved.y, saved.m, closingDays[savedTab]);
+        if (fromPreset.startDate === saved.startDate && fromPreset.endDate === saved.endDate) {
+          return { ym: { y: saved.y, m: saved.m }, ...monthPeriod(saved.y, saved.m, closingDay) };
+        }
+      }
+      return { ym: { y: saved.y, m: saved.m }, startDate: saved.startDate, endDate: saved.endDate };
+    }
     const cur = isAttendance
       ? latestClosedPeriodYm(today, closingDay)
       : currentPeriodYm(today, closingDay);
@@ -190,8 +207,8 @@ export function TeachingMinutesView({
 
   useEffect(() => {
     const s = storageOf("sessionStorage");
-    if (s) writeStore(s, SS.teachingMinutesPeriod, { y: ym.y, m: ym.m, startDate, endDate });
-  }, [ym, startDate, endDate]);
+    if (s) writeStore(s, SS.teachingMinutesPeriod, { y: ym.y, m: ym.m, startDate, endDate, tab });
+  }, [ym, startDate, endDate, tab]);
 
   const setSelected = (updater) => {
     setSelectedState((prev) => {
@@ -835,6 +852,8 @@ export function TeachingMinutesView({
             endDate={sheetDates[sheetDates.length - 1] || queryEnd}
             onSelectTeacher={onSelectTeacher}
             monthOf={monthOf}
+            settings={attendanceSettings}
+            onSaveSettings={onSaveAttendanceSettings}
           />
         ) : (
           <div style={{ ...panel, textAlign: "center", color: "#888", padding: 40 }}>期間を指定してください</div>

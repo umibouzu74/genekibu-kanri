@@ -383,9 +383,11 @@ export function useDataIO({
     if (!ok) return;
     // 引継ぎメモ・有給・半休は消さない。初期化は時間割まわりのやり直しのための
     // 操作で、何年も書き溜めた引継ぎや休暇の記録を巻き添えにしない
-    // (消すなら画面から 1 件ずつ)
+    // (消すなら画面から 1 件ずつ)。バイト出勤表の金額入りのパスワード (管理者が
+    // 決めた設定) も残す
+    const keep = new Set([lsKeys.handoverNotes, lsKeys.staffLeave, lsKeys.partTimeAttendanceSettings]);
     Object.values(lsKeys)
-      .filter((k) => k !== lsKeys.handoverNotes && k !== lsKeys.staffLeave)
+      .filter((k) => !keep.has(k))
       .forEach((k) => localStorage.removeItem(k));
     saveSlots(INIT_SLOTS);
     saveHolidays(INIT_HOLIDAYS);

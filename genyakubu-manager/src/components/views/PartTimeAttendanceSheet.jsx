@@ -1,5 +1,5 @@
 // ─── バイト出勤表 (授業時間の集計のタブ) ─────────────────────────────
-// バイトの給与用の「出勤日数 × 単価」の月の表。行 = バイト (講師管理の
+// バイトの給与用の出勤日数の月の表。行 = バイト (講師管理の
 // バイト一覧の並び順)、列 = 期間の日付、セル = その日の出勤日数。
 // 数え方・表データは utils/partTimeAttendance (Excel も同じ表データを使う)。
 // 授業は親 (TeachingMinutesView) が computeTeachingMinutes で拾った rows を
@@ -9,7 +9,14 @@
 //   (その月の表だけ。アプリのデータには書き戻さない = この端末だけ)
 // - 「要確認」(かたまり 3 つ以上 / 時刻の読めない授業) と「手で上書き」のセルは
 //   色と小さな印で分ける (色だけに頼らない)
-// - 単価・別の出勤にする空き時間はこの端末の表示の好み (LS.partTimeAttendance*)
+// - **画面 (と紙面) には金額・単価を出さない** (生々しすぎるとの判断)。単価を
+//   入れて金額を出すのは Excel の書き出しのダイアログ (AttendanceExportDialog) の
+//   「金額入り」だけで、そのファイルは開くのにパスワードが要る
+//   (utils/partTimeAttendanceExport)。**画面に金額・単価の列を戻さないこと**
+// - 金額入りのパスワードは管理者が決めて固定する全員共通の設定 (settings.excelPassword、
+//   appData)。書き出す人は入れない。決めるのはダイアログの管理者だけの欄で、閲覧者には
+//   パスワードそのものを見せない。決まるまでは金額入りを選べない
+// - 単価・別の出勤にする空き時間・書き出しの種類はこの端末の好み (LS.partTimeAttendance*)
 // - 閲覧者 (経理) もそのまま使う。書き込みは端末の localStorage だけ
 // - 印刷はトップバーの 🖨 (popup 系統)。操作部・ダイアログは no-print、紙面は
 //   printStyles の attendance 用 CSS (A4 横) で詰める
@@ -38,6 +45,7 @@ import {
   setAttendanceOverride,
   staffNamesOf,
 } from "../../utils/partTimeAttendance";
+import { MAX_EXCEL_PASSWORD_LENGTH, sanitizeAttendanceSettings } from "../../utils/partTimeAttendanceSettings";
 
 const WEEKDAY = ["日", "月", "火", "水", "木", "金", "土"];
 // 色 (どれも背景とのコントラスト 4.5:1 以上)
@@ -55,7 +63,10 @@ const weekdayOf = (date) => {
   return d ? WEEKDAY[d.getDay()] : "";
 };
 const dayColor = (dow) => (dow === "土" ? SAT_FG : dow === "日" ? SUN_FG : "#222");
-const yen = (n) => `${Number(n || 0).toLocaleString()} 円`;
+
+// Excel の書き出しの種類 (LS.partTimeAttendanceExportMode)
+const EXPORT_MODE = Object.freeze({ DAYS: "days", AMOUNTS: "amounts" });
+const sanitizeExportMode = (v) => (v === EXPORT_MODE.AMOUNTS ? v : EXPORT_MODE.DAYS);
 
 // セルの説明 (ホバーの title と読み上げ)
 function describeCell(teacher, cell) {
@@ -84,14 +95,11 @@ export function PartTimeAttendanceSheet({
   // 講師名でその月の月間へ (TeachingMinutesView と同じ)
   onSelectTeacher,
   monthOf,
+  // 共有設定 ({ excelPassword })。onSaveSettings は管理者のときだけ渡る
+  settings,
+  onSaveSettings,
 }) {
   const baseId = useId();
-  const toasts = useToasts();
-  const [unitPrice, setUnitPrice] = useLocalStorage(LS.partTimeAttendanceUnitPrice, DEFAULT_UNIT_PRICE, {
-    migrate: sanitizeUnitPrice,
-  });
-  // 単価の入力途中の文字 (空欄にして打ち直す間に 0 円にしない)
-  const [priceText, setPriceText] = useState(null);
   const [gapMinutes, setGapMinutes] = useLocalStorage(
     LS.partTimeAttendanceGapMinutes,
     DEFAULT_GAP_MINUTES,
@@ -103,7 +111,7 @@ export function PartTimeAttendanceSheet({
   const periodKey = attendancePeriodKey(startDate, endDate);
   const overrides = useMemo(() => overrideStore[periodKey] || {}, [overrideStore, periodKey]);
   const [active, setActive] = useState(null); // { teacher, date }
-  const [exporting, setExporting] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const sheet = useMemo(
     () =>
@@ -112,11 +120,10 @@ export function PartTimeAttendanceSheet({
         staff: partTimeStaff,
         dates,
         included,
-        unitPrice,
         overrides,
         gapMinutes,
       }),
-    [rows, partTimeStaff, dates, included, unitPrice, overrides, gapMinutes]
+    [rows, partTimeStaff, dates, included, overrides, gapMinutes]
   );
   const staffNames = useMemo(() => staffNamesOf(partTimeStaff), [partTimeStaff]);
   const hints = useMemo(
@@ -130,21 +137,7 @@ export function PartTimeAttendanceSheet({
   const activeRow = active ? sheet.rows.find((r) => r.teacher === active.teacher) : null;
   const activeCell = activeRow?.cells.find((c) => c.date === active.date) || null;
 
-  const handleExport = async () => {
-    setExporting(true);
-    try {
-      const { downloadPartTimeAttendanceExcel } = await import("../../utils/partTimeAttendanceExport");
-      const fileName = await downloadPartTimeAttendanceExcel({ sheet, hints, startDate, endDate });
-      toasts.success(`${fileName} を書き出しました`);
-    } catch (e) {
-      console.error(e);
-      toasts.error("Excel の生成に失敗しました");
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const canExport = sheet.rows.length > 0 && dates.length > 0 && !exporting;
+  const canExport = sheet.rows.length > 0 && dates.length > 0;
   const smallInput = { ...S.input, width: "auto", padding: "6px 8px", fontSize: 13 };
   const th = {
     padding: "4px 2px",
@@ -185,7 +178,7 @@ export function PartTimeAttendanceSheet({
 
   return (
     <div className="pt-attendance-sheet">
-      {/* 単価・空き時間・Excel */}
+      {/* 空き時間・Excel (単価は Excel の書き出しのダイアログで入れる) */}
       <div
         className="no-print"
         style={{
@@ -198,26 +191,6 @@ export function PartTimeAttendanceSheet({
           color: "#444",
         }}
       >
-        <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          単価
-          <input
-            type="number"
-            inputMode="numeric"
-            min={0}
-            step={100}
-            value={priceText ?? String(unitPrice)}
-            onChange={(e) => {
-              const v = e.target.value;
-              setPriceText(v);
-              const n = Number(v);
-              if (v !== "" && Number.isInteger(n) && n >= 0) setUnitPrice(sanitizeUnitPrice(n));
-            }}
-            onBlur={() => setPriceText(null)}
-            aria-label="単価 (円)"
-            style={{ ...smallInput, width: 90, textAlign: "right" }}
-          />
-          円
-        </label>
         <label style={{ display: "flex", alignItems: "center", gap: 4 }}>
           授業の間が
           <select
@@ -237,15 +210,16 @@ export function PartTimeAttendanceSheet({
         <span style={{ flex: 1 }} />
         <button
           type="button"
-          onClick={handleExport}
+          onClick={() => setExportOpen(true)}
           disabled={!canExport}
+          aria-haspopup="dialog"
           style={{
             ...S.btn(false),
             opacity: canExport ? 1 : 0.5,
             cursor: canExport ? "pointer" : "not-allowed",
           }}
         >
-          {exporting ? "書き出し中…" : "⬇ バイト出勤表 (Excel)"}
+          ⬇ バイト出勤表 (Excel)
         </button>
       </div>
 
@@ -318,9 +292,6 @@ export function PartTimeAttendanceSheet({
               })}
               <th scope="col" rowSpan={2} style={{ ...th, padding: "4px 8px" }}>
                 日数
-              </th>
-              <th scope="col" rowSpan={2} style={{ ...th, padding: "4px 8px" }}>
-                金額
               </th>
             </tr>
             <tr>
@@ -415,7 +386,6 @@ export function PartTimeAttendanceSheet({
                     </td>
                   ))}
                   <td style={{ ...td, padding: "4px 8px", fontWeight: 800 }}>{row.days}</td>
-                  <td style={{ ...td, padding: "4px 8px", textAlign: "right" }}>{yen(row.amount)}</td>
                 </tr>
               );
             })}
@@ -426,16 +396,8 @@ export function PartTimeAttendanceSheet({
               >
                 合計
               </th>
-              <td
-                colSpan={dates.length}
-                style={{ ...td, background: "#f0f0f0", textAlign: "right", padding: "6px 8px", fontSize: 12, color: "#444" }}
-              >
-                単価 {yen(sheet.unitPrice)} × {sheet.totalDays} 日
-              </td>
+              <td colSpan={dates.length} style={{ ...td, background: "#f0f0f0" }} />
               <td style={{ ...td, background: "#f0f0f0", padding: "6px 8px", fontWeight: 800 }}>{sheet.totalDays}</td>
-              <td style={{ ...td, background: "#f0f0f0", padding: "6px 8px", fontWeight: 800, textAlign: "right" }}>
-                {yen(sheet.totalAmount)}
-              </td>
             </tr>
           </tbody>
         </table>
@@ -454,6 +416,18 @@ export function PartTimeAttendanceSheet({
         {" = 手で数を直した日。"}
         <span className="no-print">{"セルを押すとその日の授業を確かめ、数を直せます。"}</span>
       </p>
+
+      {exportOpen && (
+        <AttendanceExportDialog
+          sheet={sheet}
+          hints={hints}
+          startDate={startDate}
+          endDate={endDate}
+          settings={settings}
+          onSaveSettings={onSaveSettings}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
 
       {activeCell && (
         <CellDetailDialog
@@ -647,5 +621,224 @@ function CellDetailDialog({ teacher, cell, gapMinutes, onOverride, onClose }) {
         </p>
       </div>
     </Modal>
+  );
+}
+
+// Excel の書き出し。「金額なし」(日数だけ・鍵なし) か「金額入り」(単価・金額あり、
+// 開くのにパスワードが要る) を選ぶ。単価を見せるのはここ (金額入りを選んだとき) だけ。
+// 金額入りのパスワードは管理者が決めた全員共通のもの (settings.excelPassword)。
+// 管理者 (onSaveSettings あり) にだけパスワードの欄を出し、閲覧者には見せない
+function AttendanceExportDialog({ sheet, hints, startDate, endDate, settings, onSaveSettings, onClose }) {
+  const baseId = useId();
+  const toasts = useToasts();
+  const [mode, setMode] = useLocalStorage(LS.partTimeAttendanceExportMode, EXPORT_MODE.DAYS, {
+    migrate: sanitizeExportMode,
+  });
+  const [unitPrice, setUnitPrice] = useLocalStorage(LS.partTimeAttendanceUnitPrice, DEFAULT_UNIT_PRICE, {
+    migrate: sanitizeUnitPrice,
+  });
+  // 単価の入力途中の文字 (空欄にして打ち直す間に 0 円にしない)
+  const [priceText, setPriceText] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const password = sanitizeAttendanceSettings(settings).excelPassword;
+  const hasPassword = password !== "";
+  const canSetPassword = !!onSaveSettings;
+  // パスワードが決まるまでは、前に金額入りを選んでいても金額なしで書き出す
+  const withAmounts = mode === EXPORT_MODE.AMOUNTS && hasPassword;
+  const canSubmit = !busy;
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setBusy(true);
+    try {
+      // 暗号化 (パスワードの処理で 1〜3 秒、その間は画面が止まる) の前に
+      // 「書き出しています…」を描かせる
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const { downloadPartTimeAttendanceExcel } = await import("../../utils/partTimeAttendanceExport");
+      const fileName = await downloadPartTimeAttendanceExcel({
+        sheet,
+        hints,
+        startDate,
+        endDate,
+        unitPrice: withAmounts ? unitPrice : null,
+        password: withAmounts ? password : null,
+      });
+      toasts.success(
+        withAmounts ? `${fileName} を書き出しました (開くときにパスワードが要ります)` : `${fileName} を書き出しました`
+      );
+      onClose();
+    } catch (err) {
+      console.error(err);
+      toasts.error("Excel の生成に失敗しました");
+      setBusy(false);
+    }
+  };
+
+  const optionStyle = (on, disabled = false) => ({
+    display: "flex",
+    gap: 8,
+    alignItems: "flex-start",
+    padding: "8px 10px",
+    border: `1px solid ${on ? "#2e6a9e" : "#ddd"}`,
+    borderRadius: 6,
+    background: on ? "#eef5fc" : "#fff",
+    cursor: disabled ? "not-allowed" : "pointer",
+    color: disabled ? MUTED : undefined,
+    fontSize: 13,
+    lineHeight: 1.5,
+  });
+  const fieldLabel = { display: "block", fontSize: 12, fontWeight: 700, color: "#444", margin: "10px 0 4px" };
+  const input = { ...S.input, padding: "6px 8px", fontSize: 14 };
+  const note = { fontSize: 11, color: MUTED, margin: "6px 0 0", lineHeight: 1.6 };
+
+  return (
+    <Modal
+      title="バイト出勤表を Excel に書き出す"
+      onClose={onClose}
+      closeDisabled={busy}
+      width="min(460px, 100%)"
+    >
+      <form onSubmit={handleSubmit} className="no-print">
+        <fieldset style={{ border: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+          <legend style={{ fontSize: 12, fontWeight: 700, color: "#444", marginBottom: 6 }}>書き出す内容</legend>
+          <label style={optionStyle(!withAmounts)}>
+            <input
+              type="radio"
+              name={`${baseId}-mode`}
+              checked={!withAmounts}
+              onChange={() => setMode(EXPORT_MODE.DAYS)}
+              disabled={busy}
+            />
+            <span>
+              <b>金額なし</b> (日数だけ・パスワードなし)
+            </span>
+          </label>
+          <label style={optionStyle(withAmounts, !hasPassword)}>
+            <input
+              type="radio"
+              name={`${baseId}-mode`}
+              checked={withAmounts}
+              onChange={() => setMode(EXPORT_MODE.AMOUNTS)}
+              disabled={busy || !hasPassword}
+              aria-describedby={hasPassword ? undefined : `${baseId}-no-pw`}
+            />
+            <span>
+              <b>金額入り</b> (単価・金額の列あり。開くときにパスワードが要る)
+              {!hasPassword && (
+                <span id={`${baseId}-no-pw`} style={{ display: "block", fontSize: 11 }}>
+                  {canSetPassword
+                    ? "下の「金額入りのパスワード」を決めると選べます"
+                    : "管理者がパスワードを決めると選べます"}
+                </span>
+              )}
+            </span>
+          </label>
+        </fieldset>
+
+        {withAmounts && (
+          <div>
+            <label htmlFor={`${baseId}-price`} style={fieldLabel}>
+              単価 (円)
+            </label>
+            <input
+              id={`${baseId}-price`}
+              type="number"
+              inputMode="numeric"
+              min={0}
+              step={100}
+              value={priceText ?? String(unitPrice)}
+              onChange={(e) => {
+                const v = e.target.value;
+                setPriceText(v);
+                const n = Number(v);
+                if (v !== "" && Number.isInteger(n) && n >= 0) setUnitPrice(sanitizeUnitPrice(n));
+              }}
+              onBlur={() => setPriceText(null)}
+              disabled={busy}
+              style={{ ...input, width: 120, textAlign: "right" }}
+            />
+            <p style={note}>Excel で開くときに、管理者が決めたパスワードを聞かれます。</p>
+          </div>
+        )}
+
+        {canSetPassword && (
+          <ExcelPasswordSetting
+            current={password}
+            disabled={busy}
+            onSave={(next) => {
+              onSaveSettings(next ? { excelPassword: next } : {});
+              toasts.success(
+                next ? "金額入りの Excel のパスワードを保存しました" : "パスワードを外しました (金額入りは書き出せません)"
+              );
+            }}
+          />
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+          <button type="button" onClick={onClose} disabled={busy} style={S.btn(false)}>
+            キャンセル
+          </button>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            style={{ ...S.btn(true), opacity: canSubmit ? 1 : 0.5, cursor: canSubmit ? "pointer" : "not-allowed" }}
+          >
+            {busy ? "書き出しています…" : "⬇ 書き出す"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// 管理者だけの欄: 金額入りの Excel のパスワード (全員共通)。強さは問わない (生々しい金額を
+// 隠しておく程度の目的) ので、伏せ字にせずそのまま見せる
+function ExcelPasswordSetting({ current, disabled, onSave }) {
+  const id = useId();
+  // 触るまでは今の値を見せる (開いた後に他の端末の変更が届いても追いつく)
+  const [draft, setDraft] = useState(null);
+  const value = draft ?? current;
+  const tooLong = value.length > MAX_EXCEL_PASSWORD_LENGTH;
+  const changed = draft != null && draft !== current;
+  return (
+    <div style={{ borderTop: "1px solid #eee", marginTop: 14, paddingTop: 10 }}>
+      <label htmlFor={id} style={{ display: "block", fontSize: 12, fontWeight: 700, color: "#444", marginBottom: 4 }}>
+        🔑 金額入りのパスワード (管理者だけが変えられます)
+      </label>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input
+          id={id}
+          type="text"
+          autoComplete="off"
+          spellCheck={false}
+          value={value}
+          onChange={(e) => setDraft(e.target.value)}
+          disabled={disabled}
+          placeholder="例: 12345"
+          style={{ ...S.input, padding: "6px 8px", fontSize: 14, flex: 1, minWidth: 0 }}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            onSave(value);
+            setDraft(null);
+          }}
+          disabled={disabled || !changed || tooLong}
+          style={{ ...S.btn(false), opacity: !changed || tooLong ? 0.5 : 1 }}
+        >
+          保存
+        </button>
+      </div>
+      <p style={{ fontSize: 11, color: MUTED, margin: "6px 0 0", lineHeight: 1.6 }}>
+        全員共通です。経理など書き出す人はパスワードを入れずに金額入りを書き出せ、ファイルを開くときに
+        このパスワードを聞かれます (開く人には伝えてください)。管理者以外にはこの欄は見えません。
+      </p>
+      {tooLong && (
+        <p role="alert" style={{ fontSize: 12, color: "#b42318", margin: "6px 0 0" }}>
+          パスワードは {MAX_EXCEL_PASSWORD_LENGTH} 文字までです
+        </p>
+      )}
+    </div>
   );
 }

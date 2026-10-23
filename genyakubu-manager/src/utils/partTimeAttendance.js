@@ -4,6 +4,10 @@
 // 授業」から出す。画面 (授業時間の集計の「バイト出勤表」タブ) と Excel の
 // 両方がこのモジュールの表データを使う。
 //
+// **表データは金額を持たない** (画面に金額・単価を出さない)。単価と金額は
+// Excel の「金額入り」(開くのにパスワードが要る) にだけ入れる
+// (utils/partTimeAttendanceExport)。
+//
 // **授業の拾い方は utils/teachingMinutes.computeTeachingMinutes に任せる**
 // (代行・欠勤・振替・合同・休講・テスト期間・特別時程・時間割の有効期間・
 // 特訓シフト・講習コマを反映した後の entries)。ここで授業を拾い直さない。
@@ -154,7 +158,7 @@ export function staffNamesOf(staff) {
   return out;
 }
 
-/** 単価 (円)。0 以上の整数でなければ既定値 */
+/** 単価 (円)。0 以上の整数でなければ既定値 (Excel の金額入りを書き出すときだけ使う) */
 export function sanitizeUnitPrice(v) {
   const n = Number(v);
   return Number.isInteger(n) && n >= 0 && n <= 10_000_000 ? n : DEFAULT_UNIT_PRICE;
@@ -218,14 +222,13 @@ export function setAttendanceOverride(store, periodKey, teacher, date, value) {
 }
 
 /**
- * 画面と Excel の両方が使う表データ。
+ * 画面と Excel の両方が使う表データ (日数まで。金額は持たない)。
  *
  * @param {object} args
  * @param {Map<string, {entries: object[]}>} args.rows computeTeachingMinutes の rows
  * @param {(string|{name: string})[]} args.staff バイト (LS.partTime の並び順のまま行にする)
  * @param {string[]} args.dates 期間の日付 (列)
  * @param {Iterable<string>} [args.included] 合計に含める種別 (既定 = 全種別)
- * @param {number} [args.unitPrice] 単価 (円)
  * @param {Record<string, Record<string, number>>} [args.overrides] 講師名 → 日付 → 手で決めた日数 (この期間のぶん)
  * @param {number} [args.gapMinutes] 別のかたまりにする空き時間 (分)
  */
@@ -234,12 +237,10 @@ export function buildPartTimeAttendanceSheet({
   staff,
   dates = [],
   included = MINUTE_KINDS,
-  unitPrice = DEFAULT_UNIT_PRICE,
   overrides = {},
   gapMinutes = DEFAULT_GAP_MINUTES,
 } = {}) {
   const inc = included instanceof Set ? included : new Set(included);
-  const price = sanitizeUnitPrice(unitPrice);
   const gap = sanitizeGap(gapMinutes);
   const dateSet = new Set(dates);
   const checks = [];
@@ -280,17 +281,15 @@ export function buildPartTimeAttendanceSheet({
       if (isOverridden) overridden.push({ teacher, date, units, auto: auto.units });
       return cell;
     });
-    return { teacher, cells, days, amount: days * price };
+    return { teacher, cells, days };
   });
 
   const totalDays = sheetRows.reduce((s, r) => s + r.days, 0);
   return {
     dates,
-    unitPrice: price,
     gapMinutes: gap,
     rows: sheetRows,
     totalDays,
-    totalAmount: totalDays * price,
     checks,
     overridden,
   };
@@ -403,10 +402,15 @@ export function latestClosedPeriodYm(todayStr, closingDay) {
 
 /**
  * Excel のファイル名。2026-09-21〜2026-10-20 → "アルバイトコマ数2026.9.21-10.20.xlsx"
+ * (金額入り = 手で作っていた表と同じ名前)。金額なしは "…_日数のみ.xlsx"
+ * @param {string} startDate
+ * @param {string} endDate
+ * @param {{withAmounts?: boolean}} [opts]
  */
-export function attendanceFileName(startDate, endDate) {
+export function attendanceFileName(startDate, endDate, { withAmounts = true } = {}) {
+  const suffix = withAmounts ? "" : "_日数のみ";
   const [y, m, d] = String(startDate || "").split("-").map(Number);
   const [, m2, d2] = String(endDate || "").split("-").map(Number);
-  if (!y || !m || !d || !m2 || !d2) return "アルバイトコマ数.xlsx";
-  return `アルバイトコマ数${y}.${m}.${d}-${m2}.${d2}.xlsx`;
+  if (!y || !m || !d || !m2 || !d2) return `アルバイトコマ数${suffix}.xlsx`;
+  return `アルバイトコマ数${y}.${m}.${d}-${m2}.${d2}${suffix}.xlsx`;
 }
