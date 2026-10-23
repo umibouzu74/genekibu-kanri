@@ -3,8 +3,8 @@ import { ref, onValue, set, get } from 'firebase/database';
 import type { Project, ProjectState } from '../types';
 import { db, authReady, isConfigured } from '../../firebase/config';
 import { trackSyncActivity, isPermissionError } from '../../hooks/useSyncedStorage';
-import { STORAGE_KEY_PROJECT, FIREBASE_PROJECT_PATH } from '../utils/constants';
 import { decideRemoteProject, newerSchemaVersion } from '../utils/projectSync';
+import { notifyBuilderProjectSaved, type SeasonStorage } from '../utils/seasons';
 import { loadInitialProject } from './projectFactory';
 import { projectReducer } from './projectReducer';
 
@@ -29,10 +29,20 @@ export type SyncEvent = { kind: SyncEventKind };
 //
 // state 形状は projectReducer.js のコメントを参照。
 //
+// 保存先は季節ごと (storage = utils/seasons.seasonStorage)。季節を切り替えると
+// BuilderApp が ProjectProvider を作り直す (key = 季節) ので、1 つのフックの
+// 生存中に保存先は変わらない (最初に受け取った storage を使い続ける)。
+//
+// initialProject: LocalStorage にまだ無い季節を開くときの最初の project
+// (クラウドにだけある / 季節に分ける前の単一 project から移す / 新しく始めた)。
+// 渡されたらそれで始め、マウント直後に LocalStorage へ書く (クラウドが空なら
+// onValue の seed がそのまま送る)。無ければ loadInitialProject が LocalStorage
+// (無ければ初期値) から作る。
+//
 // Firebase 同期の設計 (E6a、詳細は docs/ARCHITECTURE.md §5):
 //   - 保存: debounce 済み flushSave が LocalStorage と同じ JSON 文字列を
-//     appData/builder/schedule_project へ書く (文字列保存の理由は
-//     constants.FIREBASE_PROJECT_PATH のコメント参照)
+//     季節のパス (appData/builder/schedule_project_<季節>) へ書く (文字列保存の
+//     理由は constants.FIREBASE_PROJECT_PATH_LEGACY のコメント参照)
 //   - 受信: onValue で届いた文字列を decideRemoteProject で判定し、採用なら
 //     project/reset で全置換する (履歴もリセット。他端末の編集を Undo で
 //     巻き戻せると、その巻き戻しがまたサーバへ書かれて混乱するため)。
@@ -50,9 +60,19 @@ export type SyncEvent = { kind: SyncEventKind };
 // 公開 API:
 //   project, dispatch, history, historyIndex, saveStatus, undo, redo,
 //   loadError, syncEvent
-export function useHistoryStack() {
+export interface HistoryStackOptions {
+  storage: Pick<SeasonStorage, 'storageKey' | 'backupKey' | 'firebasePath'>;
+  initialProject?: Project | null;
+}
+
+export function useHistoryStack({ storage, initialProject = null }: HistoryStackOptions) {
+  // 生存中は最初の保存先を使い続ける (上のコメント)
+  const [{ storageKey, firebasePath }] = useState(() => storage);
+  const [startedFromInitial] = useState(() => initialProject != null);
   const [state, dispatch] = useReducer(projectReducer, null, (): ProjectState => {
-    const { project, loadError } = loadInitialProject();
+    const { project, loadError } = initialProject != null
+      ? { project: initialProject, loadError: null }
+      : loadInitialProject(storage);
     return {
       project,
       history: [project],
@@ -106,7 +126,7 @@ export function useHistoryStack() {
     if (syncDisabledRef.current) return;
     if (json === lastCloudJsonRef.current) return;
     lastCloudJsonRef.current = json;
-    trackSyncActivity(set(ref(db, FIREBASE_PROJECT_PATH), json))
+    trackSyncActivity(set(ref(db, firebasePath), json))
       .then(() => {
         // 書込が通った = このエラー episode は終了。次の失敗で再通知する。
         notifiedKindsRef.current.delete('sync-auth');
@@ -119,7 +139,7 @@ export function useHistoryStack() {
         if (lastCloudJsonRef.current === json) lastCloudJsonRef.current = null;
         if (!silentErrors) notifyOnce(isPermissionError(err) ? 'sync-auth' : 'sync-error');
       });
-  }, [notifyOnce]);
+  }, [notifyOnce, firebasePath]);
 
   // project の JSON 文字列を Firebase へ送る。サーバ状態を一度も見ていない
   // 場合は、先に get() で「サーバがより新しいスキーマを持っていないか」を
@@ -148,7 +168,7 @@ export function useHistoryStack() {
       queuedJsonRef.current = null;
       if (queued != null) sendToFirebase(queued, opts);
     };
-    get(ref(db, FIREBASE_PROJECT_PATH))
+    get(ref(db, firebasePath))
       .then((snapshot) => {
         const version = newerSchemaVersion(snapshot.val());
         if (version != null) {
@@ -162,7 +182,7 @@ export function useHistoryStack() {
         flushQueued();
       })
       .catch(flushQueued);
-  }, [sendToFirebase, notifyOnce]);
+  }, [sendToFirebase, notifyOnce, firebasePath]);
 
   // 未保存分を即時書き込みする。debounce タイマー発火・アンマウント・
   // ページ離脱 (pagehide/beforeunload) の 3 経路から呼ばれる。
@@ -177,14 +197,15 @@ export function useHistoryStack() {
     let json: string | null = null;
     try {
       json = JSON.stringify(pending);
-      localStorage.setItem(STORAGE_KEY_PROJECT, json);
+      localStorage.setItem(storageKey, json);
       setSaveStatus("✅ 保存済");
+      notifyBuilderProjectSaved(storageKey);
     } catch (e) {
       console.error("Autosave failed", e);
       setSaveStatus("⚠️ 保存失敗");
     }
     if (json != null) pushProjectToFirebase(json);
-  }, [pushProjectToFirebase]);
+  }, [pushProjectToFirebase, storageKey]);
 
   // project 変化を debounce して LocalStorage に保存 (F2c)。初回マウントは skip。
   // 旧実装は毎 dispatch で同期 JSON.stringify + setItem していた (debounce は
@@ -225,6 +246,23 @@ export function useHistoryStack() {
     };
   }, [flushSave]);
 
+  // initialProject で始めたら、その project をすぐ LocalStorage に置く (上の
+  // autosave はマウント直後を飛ばすので、何も編集しないとその季節が保存されない)。
+  // クラウドへは下の購読が送る (サーバが空なら seed)。購読はマウント時に
+  // LocalStorage の値を「サーバと合意済み」として先読みするので、この effect は
+  // 購読より前に置くこと (後に置くと、空のサーバへの seed が echo 扱いで飛ばされる)
+  useEffect(() => {
+    if (!startedFromInitial) return;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(state.project));
+      notifyBuilderProjectSaved(storageKey);
+    } catch (e) {
+      console.error("Initial save failed", e);
+      setSaveStatus("⚠️ 保存失敗");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: マウント時の project を 1 回だけ書く
+  }, []);
+
   // Firebase の変更購読 (E6a)。親アプリの useSyncedStorage と同じ流儀で、
   // authReady を待ってから onValue を張る。マウント時に必ず初回スナップ
   // ショットが届くので、起動時のサーバ→ローカル反映もこの経路に乗る
@@ -238,14 +276,14 @@ export function useHistoryStack() {
     // スキップできる。StrictMode の二重 effect が起動直後に未編集 project を
     // push するのも同時に抑止される (json が LS と一致して echo 扱い)。
     try {
-      lastCloudJsonRef.current = localStorage.getItem(STORAGE_KEY_PROJECT);
+      lastCloudJsonRef.current = localStorage.getItem(storageKey);
     } catch {
       // private mode 等。サーバ状態未知のままでよい
     }
 
     let unsubscribed = false;
     let detach: (() => void) | null = null;
-    const dbRef = ref(db, FIREBASE_PROJECT_PATH);
+    const dbRef = ref(db, firebasePath);
 
     authReady.then(() => {
       if (unsubscribed) return;

@@ -4,6 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, renderHook, waitFor } from '@testing-library/react';
 import { useJsonIO } from './useJsonIO';
 import { STORAGE_KEY_TEMPLATES, STORAGE_KEY_USER_DEFAULTS } from '../utils/constants';
+import { seasonStorage } from '../utils/seasons';
+
+// 講習の project は季節ごとのキーに置く。ここでは冬期で検証する
+const STORAGE = seasonStorage('winter');
 
 afterEach(cleanup);
 
@@ -51,7 +55,7 @@ function makeFileEvent(obj) {
 function setup(projectOverrides = {}) {
   const dispatch = vi.fn();
   const project = makeProject(projectOverrides);
-  const { result } = renderHook(() => useJsonIO({ project, activeTab: project.tabs[0], dispatch }));
+  const { result } = renderHook(() => useJsonIO({ project, activeTab: project.tabs[0], dispatch, storage: STORAGE }));
   return { result, dispatch, project };
 }
 
@@ -234,3 +238,17 @@ describe('useJsonIO — 初期値の保存 (N1e)', () => {
     expect(saved.config.dates).toEqual([{ id: 1, label: '12/25(木)' }]);
   });
 });
+
+describe('useJsonIO — 全リセットはその季節だけ (2026-10-23)', () => {
+  it('開いている季節のキーだけ消して初期値に戻し、ほかの季節には触らない', () => {
+    localStorage.setItem(STORAGE.storageKey, JSON.stringify(makeProject({ name: '冬期' })));
+    localStorage.setItem(seasonStorage('summer').storageKey, JSON.stringify(makeProject({ name: '夏期' })));
+    const { result, dispatch } = setup();
+    result.current.handleResetAll();
+    expect(localStorage.getItem(STORAGE.storageKey)).toBeNull();
+    expect(JSON.parse(localStorage.getItem(seasonStorage('summer').storageKey)).name).toBe('夏期');
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'project/reset' }));
+    expect(dispatch.mock.calls[0][0].payload.name).toBe('');
+  });
+});
+

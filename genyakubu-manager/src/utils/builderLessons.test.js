@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildKoshuLessons,
+  buildKoshuLessonsForSeasons,
   indexKoshuLessonsByDate,
   parseBuilderProject,
   resolveDateLabelYmd,
@@ -435,3 +436,53 @@ describe("indexKoshuLessonsByDate", () => {
     expect(indexKoshuLessonsByDate(null, "堀上").size).toBe(0);
   });
 });
+
+describe("buildKoshuLessonsForSeasons (季節ごとの project、2026-10-23)", () => {
+  const summer = baseProject({
+    name: "2026夏期",
+    tabs: [
+      {
+        ...baseProject().tabs[0],
+        schedule: { "d1-p1-c1": { subject: "英語", teacher: "堀上" } },
+      },
+    ],
+  });
+  const winter = baseProject({
+    name: "2026冬期",
+    updatedAt: "2026-12-01T09:00:00.000Z",
+    dates: [{ id: 1, label: "12/24(木)" }],
+    tabs: [
+      {
+        ...baseProject().tabs[0],
+        schedule: { "d1-p1-c1": { subject: "数学", teacher: "堀上" } },
+      },
+    ],
+  });
+
+  it("全季節の講習コマを 1 本にまとめ、日付順に並べる (冬期を作っても夏期の「講」は残る)", () => {
+    const lessons = buildKoshuLessonsForSeasons({
+      winter: { status: "ready", project: winter },
+      summer: { status: "ready", project: summer },
+      spring: { status: "missing", project: null },
+    });
+    expect(lessons.map((l) => [l.date, l.subj, l.season, l.projectName])).toEqual([
+      ["2026-07-24", "英語", "summer", "2026夏期"],
+      ["2026-12-24", "数学", "winter", "2026冬期"],
+    ]);
+  });
+
+  it("key は季節で区別する (タブ id は季節ごとの連番で重なる)", () => {
+    const lessons = buildKoshuLessonsForSeasons({
+      summer: { project: summer },
+      winter: { project: winter },
+    });
+    expect(new Set(lessons.map((l) => l.key)).size).toBe(lessons.length);
+    expect(lessons[0].key.startsWith("summer:")).toBe(true);
+  });
+
+  it("空・壊れた入力は空配列", () => {
+    expect(buildKoshuLessonsForSeasons(null)).toEqual([]);
+    expect(buildKoshuLessonsForSeasons({ spring: null })).toEqual([]);
+  });
+});
+

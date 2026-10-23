@@ -28,6 +28,7 @@ import { EVENT_SECTIONS } from "./eventKinds";
 import { TIMETABLE_SECTIONS } from "./timetableSections";
 import { MASTER_TABS } from "./masterTabs";
 import { STAFF_TABS } from "./staffTabs";
+import { KOSHU_SEASONS } from "../timetable-builder/utils/seasons";
 import { MENU_CATEGORIES, MENU_CATEGORY } from "./menuCategories";
 
 const C = MENU_CATEGORY;
@@ -145,7 +146,15 @@ export const SIDEBAR_MENU = [
     category: C.TIMETABLE,
   },
   { key: VIEWS.REGULAR_BUILDER, icon: "🏗", label: "通常時間割作成", category: C.TIMETABLE },
-  { key: VIEWS.BUILDER, icon: "🧩", label: "講習時間割作成", category: C.TIMETABLE },
+  // 講習は春期・夏期・冬期で別の時間割 (季節ごとに保存先が別)。開いている間だけ
+  // 季節を子項目に出し、押すとその季節に切り替える
+  {
+    key: VIEWS.BUILDER,
+    icon: "🧩",
+    label: "講習時間割作成",
+    sections: KOSHU_SEASONS,
+    category: C.TIMETABLE,
+  },
 
   // ── 記録・データ ──
   // 責任者の引継ぎメモ。閲覧者には読めないデータなので項目ごと出さない

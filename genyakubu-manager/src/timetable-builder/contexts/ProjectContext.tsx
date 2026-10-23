@@ -3,9 +3,16 @@ import { useProject } from '../hooks/useProject';
 import { useAnalysis } from '../hooks/useAnalysis';
 import { ProjectContext } from './projectContextValue';
 import type { ReactNode } from 'react';
+import type { HistoryStackOptions } from '../hooks/useHistoryStack';
 
-export function ProjectProvider({ children }: { children: ReactNode }) {
-  const projectState = useProject();
+// storage / initialProject は useHistoryStack のコメント参照。季節を切り替えるときは
+// key で作り直す (BuilderApp)。
+export function ProjectProvider({
+  children,
+  storage,
+  initialProject,
+}: { children: ReactNode } & HistoryStackOptions) {
+  const projectState = useProject({ storage, initialProject });
   const { analysis, dashboard } = useAnalysis(
     projectState.project,
     projectState.currentSchedule,

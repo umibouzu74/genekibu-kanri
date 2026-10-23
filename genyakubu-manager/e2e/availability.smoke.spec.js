@@ -4,13 +4,13 @@
 // 紙面の組み立て / パネルを個別に検証している)。あわせて、講習側だけに当てた
 // 罫線の土台 (tailwind.css の .koshu-builder) が効いていることも見る。
 import { test, expect } from "@playwright/test";
-import { openSidebarCategory } from "./helpers.js";
+import { openKoshuBuilder } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("builder.onboarding_seen", "1");
     // reload でも再実行されるので、autosave された編集を消さないよう未存在時のみ
-    if (localStorage.getItem("builder.schedule_project")) return;
+    if (localStorage.getItem("builder.schedule_project.summer")) return;
     const T = (name, subjects) => ({ name, subjects, ngSlots: [], ngClasses: [], priorityClasses: [] });
     const project = {
       version: 4,
@@ -33,15 +33,14 @@ test.beforeEach(async ({ page }) => {
       externalSessionPresets: [],
       snapshots: [],
     };
-    localStorage.setItem("builder.schedule_project", JSON.stringify(project));
+    // 講習は季節ごとの時間割 (7 月の日付なので夏期)
+    localStorage.setItem("builder.schedule_project.summer", JSON.stringify(project));
   });
 });
 
 test("回答を付けると × が NG になり、一覧に人数が出て、リロード後も残る", async ({ page }) => {
   await page.goto("/genekibu-kanri/");
-  await openSidebarCategory(page, "時間割");
-  await page.getByRole("button", { name: "🧩 講習時間割作成" }).click();
-  await expect(page.getByRole("button", { name: /自動作成/ })).toBeVisible({ timeout: 30_000 });
+  await openKoshuBuilder(page, { season: "summer" });
 
   await page.getByRole("button", { name: "⚙️ 設定" }).click();
   await page.getByRole("tab", { name: "🙋 出勤可能調査" }).click();
@@ -70,8 +69,7 @@ test("回答を付けると × が NG になり、一覧に人数が出て、リ
 
   // リロード後も回答が残る (autosave)
   await page.reload();
-  await openSidebarCategory(page, "時間割");
-  await page.getByRole("button", { name: "🧩 講習時間割作成" }).click();
+  await openKoshuBuilder(page, { season: "summer" });
   await page.getByRole("button", { name: "⚙️ 設定" }).click();
   await page.getByRole("tab", { name: "🙋 出勤可能調査" }).click();
   await page.getByRole("button", { name: /^山田/ }).click();

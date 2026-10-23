@@ -34,8 +34,8 @@ class FakeBroadcastChannel {
   }
 }
 
-function Tab({ onConflict }) {
-  useTabPresence(onConflict);
+function Tab({ onConflict, channel }) {
+  useTabPresence(onConflict, channel);
   return null;
 }
 
@@ -83,6 +83,25 @@ describe('useTabPresence', () => {
     render(<Tab onConflict={vi.fn()} />, { container: c3 });
     // 1 つ目は 2 つ目・3 つ目の hello を両方受けるが警告は 1 回のみ
     expect(first).toHaveBeenCalledTimes(1);
+  });
+
+  // 講習の project は季節ごとに保存先が別なので、別の季節を開いたタブは競合しない
+  it('チャネル (季節) が違うタブどうしは警告しない', () => {
+    const winter = vi.fn();
+    const spring = vi.fn();
+    render(<Tab onConflict={winter} channel="builder.tab_presence.winter" />);
+    const c2 = document.createElement('div');
+    document.body.appendChild(c2);
+    render(<Tab onConflict={spring} channel="builder.tab_presence.spring" />, { container: c2 });
+    expect(winter).not.toHaveBeenCalled();
+    expect(spring).not.toHaveBeenCalled();
+    const c3 = document.createElement('div');
+    document.body.appendChild(c3);
+    const winter2 = vi.fn();
+    render(<Tab onConflict={winter2} channel="builder.tab_presence.winter" />, { container: c3 });
+    expect(winter).toHaveBeenCalledTimes(1);
+    expect(winter2).toHaveBeenCalledTimes(1);
+    expect(spring).not.toHaveBeenCalled();
   });
 
   it('BroadcastChannel 非対応環境では何もしない (クラッシュしない)', () => {

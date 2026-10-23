@@ -6,18 +6,15 @@ import type { Project, Tab } from '../types';
 type NotifyFn = (message: string, type?: string) => void;
 type ConfirmFn = (message: string, options?: { title?: string; confirmLabel?: string }) => Promise<boolean>;
 import {
-  STORAGE_KEY_PROJECT,
   STORAGE_KEY_USER_DEFAULTS,
-  LEGACY_STORAGE_KEYS,
-  CURRENT_PROJECT_VERSION,
   cleanSchedule,
 } from '../utils/constants';
-import { migrateProject } from '../utils/scheduleKey';
-import { validateProjectShape } from '../utils/projectSchema';
 import { detectTeacherDiffs, loadInitialProject } from './projectFactory';
-import { addTemplate, loadTemplates, persistTemplates } from '../utils/templates';
+import { loadTemplates } from '../utils/templates';
+import { mergeImportedTemplates, parseProjectFile } from '../utils/projectFile';
 import { GENERATION_PARAM_BOUNDS } from '../utils/generationParams';
 import { stripAvailability } from '../utils/availabilityShape';
+import type { SeasonStorage } from '../utils/seasons';
 
 // JSON 保存・読込・デフォルト保存・全リセットをまとめたフック。
 // 編集系のアクションとは独立した関心 (ファイル I/O + ストレージリセット)。
@@ -26,10 +23,13 @@ export function useJsonIO({
   project,
   activeTab,
   dispatch,
+  storage,
 }: {
   project: Project;
   activeTab: Tab;
   dispatch: Dispatch<ProjectAction>;
+  /** 開いている季節の保存先 (全リセットはこの季節だけ) */
+  storage: Pick<SeasonStorage, 'storageKey' | 'backupKey'>;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -58,15 +58,15 @@ export function useJsonIO({
   }, [project, activeTab]);
 
   const handleResetAll = useCallback(() => {
-    // LocalStorage を消した上で loadInitialProject を再実行する。これにより
-    // 「user defaults があれば user defaults ベースで、無ければ hardcoded
-    // default で再構築」という reload 経路と同じ挙動を維持する。
+    // LocalStorage (この季節のキー) を消した上で loadInitialProject を再実行する。
+    // これにより「user defaults があれば user defaults ベースで、無ければ
+    // hardcoded default で再構築」という reload 経路と同じ挙動を維持する。
+    // 他の季節の project には触らない。
     // 履歴も初期化したいので project/replace ではなく project/reset を dispatch。
-    localStorage.removeItem(STORAGE_KEY_PROJECT);
-    LEGACY_STORAGE_KEYS.forEach(k => localStorage.removeItem(k));
-    const { project: freshProject } = loadInitialProject();
+    localStorage.removeItem(storage.storageKey);
+    const { project: freshProject } = loadInitialProject(storage);
     dispatch({ type: 'project/reset', payload: freshProject });
-  }, [dispatch]);
+  }, [dispatch, storage]);
 
   const handleLoadJson = useCallback((e: ChangeEvent<HTMLInputElement>, onNotify?: NotifyFn, onConfirm?: ConfirmFn) => {
     const f = e.target.files?.[0];
@@ -74,27 +74,14 @@ export function useJsonIO({
     const r = new FileReader();
     r.onload = async (ev) => {
       try {
-        // readAsText 経由なので result は常に string
-        const data = JSON.parse(ev.target?.result as string);
-        // このアプリより新しいスキーマ version の JSON は解釈できない
-        // (migrate は素通しになり、以降の挙動が未定義)。クラウド同期の
-        // stale-client ガード (projectSync) と同様に読込前に弾く。
-        if (typeof data?.version === 'number' && data.version > CURRENT_PROJECT_VERSION) {
-          if (onNotify) onNotify(
-            `このファイルはアプリより新しい形式 (v${data.version}) です。ページを再読み込みして最新版のアプリで読み込んでください`,
-            'error');
+        // readAsText 経由なので result は常に string。新しい形式・構造不正は
+        // 適用せず通知する (utils/projectFile)
+        const parsed = parseProjectFile(ev.target?.result as string);
+        if ('error' in parsed) {
+          if (onNotify) onNotify(parsed.error, 'error');
           return;
         }
-        // 構造を検証してから migrate / 適用 (E3d)。不正なら適用せず通知。
-        const { valid, error } = validateProjectShape(data);
-        if (!valid) {
-          if (onNotify) onNotify(`JSON の構造が不正です: ${error}`, 'error');
-          return;
-        }
-        // L1d: 同梱テンプレート (任意フィールド) は project state とは別管理
-        // なので、migrate / replace に流す前に分離する。
-        const { templates: importedTemplates, ...projectData } = data;
-        const migrated = migrateProject(projectData);
+        const migrated = parsed.project;
 
         // L1c: 読込は現プロジェクトの全置換。undo は RAM のみで autosave が
         // 即上書きするため、講師差分の有無に関わらず必ず確認を挟む。
@@ -112,29 +99,10 @@ export function useJsonIO({
           if (!confirmed) return;
         }
 
-        dispatch({ type: 'project/replace', payload: { project: cleanSchedule(migrated) } });
+        dispatch({ type: 'project/replace', payload: { project: migrated } });
 
-        // L1d: 同梱テンプレートは既存を温存しつつ追記マージする。
-        // 「同名 + 同 createdAt」は同一テンプレの再取込とみなして skip。
-        // dedupe キーは F2h と同じ JSON 配列方式 (区切り文字の衝突なし)。
-        let importedCount = 0;
-        if (Array.isArray(importedTemplates) && importedTemplates.length > 0) {
-          const existing = loadTemplates();
-          const dedupeKey = (t: { name?: string; createdAt?: string | null }) =>
-            JSON.stringify([t.name, t.createdAt ?? '']);
-          const seen = new Set(existing.map(dedupeKey));
-          let mergedTemplates = existing;
-          for (const t of importedTemplates) {
-            if (!t || typeof t !== 'object' || !t.name || !t.payload || typeof t.payload !== 'object') continue;
-            const key = dedupeKey(t);
-            if (seen.has(key)) continue;
-            seen.add(key);
-            // addTemplate が payload の deep copy と id 採番 (max+1) を行う
-            mergedTemplates = addTemplate(mergedTemplates, { name: t.name, project: t.payload, createdAt: t.createdAt ?? null });
-            importedCount += 1;
-          }
-          if (importedCount > 0) persistTemplates(mergedTemplates);
-        }
+        // L1d: 同梱テンプレートは既存を温存しつつ追記マージする
+        const importedCount = mergeImportedTemplates(parsed.templates);
         if (onNotify) onNotify(
           importedCount > 0 ? `読込完了 (テンプレート ${importedCount} 件を取り込みました)` : "読込完了",
           "success");

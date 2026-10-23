@@ -109,8 +109,9 @@ export default function Header() {
   const displayName = project.name || "無題のプロジェクト";
 
   return (
-    <div className="flex justify-between items-center mb-2 no-print bg-builder-surface p-3 rounded shadow-sm border-b border-builder-border">
-      <div className="flex items-center gap-2">
+    // 狭い幅ではボタンを次の行に回す (名前が 1 文字ずつ折り返されないように)
+    <div className="flex flex-wrap justify-between items-center gap-2 mb-2 no-print bg-builder-surface p-3 rounded shadow-sm border-b border-builder-border">
+      <div className="flex flex-wrap items-center gap-2 min-w-0">
         <span className="text-xl">📅</span>
         {isEditingName ? (
           <input

@@ -76,7 +76,7 @@ genyakubu-manager/
 │   ├── constants/             # 曜日・学年・localStorage キー・サイドバー定義
 │   ├── firebase/              # Firebase 初期化 (env 未設定ならローカルのみ)
 │   ├── regular-builder/       # 通常時間割作成 (曜日 × 時限のグリッド設計)
-│   ├── timetable-builder/     # 講習時間割作成 (日付ベース・自動生成)
+│   ├── timetable-builder/     # 講習時間割作成 (日付ベース・自動生成。春期・夏期・冬期ごと)
 │   └── data.js                # 初期データ (サンプル) と旧バレル
 ├── e2e/                       # Playwright (印刷・Worker 経路のスモーク)
 ├── database.rules.json        # RTDB のルール (手動デプロイ)

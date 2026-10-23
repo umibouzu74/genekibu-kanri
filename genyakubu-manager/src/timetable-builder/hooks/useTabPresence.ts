@@ -9,9 +9,13 @@ import { TAB_PRESENCE_CHANNEL, interpretPresenceMessage } from '../utils/tabPres
  *   onConflict を発火する。新規タブは 'ack' を受けて onConflict を発火する。
  * - onConflict はセッション中 1 回だけ (連打/相互通知でトーストが氾濫しないよう)。
  *
+ * - 講習の project は季節ごとに保存先が別なので、チャネルも季節ごと
+ *   (seasonStorage.presenceChannel)。冬期と春期を別のタブで開くのは競合しない
+ *
  * @param {() => void} onConflict 競合検出時に一度だけ呼ばれる
+ * @param {string} channelName 競合を見張るチャネル (既定は季節に分ける前の共通チャネル)
  */
-export function useTabPresence(onConflict: () => void) {
+export function useTabPresence(onConflict: () => void, channelName: string = TAB_PRESENCE_CHANNEL) {
   // onConflict を ref に逃がし、再生成されても effect を貼り直さない
   const onConflictRef = useRef(onConflict);
   onConflictRef.current = onConflict;
@@ -25,7 +29,7 @@ export function useTabPresence(onConflict: () => void) {
     let warned = false;
     let channel: BroadcastChannel;
     try {
-      channel = new window.BroadcastChannel(TAB_PRESENCE_CHANNEL);
+      channel = new window.BroadcastChannel(channelName);
     } catch {
       return undefined;
     }
@@ -56,5 +60,5 @@ export function useTabPresence(onConflict: () => void) {
         // 閉じる際の例外は無視
       }
     };
-  }, []);
+  }, [channelName]);
 }

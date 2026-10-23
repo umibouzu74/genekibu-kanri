@@ -5,14 +5,14 @@
 // (vitest 側は reducer / solver / 分析を個別に検証しており、ここでは
 //  UI → 生成 → 採用 → autosave の連結だけを見る)
 import { test, expect } from "@playwright/test";
-import { openSidebarCategory } from "./helpers.js";
+import { openKoshuBuilder } from "./helpers.js";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("builder.onboarding_seen", "1");
     // addInitScript は reload 時にも再実行されるため、autosave された編集を
     // 消さないよう「未存在時のみ」シードする (リロード永続化の検証のため)。
-    if (localStorage.getItem("builder.schedule_project")) return;
+    if (localStorage.getItem("builder.schedule_project.summer")) return;
     // 9 日 × 4 時限 = クラスあたり 36 セル。中1 クォータ合計 36 (英9 数9 国8 理5 社5)。
     const dates = Array.from({ length: 9 }, (_, i) => ({ id: i + 1, label: `7/${i + 20}` }));
     const periods = Array.from({ length: 4 }, (_, i) => ({ id: i + 1, label: `${i + 1}限` }));
@@ -42,15 +42,14 @@ test.beforeEach(async ({ page }) => {
       externalSessionPresets: [],
       snapshots: [],
     };
-    localStorage.setItem("builder.schedule_project", JSON.stringify(project));
+    // 講習は季節ごとの時間割 (7 月の日付なので夏期)
+    localStorage.setItem("builder.schedule_project.summer", JSON.stringify(project));
   });
 });
 
 test("クラス別コマ数を UI で設定し、自動作成がクォータどおりに埋める", async ({ page }) => {
   await page.goto("/genekibu-kanri/");
-  await openSidebarCategory(page, "時間割");
-  await page.getByRole("button", { name: "🧩 講習時間割作成" }).click();
-  await expect(page.getByRole("button", { name: /自動作成/ })).toBeVisible({ timeout: 30_000 });
+  await openKoshuBuilder(page, { season: "summer" });
 
   // 設定 > 科目 でクラス別モードを ON
   await page.getByRole("button", { name: "⚙️ 設定" }).click();
@@ -99,8 +98,7 @@ test("クラス別コマ数を UI で設定し、自動作成がクォータど�
 
   // リロード後も設定が永続化されている (autosave)
   await page.reload();
-  await openSidebarCategory(page, "時間割");
-  await page.getByRole("button", { name: "🧩 講習時間割作成" }).click();
+  await openKoshuBuilder(page, { season: "summer" });
   await page.getByRole("button", { name: "⚙️ 設定" }).click();
   await page.getByRole("tab", { name: "📚 科目" }).click();
   await expect(page.getByLabel("中1・中2 中2A の 英語 コマ数")).toHaveValue("8");

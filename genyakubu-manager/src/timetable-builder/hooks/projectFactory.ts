@@ -5,16 +5,14 @@ import {
   DEFAULT_PROJECT_PERIODS,
   DEFAULT_SUBJECTS,
   DEFAULT_SUBJECT_COLORS,
-  STORAGE_KEY_PROJECT,
-  STORAGE_KEY_PROJECT_BACKUP,
   STORAGE_KEY_USER_DEFAULTS,
-  LEGACY_STORAGE_KEYS,
   CURRENT_PROJECT_VERSION,
 } from '../utils/constants';
 import { migrateProject } from '../utils/scheduleKey';
 import { validateProjectShape } from '../utils/projectSchema';
 import { GENERATION_PARAM_BOUNDS } from '../utils/generationParams';
 import type { Entity, Project, Teacher } from '../types';
+import type { SeasonStorage } from '../utils/seasons';
 
 // user defaults から復元してよい生成パラメータのホワイトリスト (N1e)。
 const GENERATION_PARAM_KEYS = new Set<string>(Object.keys(GENERATION_PARAM_BOUNDS));
@@ -91,31 +89,23 @@ export function createNewProject(
   };
 }
 
-// localStorage から初期プロジェクトを復元、なければデフォルトを返す。
-// 旧キーが見つかったら新キーへ移行する。読み込み失敗時は console.error した
-// 上で loadError 情報を併せて返し、UI 層で toast 通知する (壊れたデータで
-// blank screen にしないためデフォルト project は必ず返す)。
+// localStorage (その季節のキー) から初期プロジェクトを復元、なければデフォルトを
+// 返す。読み込み失敗時は console.error した上で loadError 情報を併せて返し、
+// UI 層で toast 通知する (壊れたデータで blank screen にしないためデフォルト
+// project は必ず返す)。季節に分ける前の単一 project (旧キー) はここでは読まない
+// (どの季節のものかを決めて移すのは本体の hooks/useBuilderProjects)。
 //
 // 戻り値: { project, loadError } の tuple
 //   - project: 復元 or デフォルトの project
 //   - loadError: 読み込み失敗時の説明文 (成功時 null)
-export function loadInitialProject(): { project: Project; loadError: string | null } {
+export function loadInitialProject(
+  storage: Pick<SeasonStorage, 'storageKey' | 'backupKey'>,
+): { project: Project; loadError: string | null } {
   let loadError: string | null = null;
   // catch 節で退避できるよう try の外で保持する (F2f)
   let savedProject: string | null = null;
   try {
-    savedProject = localStorage.getItem(STORAGE_KEY_PROJECT);
-
-    if (!savedProject) {
-      for (const legacyKey of LEGACY_STORAGE_KEYS) {
-        savedProject = localStorage.getItem(legacyKey);
-        if (savedProject) {
-          localStorage.setItem(STORAGE_KEY_PROJECT, savedProject);
-          localStorage.removeItem(legacyKey);
-          break;
-        }
-      }
-    }
+    savedProject = localStorage.getItem(storage.storageKey);
 
     if (savedProject) {
       const parsed = JSON.parse(savedProject);
@@ -172,12 +162,12 @@ export function loadInitialProject(): { project: Project; loadError: string | nu
     console.error("Load failed", e);
     loadError = (e as Error | null)?.message || String(e);
     // F2f: デフォルトへフォールバックすると、最初の編集の autosave が
-    // STORAGE_KEY_PROJECT を上書きして元データが復旧不能になる。壊れていても
+    // 季節のキーを上書きして元データが復旧不能になる。壊れていても
     // 原本を別キーへ退避しておけば手動復旧 (JSON 手直し → 読込) の余地が残る。
     if (savedProject) {
       try {
-        localStorage.setItem(STORAGE_KEY_PROJECT_BACKUP, savedProject);
-        loadError += `。元のデータは localStorage の「${STORAGE_KEY_PROJECT_BACKUP}」キーに退避しました`;
+        localStorage.setItem(storage.backupKey, savedProject);
+        loadError += `。元のデータは localStorage の「${storage.backupKey}」キーに退避しました`;
       } catch (backupError) {
         // 容量超過等で退避に失敗しても起動は続行する (原本は autosave までは残る)
         console.error("Backup of corrupt project failed", backupError);

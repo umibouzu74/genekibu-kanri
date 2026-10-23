@@ -101,4 +101,7 @@ export const SS = {
   // 授業時間の集計で見ている期間。講師名から月間を開いて戻ってきたときに
   // 今月へ戻らないように (タブ単位)
   teachingMinutesPeriod: "genyakubu-session-teaching-minutes-period",
+  // 講習時間割作成で開いている季節 (春期 / 夏期 / 冬期)。新しいタブでは
+  // 次に来る講習から始める (timetable-builder/utils/seasons.defaultKoshuSeason)
+  koshuSeason: "genyakubu-session-koshu-season",
 };

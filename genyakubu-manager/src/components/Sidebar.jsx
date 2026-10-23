@@ -108,6 +108,7 @@ function SectionLinks({ sections, activeKey, onSelect, onClose }) {
     return (
       <button
         key={key}
+        aria-current={isActive ? "true" : undefined}
         onClick={() => {
           onSelect?.(key);
           if (typeof window !== "undefined" && window.innerWidth <= 768) {
@@ -164,6 +165,9 @@ export function Sidebar({
   masterTab,
   onSelectStaffTab,
   staffTab,
+  // 講習時間割作成の季節 (timetable-builder/utils/seasons)
+  onSelectKoshuSeason,
+  koshuSeason,
   onJumpToRequestedSubs,
   /** 全講師のグループ (検索前)。検索はこの中で行う */
   teacherGroups: allTeacherGroups,
@@ -186,10 +190,15 @@ export function Sidebar({
     [allTeacherGroups, search, teacherKana]
   );
   // メニュー部分は高さの 6 割で中がスクロールするので、メインメニューや Cmd+K
-  // から下の方の画面 (引継ぎメモなど) を開いたとき、今いる項目を見える所へ出す
+  // から下の方の画面 (引継ぎメモなど) を開いたとき、今いる項目を見える所へ出す。
+  // 画面の中のタブ・セクション (講習の季節・講師管理のタブなど) を子項目に出す
+  // 項目は、子項目ごと出す (項目だけだと、子項目がメニュー欄の下に隠れて
+  // 気付けない。講習時間割作成はメニュー欄のいちばん下にある)
   const menuRef = useRef(null);
   useEffect(() => {
-    const el = menuRef.current?.querySelector('[aria-current="page"]');
+    const el =
+      menuRef.current?.querySelector('[data-sidebar-current="true"]') ||
+      menuRef.current?.querySelector('[aria-current="page"]');
     if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "nearest" });
   }, [view, selected]);
 
@@ -231,8 +240,13 @@ export function Sidebar({
     [VIEWS.TIMETABLE]: onSelectTimetableSection,
     [VIEWS.MASTER]: onSelectMasterTab,
     [VIEWS.STAFF]: onSelectStaffTab,
+    [VIEWS.BUILDER]: onSelectKoshuSeason,
   };
-  const sectionActiveKey = { [VIEWS.MASTER]: masterTab, [VIEWS.STAFF]: staffTab };
+  const sectionActiveKey = {
+    [VIEWS.MASTER]: masterTab,
+    [VIEWS.STAFF]: staffTab,
+    [VIEWS.BUILDER]: koshuSeason,
+  };
 
   // Pre-compute pending count and per-teacher slot counts once per
   // render rather than running slots.filter() per teacher button.
@@ -320,7 +334,7 @@ export function Sidebar({
     const selfActive = !selected && view === item.key;
     const isModal = item.action === "modal";
     return (
-      <div key={item.key}>
+      <div key={item.key} data-sidebar-current={selfActive ? "true" : undefined}>
         {/* 項目本体と依頼中バッジは兄弟の <button> に分ける (入れ子の button は
             不正な DOM)。行の背景色は外側の div が持つ */}
         <div

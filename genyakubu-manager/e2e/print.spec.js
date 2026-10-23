@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { openSidebarCategory } from "./helpers.js";
+import { openKoshuBuilder, openSidebarCategory } from "./helpers.js";
 
 // E3c: 印刷出力のスモークテスト (構造検証)。
 //
@@ -293,8 +293,7 @@ test("講習時間割作成: print で全列収め (横溢れなし) と日付�
 
   await page.goto("/genekibu-kanri/");
   // サイドバーから講習時間割作成ビューへ (builder-worker.spec と同経路)
-  await openSidebarCategory(page, "時間割");
-  await page.getByRole("button", { name: "🧩 講習時間割作成" }).click();
+  await openKoshuBuilder(page);
   await expect(page.getByRole("button", { name: /自動作成/ })).toBeVisible({
     timeout: 30_000,
   });

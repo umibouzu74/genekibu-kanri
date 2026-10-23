@@ -1,13 +1,15 @@
 // ─── 講習時間割 (timetable-builder) → 個人月間スケジュール反映 ─────
-// 講習時間割作成の project (Firebase RTDB `appData/builder/schedule_project`
-// に JSON 文字列で同期、E6a) を親アプリ側で読み取り専用に解釈し、
+// 講習時間割作成の project (季節ごとに Firebase RTDB
+// `appData/builder/schedule_project_<季節>` に JSON 文字列で同期、E6a) を
+// 親アプリ側で読み取り専用に解釈し、
 // MonthView に「講」バッジ付きの日付指定コマ (KoshuLesson、types.d.ts 参照)
 // として載せるためのヘルパ群。正は常に builder 側で、親アプリは一切
-// 書き戻さない (購読は hooks/useBuilderProject)。
+// 書き戻さない (購読は hooks/useBuilderProjects。project は季節ごと)。
 //
 // - parseBuilderProject:      RTDB / LocalStorage の生ペイロード → Project
 // - resolveDateLabelYmd:      日付ラベル "M/D(曜)" → "YYYY-MM-DD" (年の推定)
 // - buildKoshuLessons:        Project → KoshuLesson[] (実日付・講師名に展開)
+// - buildKoshuLessonsForSeasons: 季節ごとの project → 全季節の KoshuLesson[]
 // - indexKoshuLessonsByDate:  MonthView 用の日付索引 (extraLessons と同型)
 //
 // 対象は各タブの講習コマ (schedule、kind="koshu") と、externalSessions
@@ -261,6 +263,23 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
   return lessons.map(
     ({ _sortMin, _sortPeriod, _sortTab, ...lesson }) => lesson
   );
+}
+
+// 季節ごとの project (hooks/useBuilderProjects の戻り値: 季節 → { project }) から、
+// 全季節の講習コマを 1 本にまとめる。季節に分けたので、冬期を作っても夏期の
+// 「講」は消えない (以前は project が 1 つで、夏期を冬期に作り替えると夏期の
+// 「講」が本体から消えていた)。年は季節ごとの project の最終編集日で決まる
+// (buildKoshuLessons)。key は季節で区別する (タブ id・外部授業 id は季節ごとの連番)
+export function buildKoshuLessonsForSeasons(seasonProjects, { todayYmd } = {}) {
+  if (!seasonProjects || typeof seasonProjects !== "object") return [];
+  const lessons = [];
+  for (const [season, entry] of Object.entries(seasonProjects)) {
+    for (const l of buildKoshuLessons(entry?.project, { todayYmd })) {
+      lessons.push({ ...l, key: `${season}:${l.key}`, season });
+    }
+  }
+  // 季節ごとには整列済み。日付だけで並べ直す (安定ソートなので同じ日の中の順は保つ)
+  return lessons.sort((a, b) => a.date.localeCompare(b.date));
 }
 
 // 日付 → その講師の講習コマの Map (indexExtraLessonsByDate と同型)。

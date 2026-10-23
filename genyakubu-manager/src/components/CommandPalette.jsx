@@ -5,6 +5,7 @@ import { MASTER_TABS } from "../constants/masterTabs";
 import { SUBS_TABS } from "../constants/subsTabs";
 import { STAFF_TABS } from "../constants/staffTabs";
 import { TIMETABLE_SECTIONS } from "../constants/timetableSections";
+import { KOSHU_SEASONS } from "../timetable-builder/utils/seasons";
 import { formatDateRange } from "../utils/dateHelpers";
 import { describeExtraLesson } from "../utils/extraLessons";
 import { useFocusTrap } from "../hooks/useFocusTrap";
@@ -43,6 +44,8 @@ export function CommandPalette({
   onSelectTimetableSection,
   // 講師管理のタブ (講師の所属 / 担当教科・よみ など) を名前で開く
   onSelectStaffTab,
+  // 講習時間割作成をその季節 (春期 / 夏期 / 冬期) で開く
+  onSelectKoshuSeason,
   onOpenDayReschedule,
   onOpenMultiDayAbsence,
   onOpenTestPrep,
@@ -324,6 +327,7 @@ export function CommandPalette({
       // 画面名からは辿れない中身 (確認テストの科目・バス時刻) でも引けるように
       { key: views.FUZOKU_PLAN, label: "附属の授業予定 (確認テスト・バス時刻)" },
       { key: views.OFFSITE, label: "他校舎の授業 (講師の出講予定)" },
+      { key: views.REGULAR_BUILDER, label: "通常時間割作成 (次の期の時間割を組む)" },
     ];
     if (canUseAdminData) {
       viewNames.push({ key: views.HANDOVER, label: "引継ぎメモ (申し送り・毎年のこと)" });
@@ -421,6 +425,25 @@ export function CommandPalette({
             detail: "講師管理のタブに移動",
             action: () => {
               onSelectStaffTab(t.key);
+              onClose();
+            },
+          });
+        }
+      }
+    }
+
+    // 講習時間割作成の季節。「講習」「冬期」などで引ける。空のときの固定一覧には
+    // 並べない (3 件で他の操作が押し出される)
+    if (onSelectKoshuSeason && !empty) {
+      for (const s of KOSHU_SEASONS) {
+        const label = `講習時間割作成: ${s.label}`;
+        if (matchLabel(label)) {
+          hits.push({
+            type: "view",
+            label,
+            detail: "講習時間割作成をこの季節で開く",
+            action: () => {
+              onSelectKoshuSeason(s.key);
               onClose();
             },
           });
@@ -558,6 +581,7 @@ export function CommandPalette({
     onSelectMasterTab,
     onSelectTimetableSection,
     onSelectStaffTab,
+    onSelectKoshuSeason,
     onOpenDayReschedule,
     onOpenMultiDayAbsence,
     onOpenTestPrep,
