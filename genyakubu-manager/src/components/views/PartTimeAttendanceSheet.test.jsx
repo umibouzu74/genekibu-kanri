@@ -5,7 +5,7 @@ import { useState } from "react";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { TeachingMinutesView } from "./TeachingMinutesView";
 import { ToastProvider } from "../../hooks/useToasts";
-import { LS } from "../../constants/storageKeys";
+import { LS, SS } from "../../constants/storageKeys";
 import { MINUTES_TAB } from "../../constants/minutesTabs";
 
 const slot = (id, o) => ({ id, cls: "", room: "", note: "", ...o });
@@ -169,6 +169,37 @@ describe("バイト出勤表", () => {
     expect(screen.getByLabelText("締め日").value).toBe("20");
     fireEvent.click(screen.getByRole("tab", { name: /授業時間/ }));
     expect(screen.getByLabelText("開始日").value).toBe("2026-10-01");
+  });
+
+  it("授業時間を見て画面を離れ、バイト出勤表を開き直しても、バイトの締め日の期間で出す", () => {
+    const first = renderView({ tab: MINUTES_TAB.SUMMARY });
+    expect(screen.getByLabelText("開始日").value).toBe("2026-10-01");
+    first.unmount();
+    // サイドバー / メインメニューからバイト出勤表を開く (画面を作り直す)
+    const second = renderView({ tab: MINUTES_TAB.ATTENDANCE });
+    expect(screen.getByLabelText("開始日").value).toBe("2026-09-21");
+    expect(screen.getByLabelText("終了日").value).toBe("2026-10-20");
+    second.unmount();
+    // 逆向きも同じ (バイト出勤表の 10 月分 → 授業時間の 10 月分)
+    renderView({ tab: MINUTES_TAB.SUMMARY });
+    expect(screen.getByLabelText("開始日").value).toBe("2026-10-01");
+    expect(screen.getByLabelText("終了日").value).toBe("2026-10-31");
+  });
+
+  it("日付を直接入れた期間は、開き直したタブでもそのまま", () => {
+    sessionStorage.setItem(
+      SS.teachingMinutesPeriod,
+      JSON.stringify({
+        y: 2026,
+        m: 10,
+        startDate: "2026-10-05",
+        endDate: "2026-10-10",
+        tab: MINUTES_TAB.SUMMARY,
+      })
+    );
+    renderView({ tab: MINUTES_TAB.ATTENDANCE });
+    expect(screen.getByLabelText("開始日").value).toBe("2026-10-05");
+    expect(screen.getByLabelText("終了日").value).toBe("2026-10-10");
   });
 
   it("バイトが登録されていなければ案内を出す", () => {

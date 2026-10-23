@@ -1794,7 +1794,9 @@ sessionStorage `SS.teachingMinutesTab`)。画面 `components/views/PartTimeAtten
   かたまりを作らない。時刻のある授業が無い日は 1。終了なしは開始を終わりとみなす)
 - 合計に含める種別は集計画面と**同じ選択** (`LS.teachingMinutesIncluded`)。締め日は
   **タブごと** (`LS.partTimeAttendanceClosingDay`、既定 20 日)。タブを切り替えたとき、
-  「◯月分」で見ていたら同じ月をそのタブの締め日で作り直す。バイト出勤表から始めると
+  「◯月分」で見ていたら同じ月をそのタブの締め日で作り直す。**画面を離れて別のタブで
+  開き直したときも同じ** (見ていた期間 `SS.teachingMinutesPeriod` にタブを持たせ、
+  授業時間の 10/1〜10/31 のままバイト出勤表を出さない)。バイト出勤表から始めると
   **締め終わった最新の月分** (`latestClosedPeriodYm`。給与を締めるのは締め日の後)
 - **1 日ずつの手での上書きはこの端末だけ** (`LS.partTimeAttendanceOverrides`、期間キー
   `開始日_終了日`、新しい方から 12 期間)。appData に書き戻さない (依頼どおり。閲覧者は

@@ -168,7 +168,20 @@ export function TeachingMinutesView({
   // 最新の月分 (給与を締めるのは締め日の後なので)
   const [initial] = useState(() => {
     const saved = readSavedPeriod();
-    if (saved) return { ym: { y: saved.y, m: saved.m }, ...saved };
+    if (saved) {
+      // 前に別のタブで「◯月分」として見ていた期間なら、このタブの締め日で作り
+      // 直す (授業時間を見て画面を離れ、サイドバーからバイト出勤表を開いたときに
+      // 10/1〜10/31 のまま出さない。タブを切り替えたときの effect と同じ扱い)。
+      // tab の無い保存値はタブを足す前のもの = 授業時間
+      const savedTab = normalizeMinutesTab(saved.tab ?? MINUTES_TAB.SUMMARY);
+      if (savedTab !== tab) {
+        const fromPreset = monthPeriod(saved.y, saved.m, closingDays[savedTab]);
+        if (fromPreset.startDate === saved.startDate && fromPreset.endDate === saved.endDate) {
+          return { ym: { y: saved.y, m: saved.m }, ...monthPeriod(saved.y, saved.m, closingDay) };
+        }
+      }
+      return { ym: { y: saved.y, m: saved.m }, startDate: saved.startDate, endDate: saved.endDate };
+    }
     const cur = isAttendance
       ? latestClosedPeriodYm(today, closingDay)
       : currentPeriodYm(today, closingDay);
@@ -190,8 +203,8 @@ export function TeachingMinutesView({
 
   useEffect(() => {
     const s = storageOf("sessionStorage");
-    if (s) writeStore(s, SS.teachingMinutesPeriod, { y: ym.y, m: ym.m, startDate, endDate });
-  }, [ym, startDate, endDate]);
+    if (s) writeStore(s, SS.teachingMinutesPeriod, { y: ym.y, m: ym.m, startDate, endDate, tab });
+  }, [ym, startDate, endDate, tab]);
 
   const setSelected = (updater) => {
     setSelectedState((prev) => {
