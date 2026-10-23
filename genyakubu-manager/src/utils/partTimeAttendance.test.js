@@ -215,7 +215,7 @@ describe("buildPartTimeAttendanceSheet", () => {
   ]);
   const staff = [{ name: "奥村" }, { name: "川井" }, { name: "杉原" }];
 
-  it("行 = バイト (登録の並び順)、セル = その日の出勤日数、日数・金額", () => {
+  it("行 = バイト (登録の並び順)、セル = その日の出勤日数、日数 (金額は持たない)", () => {
     const sheet = buildPartTimeAttendanceSheet({ rows, staff, dates: DATES });
     expect(sheet.rows.map((r) => r.teacher)).toEqual(["奥村", "川井", "杉原"]);
     const [okumura, kawai, sugihara] = sheet.rows;
@@ -223,9 +223,11 @@ describe("buildPartTimeAttendanceSheet", () => {
     expect(kawai.cells.map((c) => c.units)).toEqual([1, 2, 0]);
     expect(sugihara.cells.map((c) => c.units)).toEqual([0, 0, 0]);
     expect([okumura.days, kawai.days, sugihara.days]).toEqual([2, 3, 0]);
-    expect(kawai.amount).toBe(3 * DEFAULT_UNIT_PRICE);
     expect(sheet.totalDays).toBe(5);
-    expect(sheet.totalAmount).toBe(5 * DEFAULT_UNIT_PRICE);
+    // 金額・単価は表データに持たない (画面に出さない。金額は Excel の金額入りだけ)
+    expect(kawai).not.toHaveProperty("amount");
+    expect(sheet).not.toHaveProperty("totalAmount");
+    expect(sheet).not.toHaveProperty("unitPrice");
     expect(sheet.checks).toEqual([]);
   });
 
@@ -240,13 +242,6 @@ describe("buildPartTimeAttendanceSheet", () => {
     expect(okumura.cells[2]).toMatchObject({ units: 0, koma: 0 });
     expect(okumura.cells[2].excluded).toHaveLength(1);
     expect(okumura.days).toBe(1);
-  });
-
-  it("単価を変えると金額が変わる", () => {
-    const sheet = buildPartTimeAttendanceSheet({ rows, staff, dates: DATES, unitPrice: 6000 });
-    expect(sheet.unitPrice).toBe(6000);
-    expect(sheet.rows[1].amount).toBe(18000);
-    expect(sheet.totalAmount).toBe(30000);
   });
 
   it("手での上書きは数を置き換え、印を付ける (0 = 数えない)", () => {
@@ -405,5 +400,9 @@ describe("attendanceFileName", () => {
     expect(attendanceFileName("2026-09-21", "2026-10-20")).toBe("アルバイトコマ数2026.9.21-10.20.xlsx");
     expect(attendanceFileName("2026-12-21", "2027-01-20")).toBe("アルバイトコマ数2026.12.21-1.20.xlsx");
     expect(attendanceFileName("", "")).toBe("アルバイトコマ数.xlsx");
+    // 金額なし (日数だけ) は名前で分かるように
+    expect(attendanceFileName("2026-09-21", "2026-10-20", { withAmounts: false })).toBe(
+      "アルバイトコマ数2026.9.21-10.20_日数のみ.xlsx"
+    );
   });
 });

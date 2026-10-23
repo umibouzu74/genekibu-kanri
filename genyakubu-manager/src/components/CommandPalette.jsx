@@ -439,7 +439,7 @@ export function CommandPalette({
     // ないので、「バイト」「出勤」「給与」でも引けるようにする。空のときの固定
     // 一覧には並べない (他の操作を押し出さない)
     if (onSelectMinutesTab && !empty) {
-      const label = "バイト出勤表 (出勤日数 × 単価・給与用)";
+      const label = "バイト出勤表 (出勤日数・給与用)";
       if (matchLabel(label)) {
         hits.push({
           type: "view",

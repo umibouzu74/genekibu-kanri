@@ -73,12 +73,15 @@ export const LS = {
   teachingMinutesClosingDay: "genyakubu-teaching-minutes-closing-day",
   teachingMinutesSelected: "genyakubu-teaching-minutes-selected",
   teachingMinutesIncluded: "genyakubu-teaching-minutes-included",
-  // 授業時間の集計の「バイト出勤表」タブの表示の好み (締め日 (既定 20 日)・単価・
-  // 別の出勤にする空き時間)。人が明示的に選んだもので、利用統計ではない (A18 とは
+  // 授業時間の集計の「バイト出勤表」タブの表示の好み (締め日 (既定 20 日)・
+  // 別の出勤にする空き時間・Excel の書き出しの種類 (金額なし / 金額入り) と単価)。
+  // 単価は Excel の書き出しのダイアログでだけ見せる (画面に金額・単価を出さない)。
+  // パスワードは保存しない。人が明示的に選んだもので、利用統計ではない (A18 とは
   // 別物)。端末ごと (経理の端末は経理の端末の値)
   partTimeAttendanceClosingDay: "genyakubu-part-time-attendance-closing-day",
   partTimeAttendanceUnitPrice: "genyakubu-part-time-attendance-unit-price",
   partTimeAttendanceGapMinutes: "genyakubu-part-time-attendance-gap-minutes",
+  partTimeAttendanceExportMode: "genyakubu-part-time-attendance-export-mode",
   // バイト出勤表の 1 日ずつの手での上書き ({ "<開始日>_<終了日>": { 講師名: { 日付: 日数 } } })。
   // その月の表だけのもので、アプリのデータ (appData) には書き戻さない = この端末だけ。
   // 期間は新しい方から 12 か月ぶん (utils/partTimeAttendance.setAttendanceOverride)

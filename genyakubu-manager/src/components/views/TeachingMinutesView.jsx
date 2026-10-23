@@ -21,7 +21,8 @@
 // data-print-title で渡す (日付入力を「授業予定」の日付と取り違えないように)。
 //
 // タブ (constants/minutesTabs): 「授業時間」(講師ごとの分) と「バイト出勤表」
-// (バイトの出勤日数 × 単価の月の表。PartTimeAttendanceSheet)。どちらも同じ
+// (バイトの出勤日数の月の表。金額は画面に出さず、パスワード付きの Excel だけ。
+// PartTimeAttendanceSheet)。どちらも同じ
 // computeTeachingMinutes の結果・同じ期間・同じ「合計に含める」種別を使う。
 // 締め日だけはタブごとに覚える (バイトの給与は 20 日締めが既定)。タブは App が
 // 持つ (サイドバー・メインメニュー・Cmd+K から直接バイト出勤表を開くため)。

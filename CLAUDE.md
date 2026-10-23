@@ -1776,7 +1776,7 @@ PrintButton (window.print) 系統で足りる (Excel 出力は作らない)。
 
 ## バイト出勤表 (給与用、2026-10-23 実装)
 
-バイトの給与 (出勤日数 × 単価) の月の表。手で作っていた
+バイトの給与 (出勤日数 × 単価) の月の表 (画面は日数まで。金額はパスワード付きの Excel だけ)。手で作っていた
 `アルバイトコマ数YYYY.M.D-M.D.xlsx` をアプリのデータから出す。授業時間の集計の
 タブ (`constants/minutesTabs` の `MINUTES_TABS`。サイドバーの子項目・メインメニュー・
 Cmd+K「バイト」「出勤」「給与」から直接開く。タブは App が持つ = `minutesTab`、
@@ -1800,7 +1800,26 @@ sessionStorage `SS.teachingMinutesTab`)。画面 `components/views/PartTimeAtten
   **締め終わった最新の月分** (`latestClosedPeriodYm`。給与を締めるのは締め日の後)
 - **1 日ずつの手での上書きはこの端末だけ** (`LS.partTimeAttendanceOverrides`、期間キー
   `開始日_終了日`、新しい方から 12 期間)。appData に書き戻さない (依頼どおり。閲覧者は
-  appData に書けない)。単価・空き時間も端末ごとの表示の好み (A18 とは別物)
+  appData に書けない)。単価・空き時間・書き出しの種類も端末ごとの好み (A18 とは別物)
+- **画面 (と紙面) には金額・単価を出さない** (2026-10-23、生々しすぎるとの判断)。画面は
+  日数まで。表データ (`buildPartTimeAttendanceSheet`) も金額を持たない。**金額・単価の列を
+  画面に戻さないこと**。単価を見せて入れるのは Excel の書き出しのダイアログ
+  (`AttendanceExportDialog`) で「金額入り」を選んだときだけ
+- **Excel は書き出すときに 2 通りから選ぶ**: 金額なし (単価・金額の列なし、鍵なし、
+  `…_日数のみ.xlsx`) / 金額入り (**開くのにパスワードが要る**、手で作っていた表と同じ名前)。
+  金額入りは Excel の「ドキュメントの暗号化」と同じ ECMA-376 Agile Encryption
+  (`utils/officeEncryption.js`: AES-256 + SHA-512 × 100000 + HMAC、OLE2 コンテナも自前。
+  exceljs に暗号化が無いため)。**シート保護 (列を隠してロック) にしない** — 暗号化では
+  ないので中身を unzip すれば読める。**パスワードはどこにも保存しない** (ダイアログに
+  入れるだけ。コードに既定のパスワードを書かない — 公開されているアプリのコードは誰でも
+  読める)。**金額入りを鍵なしで作る経路を足さない** (`buildPartTimeAttendanceFile` が
+  パスワード無しの金額入りを止める)
+  - SHA-512 の 100000 回は WebCrypto で 1 回ずつ await すると 4 秒以上かかるので同期の
+    SHA-512 を持つ (Node で約 1.2 秒)。定数は素数の平方根・立方根から計算している。
+    AES・HMAC・乱数は WebCrypto
+  - テストの復号は Node の crypto で別に書いたもの (`utils/officeEncryptionTestUtils.js`)。
+    2026-10-23 に msoffcrypto-tool (復号・HMAC 検証) と LibreOffice (パスワードを入れて
+    開き、式の再計算) でも確かめた
 - **閲覧者 (経理) も使う** — 出勤表を出すのは経理のことが多い。サイドバー・メニューの項目に
   adminOnly を付けない、画面・Excel・🖨 を権限で出し分けない (`mainMenu.test.js` が見ている)
 - 行 = `partTimeStaff` (講師管理のバイト一覧の並び順)。授業の無いバイトも 0 で出す
@@ -1808,9 +1827,9 @@ sessionStorage `SS.teachingMinutesTab`)。画面 `components/views/PartTimeAtten
   中学 = T・高校 = H・中学のプレップ = P、学年をドットで。講師は `splitTeacherField` +
   `biweeklyPartner` (B 週の相手も担当)
 - Excel は手書きの様式: 1 行目 表題・年 (表題がはみ出す分を空けて日付の 8 列目)・単価
-  (1 セル)、2 行目 月、3 行目 日、4 行目 曜日、月の切れ目に空の列。A 列「◯◯ 先生」+
-  改行して担当の目安。**日数 =SUM、金額 =日数 × 単価セル、合計 =SUM の式** (出力後に
-  Excel で直しても合う)。A4 横・幅 1 ページ・1〜4 行目の繰り返し
+  (1 セル、金額入りだけ)、2 行目 月、3 行目 日、4 行目 曜日、月の切れ目に空の列。A 列
+  「◯◯ 先生」+ 改行して担当の目安。**日数 =SUM、金額 =日数 × 単価セル、合計 =SUM の式**
+  (出力後に Excel で直しても合う)。A4 横・幅 1 ページ・1〜4 行目の繰り返し
 - 印刷は 🖨 (popup 系統)。`.pt-attendance-sheet` があると `printStyles` が A4 横 +
   横スクロール・先頭列固定を外す CSS (`attendancePrintCss`) を入れる
 

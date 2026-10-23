@@ -9,6 +9,14 @@
 // 日数・金額・合計は**式で入れる** (出力後に Excel 上で日を直しても合う)。
 // 単価は 1 つのセルに置き、全員の金額がそこを参照する。
 //
+// 書き出しは 2 通り (画面には金額・単価を出さないので、金額を見られるのは
+// Excel だけ):
+//   - 金額なし: 単価・金額の列を作らない。鍵なし (…_日数のみ.xlsx)
+//   - 金額入り: 単価・金額の列あり。**開くのにパスワードが要る** (Excel の
+//     「ドキュメントの暗号化」と同じ。utils/officeEncryption)。パスワードは
+//     書き出すときに入れてもらうだけで、どこにも保存しない。**金額入りを鍵なしで
+//     作る経路を足さないこと**
+//
 // 表の中身は utils/partTimeAttendance.buildPartTimeAttendanceSheet (画面と同じ)。
 // このモジュールはボタン押下時に dynamic import して exceljs をメインバンドル
 // から外す (staffSurveyExport / 講習の excelExport と同じ流儀)。
@@ -16,7 +24,8 @@
 import ExcelJS from "exceljs";
 import { WEEKDAYS } from "../constants/schools";
 import { parseLocalDate } from "./dateHelpers";
-import { attendanceFileName } from "./partTimeAttendance";
+import { attendanceFileName, sanitizeUnitPrice } from "./partTimeAttendance";
+import { encryptOfficeFile } from "./officeEncryption";
 
 export const ATTENDANCE_SHEET_TITLE = "中学生/高校生　　現役アルバイト";
 // 1 人目の行 (1〜4 行目が見出し)
@@ -64,9 +73,12 @@ function weekdayOf(date) {
  *   hints?: Map<string, string>,
  *   startDate: string,
  *   endDate: string,
- * }} args
+ *   unitPrice?: number | null,
+ * }} args unitPrice を渡したときだけ単価・金額の列を作る (null = 金額なし)
  */
-export function buildPartTimeAttendanceWorkbook({ sheet, hints = new Map(), startDate, endDate }) {
+export function buildPartTimeAttendanceWorkbook({ sheet, hints = new Map(), startDate, endDate, unitPrice = null }) {
+  const withAmounts = unitPrice != null;
+  const price = withAmounts ? sanitizeUnitPrice(unitPrice) : 0;
   const wb = new ExcelJS.Workbook();
   wb.creator = "現役部授業管理";
   const ws = wb.addWorksheet("バイト出勤表", {
@@ -76,20 +88,21 @@ export function buildPartTimeAttendanceWorkbook({ sheet, hints = new Map(), star
   const { columns, lastCol } = layoutAttendanceColumns(sheet.dates);
   const firstDateCol = 2;
   const daysCol = lastCol + 1;
-  const amountCol = lastCol + 2;
+  // 金額なしでは列を作らない (null)
+  const amountCol = withAmounts ? lastCol + 2 : null;
   const L = (c) => ws.getColumn(c).letter;
   const firstRow = FIRST_STAFF_ROW;
   const lastStaffRow = firstRow + sheet.rows.length - 1;
   const totalRow = lastStaffRow + 1;
-  const priceRef = `$${L(amountCol)}$1`;
+  const priceRef = withAmounts ? `$${L(amountCol)}$1` : null;
 
   // 列幅
   ws.getColumn(1).width = 24;
   for (const c of columns) ws.getColumn(c.col).width = c.kind === "gap" ? 1.6 : 3.6;
   ws.getColumn(daysCol).width = 6;
-  ws.getColumn(amountCol).width = 11;
+  if (withAmounts) ws.getColumn(amountCol).width = 11;
 
-  // 1 行目: 表題・年・単価。表題は A 列からはみ出して右の空きセルに描かれるので、
+  // 1 行目: 表題・年・単価 (金額入りだけ)。表題は A 列からはみ出して右の空きセルに描かれるので、
   // 年は表題の後ろ (日付の 8 列目あたり) に置く。年をまたぐ期間 (12/21〜1/20) は
   // 新しい年の最初の日の列にもう 1 つ
   const title = ws.getCell(1, 1);
@@ -106,15 +119,17 @@ export function buildPartTimeAttendanceWorkbook({ sheet, hints = new Map(), star
     cell.font = { bold: true };
     prevYear = year;
   });
-  const priceLabel = ws.getCell(1, daysCol);
-  priceLabel.value = "単価";
-  priceLabel.alignment = { horizontal: "right", vertical: "middle" };
-  const price = ws.getCell(1, amountCol);
-  price.value = sheet.unitPrice;
-  price.numFmt = "#,##0";
-  price.border = BORDER;
-  price.font = { bold: true };
-  price.alignment = { horizontal: "right", vertical: "middle" };
+  if (withAmounts) {
+    const priceLabel = ws.getCell(1, daysCol);
+    priceLabel.value = "単価";
+    priceLabel.alignment = { horizontal: "right", vertical: "middle" };
+    const priceCell = ws.getCell(1, amountCol);
+    priceCell.value = price;
+    priceCell.numFmt = "#,##0";
+    priceCell.border = BORDER;
+    priceCell.font = { bold: true };
+    priceCell.alignment = { horizontal: "right", vertical: "middle" };
+  }
 
   // 2〜4 行目: 月・日・曜日
   for (const c of columns) {
@@ -140,10 +155,13 @@ export function buildPartTimeAttendanceWorkbook({ sheet, hints = new Map(), star
     wc.fill = solidFill(ARGB_HEAD_FILL);
     wc.font = color ? { color: { argb: color } } : {};
   }
-  for (const [col, label] of [
-    [daysCol, "日数"],
-    [amountCol, "金額"],
-  ]) {
+  const headCols = withAmounts
+    ? [
+        [daysCol, "日数"],
+        [amountCol, "金額"],
+      ]
+    : [[daysCol, "日数"]];
+  for (const [col, label] of headCols) {
     ws.mergeCells(3, col, 4, col);
     const cell = ws.getCell(3, col);
     cell.value = label;
@@ -190,11 +208,13 @@ export function buildPartTimeAttendanceWorkbook({ sheet, hints = new Map(), star
     days.alignment = CENTER;
     days.border = BORDER;
     days.font = { bold: true };
-    const amount = ws.getCell(r, amountCol);
-    amount.value = { formula: `${L(daysCol)}${r}*${priceRef}`, result: row.amount };
-    amount.numFmt = "#,##0";
-    amount.border = BORDER;
-    amount.alignment = { horizontal: "right", vertical: "middle" };
+    if (withAmounts) {
+      const amount = ws.getCell(r, amountCol);
+      amount.value = { formula: `${L(daysCol)}${r}*${priceRef}`, result: row.days * price };
+      amount.numFmt = "#,##0";
+      amount.border = BORDER;
+      amount.alignment = { horizontal: "right", vertical: "middle" };
+    }
   });
 
   // 最下行: 合計
@@ -210,16 +230,20 @@ export function buildPartTimeAttendanceWorkbook({ sheet, hints = new Map(), star
     ? { formula: `SUM(${L(daysCol)}${firstRow}:${L(daysCol)}${lastStaffRow})`, result: sheet.totalDays }
     : 0;
   totalDays.alignment = CENTER;
-  const totalAmount = ws.getCell(totalRow, amountCol);
-  totalAmount.value = hasRows
-    ? {
-        formula: `SUM(${L(amountCol)}${firstRow}:${L(amountCol)}${lastStaffRow})`,
-        result: sheet.totalAmount,
-      }
-    : 0;
-  totalAmount.numFmt = "#,##0";
-  totalAmount.alignment = { horizontal: "right", vertical: "middle" };
-  for (const cell of [totalDays, totalAmount]) {
+  const totalCells = [totalDays];
+  if (withAmounts) {
+    const totalAmount = ws.getCell(totalRow, amountCol);
+    totalAmount.value = hasRows
+      ? {
+          formula: `SUM(${L(amountCol)}${firstRow}:${L(amountCol)}${lastStaffRow})`,
+          result: sheet.totalDays * price,
+        }
+      : 0;
+    totalAmount.numFmt = "#,##0";
+    totalAmount.alignment = { horizontal: "right", vertical: "middle" };
+    totalCells.push(totalAmount);
+  }
+  for (const cell of totalCells) {
     cell.font = { bold: true };
     cell.border = BORDER;
     cell.fill = solidFill(ARGB_TOTAL_FILL);
@@ -241,22 +265,40 @@ export function buildPartTimeAttendanceWorkbook({ sheet, hints = new Map(), star
 }
 
 /**
+ * 書き出すファイルのバイト列とファイル名。金額入り (unitPrice あり) は
+ * password で暗号化する (パスワードが無ければ作らない)。
+ * @param {Parameters<typeof buildPartTimeAttendanceWorkbook>[0] & {password?: string | null}} args
+ * @returns {Promise<{bytes: Uint8Array, fileName: string, encrypted: boolean}>}
+ */
+export async function buildPartTimeAttendanceFile({ password = null, ...args }) {
+  const withAmounts = args.unitPrice != null;
+  if (withAmounts && !password) throw new Error("金額入りの Excel はパスワードが要ります");
+  const wb = buildPartTimeAttendanceWorkbook(args);
+  const plain = new Uint8Array(await wb.xlsx.writeBuffer());
+  const bytes = withAmounts ? await encryptOfficeFile(plain, password) : plain;
+  return {
+    bytes,
+    fileName: attendanceFileName(args.startDate, args.endDate, { withAmounts }),
+    encrypted: withAmounts,
+  };
+}
+
+/**
  * Excel を作ってダウンロードさせる。
- * @param {Parameters<typeof buildPartTimeAttendanceWorkbook>[0]} args
+ * @param {Parameters<typeof buildPartTimeAttendanceFile>[0]} args
  * @returns {Promise<string>} ファイル名
  */
 export async function downloadPartTimeAttendanceExcel(args) {
-  const wb = buildPartTimeAttendanceWorkbook(args);
-  const buffer = await wb.xlsx.writeBuffer();
-  const blob = new Blob([buffer], {
+  const { bytes, fileName } = await buildPartTimeAttendanceFile(args);
+  const blob = new Blob([bytes], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
-  const fileName = attendanceFileName(args.startDate, args.endDate);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = fileName;
   a.click();
-  URL.revokeObjectURL(url);
+  // ダウンロードが始まる前に解放しないよう、utils/csv と同じく少し待つ
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
   return fileName;
 }

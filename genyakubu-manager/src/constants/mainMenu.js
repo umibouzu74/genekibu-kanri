@@ -158,7 +158,7 @@ export const MAIN_MENU = Object.freeze([
     items: [
       navItem(VIEWS.ALL, "講師ごとの週のコマ数"),
       navItem(VIEWS.MINUTES, "期間内に講師ごとに教えた時間 (給与計算用)"),
-      minutesTab(MINUTES_TAB.ATTENDANCE, "バイトの出勤日数 × 単価の月の表 (給与用、Excel にも)"),
+      minutesTab(MINUTES_TAB.ATTENDANCE, "バイトの出勤日数の月の表 (給与用。金額はパスワード付きの Excel だけ)"),
       navItem(VIEWS.STAFF, "バイトの登録・出勤状況、講師の担当教科とよみ、教科マスター"),
       staffTab(STAFF_TAB.AFFILIATION, "講師を現役部 常勤 / 現役部 非常勤 / 予備校部に分ける (年度ごと)"),
       navItem(VIEWS.LEAVE, "現役部 常勤の有給・半休を月の表で入れる / 年度の日数を見る"),
