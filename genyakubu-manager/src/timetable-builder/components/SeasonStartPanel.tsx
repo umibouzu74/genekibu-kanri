@@ -16,8 +16,8 @@ import type { Project } from '../types';
 //   - ほかの季節の講習から設定を写す (講師・クラス・科目・時限。日付と時間割は空)
 //   - テンプレートから (同じく設定だけ)
 //   - JSON ファイルを開く (バックアップをそのまま)
-//   - 初期値から (💾 現在の設定を初期値にする で保存したもの、無ければ既定。全リセットと
-//     同じ中身で、日付も初期値のまま。名前だけ入れる)
+//   - 初期値から (💾 現在の設定を初期値にする で保存したもの、無ければ見本の設定。
+//     リセットした後と同じ中身で、日付も初期値のまま。名前だけ入れる)
 // どれも onStart に project を渡すだけ。保存は BuilderApp が ProjectProvider を
 // その project で開いたときに行う (hooks/useHistoryStack の initialProject)。
 export default function SeasonStartPanel({
@@ -47,7 +47,7 @@ export default function SeasonStartPanel({
   const startFrom = (source: Project, from: string) => {
     onStart(
       buildFreshSeasonProject(source, { name: projectName, now: today }),
-      `${from}の設定を写して「${projectName}」を作りました。⚙️ 設定 → 基本設定 で講習の日付を作ってください`,
+      `${from}の設定を写して「${projectName}」を作りました。⚙️ 設定 > 基本設定 で講習の日付を作ってください`,
     );
   };
 
@@ -65,7 +65,7 @@ export default function SeasonStartPanel({
     const { project } = loadInitialProject(seasonStorage(season));
     onStart(
       { ...project, name: projectName },
-      `初期値から「${projectName}」を作りました。日付は ⚙️ 設定 → 基本設定 で確かめてください`,
+      `初期値から「${projectName}」を作りました。日付は初期値のままなので、⚙️ 設定 > 基本設定 で作り直してください`,
     );
   };
 
@@ -103,18 +103,23 @@ export default function SeasonStartPanel({
       <p className="text-sm text-builder-ink-muted mb-4">
         講習の時間割は春期・夏期・冬期で別々に保存されます。始め方を選んでください。
         ほかの講習やテンプレートから始めると、講師・学年タブ (クラスとコマ数)・科目・時限を引き継ぎ、
-        日付と時間割は空から始まります (日付は ⚙️ 設定 → 基本設定 の「⚡ 期間から自動生成」で作れます)。
+        日付と時間割は空から始まります (日付は ⚙️ 設定 &gt; 基本設定 の「⚡ 期間から自動生成」で作れます)。
       </p>
 
-      <label className="block mb-5 max-w-sm">
-        <span className="block text-xs font-bold text-builder-ink mb-1">名前</span>
+      <div className="mb-5 max-w-sm">
+        <label htmlFor="builder-season-start-name" className="block text-xs font-bold text-builder-ink mb-1">プロジェクト名</label>
         <input
+          id="builder-season-start-name"
+          aria-describedby="builder-season-start-name-hint"
           className="w-full border border-builder-border rounded px-3 py-2 text-sm focus:outline-none focus:border-builder-blue"
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={suggestSeasonProjectName(season, today)}
         />
-      </label>
+        <p id="builder-season-start-name-hint" className="mt-1 text-[11px] text-builder-ink-muted">
+          写して始めるとき・初期値から始めるときの名前です (JSON ファイルを開くときはファイルの中の名前のまま)
+        </p>
+      </div>
 
       {sources.length > 0 && (
         <div className="mb-5">
@@ -128,7 +133,7 @@ export default function SeasonStartPanel({
                 <li key={s.key}>
                   <button type="button" className={cardCls} onClick={() => startFrom(project, s.label)}>
                     <div className="text-sm font-bold text-builder-ink">
-                      <span aria-hidden="true">{s.icon}</span> {s.label}「{project.name || '名前なし'}」の設定を写して始める
+                      <span aria-hidden="true">{s.icon}</span> {s.label}「{project.name || '(名前なし)'}」の設定を写して始める
                     </div>
                     <div className="text-xs text-builder-ink-muted">
                       講師 {project.teachers?.length ?? 0} 名 · タブ {(project.tabs || []).map(t => t.name).join(' / ')}
@@ -151,7 +156,7 @@ export default function SeasonStartPanel({
                 <button type="button" className={cardCls} onClick={() => startFromTemplate(tpl)}>
                   <div className="text-sm font-bold text-builder-ink">「{tpl.name}」の設定を写して始める</div>
                   <div className="text-xs text-builder-ink-muted">
-                    講師 {tpl.payload?.teachers?.length ?? 0} 名 · タブ {tpl.payload?.tabs?.length ?? 0}
+                    講師 {tpl.payload?.teachers?.length ?? 0} 名 · タブ {tpl.payload?.tabs?.length ?? 0} つ
                   </div>
                 </button>
               </li>
@@ -160,7 +165,7 @@ export default function SeasonStartPanel({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 border-t border-builder-border pt-4">
+      <div className="flex flex-wrap items-center gap-2 border-t border-builder-border pt-4">
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
@@ -171,8 +176,11 @@ export default function SeasonStartPanel({
           type="button"
           onClick={startFromDefaults}
           className="px-3 py-2 text-sm font-bold rounded border border-builder-border bg-builder-surface text-builder-ink hover:bg-builder-surface-alt"
-          title="「💾 現在の設定を初期値にする」で保存した設定 (無ければ既定の設定) から始めます。全リセットした後と同じ中身です (日付も初期値のまま)"
         >初期値から始める</button>
+        <p className="w-full text-[11px] text-builder-ink-muted">
+          初期値 =「💾 現在の設定を初期値にする」で保存した設定 (無ければ見本の設定) で、リセットした後と同じ中身です。
+          日付も初期値のまま入るので、始めたら ⚙️ 設定 &gt; 基本設定 で作り直してください。
+        </p>
         <input type="file" accept=".json" ref={fileInputRef} onChange={handleFile} className="hidden" aria-hidden="true" tabIndex={-1} />
       </div>
     </section>

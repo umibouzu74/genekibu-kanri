@@ -441,7 +441,7 @@ export function CommandPalette({
           hits.push({
             type: "view",
             label,
-            detail: "講習の時間割を組む",
+            detail: "講習時間割作成をこの季節で開く",
             action: () => {
               onSelectKoshuSeason(s.key);
               onClose();

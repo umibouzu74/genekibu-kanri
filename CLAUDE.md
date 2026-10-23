@@ -428,7 +428,8 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   基準日の 180 日前〜270 日後にかかる年なら優先 (それより古い曜日は前年の
   ラベルの残り、先の曜日は打ち間違いとみなして信じない)
 - **日付プールには前の季節の日付が残る** (プールは自動では減らず、初期値・
-  テンプレートもプールごと写す)。実日付に置く・外部の予定を拾う・期間を出すときは
+  テンプレートもプールごと写す。季節の始め方の「写す」と「次の◯期講習用に作り直す」
+  だけはプールを空にする = 下の「講習時間割作成は季節ごと」)。実日付に置く・外部の予定を拾う・期間を出すときは
   **`courseDates.usedDateLabels` (どれかのタブが使う日) で絞る**。プール全体を
   使うと、前の夏の予備校が翌年 7 月の予定として出る / 講師別 Excel の期間が
   「7/29〜1/7」になる
@@ -442,8 +443,8 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
 (以前は 1 つだけで、夏期の project を冬期に作り替えていた)。季節の project は翌年の
 同じ季節に作り直して使う。
 
-- **季節の定義・保存先は `timetable-builder/utils/seasons.ts` の 1 か所** (依存なし。
-  本体のサイドバー定義からも import する)。LocalStorage は
+- **季節の定義・保存先は `timetable-builder/utils/seasons.ts` の 1 か所** (import するのは
+  依存なしの `tabPresence` だけ。本体のサイドバー定義からも import する)。LocalStorage は
   `builder.schedule_project.<季節>`、RTDB は `appData/builder/schedule_project_<季節>`
   (JSON 文字列、`database.rules.json` に列挙済み)。**3 季節を 1 つの JSON にまとめない**
   (編集のたびに 3 季節ぶん送ることになり、旧クライアントの stale-client 検出
@@ -464,9 +465,9 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   最終編集日)。クラウドが使える端末ではクラウドの旧ノードが正 (読めるまで待つ)。
   移すのはその季節を開いたとき (`initialProject` で始めてすぐ保存 → 空のノードへ seed)。
   **旧ノードは消さない・書かない** (古い版を開いたままの端末が書くかもしれない)。
-  この端末の旧キーは移した後に消す (同じ project を 2 つ持って保存領域を食わない)。
+  この端末の旧キーは移した後に消す (同じ project を 2 つ持って保存領域を食わないように)。
   ほかの端末で移行が済んでいたら (旧ノードの project の季節のノードに値がある) 本体の
-  購読が消す。**クラウドに季節が 1 つでもあれば、この端末の旧キーは使わない** (旧ノードが
+  購読がこの端末の旧キーを消す。**クラウドに季節が 1 つでもあれば、この端末の旧キーは使わない** (旧ノードが
   後から空になったとき、古い控えを生き返らせない)
 - **季節を開くときは、どの状態でも先にこの端末の季節のキーを見る** (`SeasonWorkspace`)。
   本体の購読は他タブの書き込みを `storage` イベントで読み直すが、それより前に古い
@@ -481,8 +482,8 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
 - **まだ無い季節を開いても既定の project を勝手に作らない**。始め方
   (`components/SeasonStartPanel`) を出し、人が選んだときだけ作る: ほかの季節の講習 /
   テンプレートから設定を写す (`utils/seasonStart.buildFreshSeasonProject`) ・ JSON を開く ・
-  初期値から (全リセットと同じ中身)
-- **設定を写す / 次の年度用に作り直す (⚙ 設定 → 基本設定の「🔄 次の◯期講習用に
+  初期値から (「◯期講習のデータをリセット」した後と同じ中身。日付も初期値のまま)
+- **設定を写す / 翌年の同じ季節用に作り直す (⚙ 設定 ＞ 基本設定の「🔄 次の◯期講習用に
   作り直す」) は `buildFreshSeasonProject` の 1 か所**。残すのは講師・学年タブ (クラス・
   コマ数・使う時限)・科目と色・時限・全日程の合同・プリセット・生成の設定。日付の
   後始末は `projectReducer.removeDatesFromPool` (日付プールからの削除と同じ cascade) を
@@ -864,7 +865,7 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
 - **タブで切り替わる画面**も同じ扱い。開いている間だけタブ名を子項目に出し、
   クリックでそのタブへ切り替える (`Sidebar` の `SectionLinks` を共有)
 
-いま `sections` を持つのは 4 画面。**どれも画面名から辿れない機能が
+いま `sections` を持つのは 5 画面。**どれも画面名から辿れない機能が
 あるのが理由**なので、中身を増やしたら定義側の配列に足すこと:
 
 - **「休講・テスト期間・イベント」** (休講 / テスト期間 / 特別イベント /
@@ -892,6 +893,12 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   (`CohortCutoffEditor` の `expandRequest`)。`adminOnly` のセクション (時刻一括変換) は
   閲覧者の画面に描かれないので、目次・サイドバー・Cmd+K にも出さない。カードを
   足したら配列と画面のアンカーの両方に足す
+- **「講習時間割作成」** (🌸 春期講習 / 🌻 夏期講習 / ⛄ 冬期講習) = 季節の切替
+  (2026-10-23)。定義は `timetable-builder/utils/seasons.ts` の `KOSHU_SEASONS`
+  (画面の上の切替バー・メインメニューの `koshuSeason` 項目・Cmd+K が共有)。季節は
+  App が持つ (`koshuSeason`、sessionStorage)。開いた画面の子項目がメニュー欄の下に
+  隠れないよう、Sidebar は開いている項目を子項目ごと見える位置へスクロールする
+  (`data-sidebar-current`)
 
 ## メインメニュー (2026-10-15 実装、起動時の画面)
 
@@ -917,7 +924,7 @@ sessionStorage の直前の画面。画面を移ると本文のスクロール�
   `EVENT_SECTIONS`・`MASTER_TABS` がすべてメニューにあるかを突き合わせて止める
   (時間割管理の表示期間設定・コース別終講日・授業セットもメニューにあるかを見る)
 - 押したときの移動は App の `navigateMenuItem` (kind: view / modal / section /
-  timetableSection / masterTab / subsTab / staffTab)。サイドバー・Cmd+K と同じ経路 (`selectView` +
+  timetableSection / masterTab / subsTab / staffTab / koshuSeason)。サイドバー・Cmd+K と同じ経路 (`selectView` +
   初期状態の要求) を通す。ダイアログを足したらここにも足す
 - **並びは固定**。使用頻度・履歴で並べ替えない・「よく使う」欄を作らない (A18)
 - ビューへ移る項目には g chord (`g a` など) を添える (`mainMenu.menuItemChord` →

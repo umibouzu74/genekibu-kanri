@@ -17,7 +17,7 @@ import OnboardingOverlay from './components/OnboardingOverlay';
 import SeasonBar, { type SeasonProjects } from './components/SeasonBar';
 import SeasonStartPanel from './components/SeasonStartPanel';
 import { LEGACY_PROJECT_STORAGE_KEYS, STORAGE_KEY_ONBOARDING_SEEN, STORAGE_KEY_VIEW_COMPACT, STORAGE_KEY_VIEW_SUMMARY, resolveGenerationParams, resolveBaseSeed } from './utils/constants';
-import { defaultKoshuSeason, koshuSeasonDef, seasonStorage, type KoshuSeason } from './utils/seasons';
+import { KOSHU_SEASONS, defaultKoshuSeason, koshuSeasonDef, seasonStorage, type KoshuSeason } from './utils/seasons';
 import { formatPrintDateJa } from './utils/printHeader';
 import { BUILDER_PRINT_STYLE } from './utils/builderPrintStyle';
 import { countFatalInfeasibilities } from './utils/fixSuggestions';
@@ -105,7 +105,7 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
       lastRemoteApplyToastAtRef.current = now;
       showToast('☁️ 他の端末で保存された時間割を反映しました (この端末の未保存の編集と Undo 履歴は破棄されます)', 'success', 5000);
     } else if (syncEvent.kind === 'sync-auth') {
-      showToast('クラウドへの書込が拒否されました。管理者ログインが必要です (編集はこの端末に保存されていますが、他の端末でクラウドが更新されると失われることがあります。管理者でログインしているのに出るときは、Firebase のルールが最新になっているか確かめてください)。', 'warning', 8000);
+      showToast('クラウドへの書込が拒否されました。管理者ログインが必要です。編集はこの端末に保存されていますが、他の端末でクラウドが更新されると失われることがあります (管理者でログインしているのに出るときは、システムの担当者に知らせてください)。', 'warning', 8000);
     } else if (syncEvent.kind === 'sync-stale') {
       showToast('クラウド上の時間割データがこのアプリより新しい形式のため、同期を一時停止しました。ページを再読み込みして最新版に更新してください。', 'warning', 8000);
     } else {
@@ -545,10 +545,15 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
         )}
 
         {/* 日付がまだ無いタブ (季節を新しく始めた直後など) は表がまっさらになるので、
-            どこで日付を作るかを出す */}
+            どこで日付を作るかを出す。日付はあるがこのタブで使う日を選んでいないときは
+            そう出し分ける */}
         {currentConfig.dates.length === 0 && (
           <div role="status" className="flex flex-wrap items-center gap-2 mb-2 px-3 py-2 bg-builder-warning-soft border border-builder-warning-border rounded no-print text-sm text-builder-ink">
-            <span>📅 「{activeTabForPrint?.name}」にはまだ講習の日付がありません。⚙️ 設定 → 基本設定 の「⚡ 期間から自動生成」で日程を作ってください。</span>
+            <span>
+              {(project.dates || []).length === 0
+                ? <>📅 まだ講習の日付がありません。⚙️ 設定 &gt; 基本設定 の「⚡ 期間から自動生成」で日付を作ってください。</>
+                : <>📅 「{activeTabForPrint?.name}」で使う日が選ばれていません。⚙️ 設定 &gt; 基本設定 の「使う日」で選んでください。</>}
+            </span>
             <button
               type="button"
               onClick={() => setShowConfig(true)}
@@ -633,12 +638,13 @@ function SeasonWorkspace({
     } catch {
       // 消せなくても動作には関係ない (次に開いたときも季節のキーを先に読む)
     }
+    const others = KOSHU_SEASONS.filter(s => s.key !== season).map(s => s.label).join('・');
     showToast(
-      `これまでの講習時間割を${def.label}として開きました。ほかの講習 (春期・夏期・冬期) は上の切替から別の時間割として作れます`,
+      `これまでの講習時間割を${def.label}として開きました。${others}は、上の切替から別の時間割として作れます`,
       'success',
       7000,
     );
-  }, [fromLegacy, storage.storageKey, def.label, showToast]);
+  }, [fromLegacy, storage.storageKey, season, def.label, showToast]);
 
   const handleStart = useCallback((project: Project, message: string) => {
     // 始め方を選んでいる間に、別のタブがこの季節を作っていたらそちらを開く (上書きしない)
@@ -667,7 +673,7 @@ function SeasonWorkspace({
     const localFallback = entry?.localFallback;
     return (
       <div role="status" className="bg-builder-surface p-6 rounded-lg border border-builder-border text-sm text-builder-ink-muted space-y-3">
-        <div>☁️ {def.label}の時間割を読み込んでいます… (時間がかかるときはネットワークを確認してください)</div>
+        <div>☁️ {def.label}の時間割を読み込んでいます…</div>
         {slow && (
           <div className="text-builder-ink">
             クラウドから読めていません (オフラインかもしれません)。つながると自動で開きます。

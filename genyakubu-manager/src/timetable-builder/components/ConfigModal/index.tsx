@@ -12,7 +12,7 @@ import SubjectManager from './SubjectManager';
 import CombinedGroupSettings from './CombinedGroupSettings';
 import GenerationSettings from './GenerationSettings';
 import TemplateManager from './TemplateManager';
-import { koshuSeasonDef, suggestSeasonProjectName, type KoshuSeason } from '../../utils/seasons';
+import { KOSHU_SEASONS, koshuSeasonDef, suggestSeasonProjectName, type KoshuSeason } from '../../utils/seasons';
 import { buildFreshSeasonProject } from '../../utils/seasonStart';
 
 const TITLE_ID = 'builder-config-modal-title';
@@ -36,7 +36,9 @@ export default function ConfigModal({ onClose, season }: { onClose: () => void; 
   const [configTab, setConfigTab] = useState('basic');
   const { project, handleResetAll, updateProjectName, pushHistory } = useProjectContext();
   const { showConfirm, showInput, showToast } = useUI();
-  const seasonLabel = season ? koshuSeasonDef(season).label : 'この講習';
+  const seasonLabel = season ? koshuSeasonDef(season).label : '講習';
+  // 名前の例 (季節に合わせる。作り直しの名前の案と同じ「2026 冬期講習」の形)
+  const nameExample = `例: ${suggestSeasonProjectName(season ?? 'winter')}`;
   const [projectNameInput, setProjectNameInput] = useState(project.name || "");
   const dialogRef = useRef(null);
 
@@ -78,9 +80,12 @@ export default function ConfigModal({ onClose, season }: { onClose: () => void; 
   };
 
   const handleResetClick = async () => {
+    const others = KOSHU_SEASONS.filter(s => s.key !== season).map(s => s.label).join('・');
     const ok = await showConfirm(
-      `${seasonLabel}の時間割のデータをすべて削除して初期値に戻しますか？\nほかの講習 (春期・夏期・冬期のうち別の季節) はそのままです。\nこの操作は元に戻せません。`,
-      { title: "データリセット", danger: true, confirmLabel: "全削除" },
+      `${seasonLabel}の時間割のデータをすべて削除して初期値に戻しますか？\n` +
+        (season ? `ほかの季節 (${others}) の時間割はそのままです。\n` : '') +
+        `この操作は元に戻せません。`,
+      { title: "データリセット", danger: true, confirmLabel: "リセット" },
     );
     if (ok) handleResetAll();
   };
@@ -88,20 +93,21 @@ export default function ConfigModal({ onClose, season }: { onClose: () => void; 
   // 去年の同じ季節の時間割を、今年の講習用に作り直す (設定だけ残す)。
   // 作り直した後は Ctrl+Z で戻せる (project/replace = 履歴に積む)
   const handleRebuildClick = async () => {
-    const nextName = await showInput('新しい講習の名前', {
+    const nextName = await showInput('作り直した後のプロジェクト名', {
       title: `次の${seasonLabel}用に作り直す`,
       defaultValue: season ? suggestSeasonProjectName(season) : '',
-      placeholder: '例: 2027 冬期講習',
+      placeholder: nameExample,
       confirmLabel: '次へ',
     });
     if (nextName == null) return;
     const name = String(nextName).trim() || project.name || '';
     const ok = await showConfirm(
       `「${project.name || seasonLabel}」を「${name}」に作り直します。\n\n` +
-        `残すもの: 講師 (担当科目・担当不可/優先クラス・上限)、学年タブ (クラス・コマ数・使う時限)、科目と色、時限、全日程の合同授業、自動生成の設定\n` +
-        `空にするもの: 日付、時間割、日ごとのチェック、講師不在・NG、出勤可能調査の回答、他学年セッション、スナップショット\n\n` +
-        `今の内容を残しておきたいときは、先に 💾 プロジェクト保存 (JSON) か 🗂 テンプレートに保存してください。` +
-        `(作り直した直後なら 元に戻す Ctrl+Z で戻せます)`,
+        `残すもの: 講師 (担当科目・担当不可/優先クラス・コマ数の上限)、学年タブ (クラス・コマ数・使う時限)、科目と色、時限、全日程の合同授業、自動生成の設定\n` +
+        `空にするもの: 日付、時間割、日ごとのチェック、講師不在・NG、出勤可能調査の回答、他学年セッション、スナップショット\n` +
+        `今の講習のコマは、講師の月間予定の「講」と授業時間の集計からも消えます (集計は先に締めてください)。\n\n` +
+        `今の内容を残しておきたいときは、先に 💾 プロジェクト保存 (JSON) か 🗂 テンプレートに保存してください。\n` +
+        `作り直した直後なら、ツールバーの ↩️ (元に戻す) か Ctrl+Z で戻せます。`,
       { title: `次の${seasonLabel}用に作り直す`, danger: true, confirmLabel: '作り直す' },
     );
     if (!ok) return;
@@ -185,7 +191,7 @@ export default function ConfigModal({ onClose, season }: { onClose: () => void; 
                   onChange={(e) => setProjectNameInput(e.target.value)}
                   onBlur={handleProjectNameBlur}
                   onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-                  placeholder="例: 2026年度 冬期講習"
+                  placeholder={nameExample}
                 />
                 {project.createdAt && (
                   <div className="mt-2 text-xs text-builder-ink-muted">

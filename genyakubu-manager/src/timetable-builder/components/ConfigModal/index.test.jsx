@@ -189,7 +189,7 @@ describe('ConfigModal の季節 (リセット・次の年度用に作り直す)'
     const { projectValue, uiValue } = renderSeasonModal();
     fireEvent.click(screen.getByRole('button', { name: /夏期講習のデータをリセット/ }));
     await vi.waitFor(() => expect(projectValue.handleResetAll).toHaveBeenCalled());
-    expect(uiValue.showConfirm.mock.calls[0][0]).toContain('ほかの講習');
+    expect(uiValue.showConfirm.mock.calls[0][0]).toContain('ほかの季節 (春期講習・冬期講習) の時間割はそのまま');
   });
 
   it('作り直すと、設定を残して日付・時間割・NG を空にした project を履歴に積む', async () => {

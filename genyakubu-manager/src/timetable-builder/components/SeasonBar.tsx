@@ -14,10 +14,12 @@ export interface SeasonProjectEntry {
 export type SeasonProjects = Partial<Record<KoshuSeason, SeasonProjectEntry>>;
 
 // 季節ごとの 2 行目 (名前) と 3 行目 (期間・入ったコマ)。未作成・読み込み中は
-// それだけを出す
-function describe(entry: SeasonProjectEntry | undefined): { name: string; detail: string } {
+// それだけを出す。未作成の季節は、選んでいれば下に始め方が出ている
+function describe(entry: SeasonProjectEntry | undefined, selected: boolean): { name: string; detail: string } {
   if (!entry || entry.status === 'loading') return { name: '読み込み中…', detail: '' };
-  if (entry.status === 'missing') return { name: 'まだありません', detail: '押すと作り始められます' };
+  if (entry.status === 'missing') {
+    return { name: 'まだありません', detail: selected ? '下で始め方を選べます' : '押すと作り始められます' };
+  }
   const summary = summarizeSeasonProject(entry.project ?? null);
   if (!summary) return { name: '(読み込めないデータ)', detail: '' };
   const range = formatSeasonRange(summary.firstYmd, summary.lastYmd);
@@ -31,7 +33,7 @@ function describe(entry: SeasonProjectEntry | undefined): { name: string; detail
 
 // 講習の季節 (春期 / 夏期 / 冬期) の切替。季節ごとに別の時間割 (保存先も別) で、
 // 押すとその季節の時間割を開く (BuilderApp が ProjectProvider を作り直す)。
-// 紙面には出さない (印刷の見出しに季節の名前が載る)
+// 紙面には出さない (印刷の見出しはプロジェクト名。名前が空なら季節の名前)
 export default function SeasonBar({
   season,
   onSeasonChange,
@@ -46,7 +48,7 @@ export default function SeasonBar({
     <div role="group" aria-label="講習の季節" className="flex gap-2 mb-2 no-print">
       {KOSHU_SEASONS.map((s) => {
         const selected = s.key === season;
-        const { name, detail } = describe(seasonProjects?.[s.key]);
+        const { name, detail } = describe(seasonProjects?.[s.key], selected);
         const missing = seasonProjects?.[s.key]?.status === 'missing';
         return (
           <button

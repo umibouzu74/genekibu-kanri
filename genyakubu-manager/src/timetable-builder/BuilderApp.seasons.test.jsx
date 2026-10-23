@@ -74,7 +74,7 @@ describe('BuilderApp の季節', () => {
     expect(screen.getByRole('heading', { name: /冬期講習の時間割はまだありません/ })).toBeTruthy();
     // 写せるのは作ってある季節だけ
     expect(screen.queryByRole('button', { name: /春期講習「/ })).toBeNull();
-    fireEvent.change(screen.getByRole('textbox', { name: '名前' }), { target: { value: '2026 冬期講習' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'プロジェクト名' }), { target: { value: '2026 冬期講習' } });
     fireEvent.click(screen.getByRole('button', { name: /夏期講習「2026 夏期講習」の設定を写して始める/ }));
 
     await waitFor(() => expect(screen.getByRole('button', { name: /自動作成/ })).toBeTruthy());
@@ -180,9 +180,9 @@ describe('BuilderApp の季節', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /自動作成/ })).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: '⚙️ 設定' }));
     fireEvent.click(screen.getByRole('button', { name: /夏期講習のデータをリセット/ }));
-    expect(await screen.findByRole('button', { name: '全削除' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'リセット' })).toBeTruthy();
     rerender(<BuilderApp season="winter" seasonProjects={seasonProjects} />);
-    expect(screen.queryByRole('button', { name: '全削除' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'リセット' })).toBeNull();
     expect(localStorage.getItem(seasonStorage('summer').storageKey)).not.toBeNull();
   });
 });

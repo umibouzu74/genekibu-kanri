@@ -53,7 +53,7 @@ test("旧データは冬期へ移り、春期は冬期から写して始めら�
   // 春期はまだ無い → 冬期から写して始める
   await seasons.getByRole("button", { name: /^春期講習:/ }).click();
   await expect(page.getByRole("heading", { name: /春期講習の時間割はまだありません/ })).toBeVisible();
-  await page.getByRole("textbox", { name: "名前" }).fill("e2e 春期講習");
+  await page.getByRole("textbox", { name: "プロジェクト名" }).fill("e2e 春期講習");
   await page.getByRole("button", { name: /冬期講習「e2e 冬期講習」の設定を写して始める/ }).click();
   await expect(page.getByRole("heading", { name: "e2e 春期講習" })).toBeVisible();
   await expect(page.getByText(/まだ講習の日付がありません/)).toBeVisible();

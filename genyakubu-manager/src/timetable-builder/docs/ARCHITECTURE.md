@@ -64,7 +64,7 @@ sequenceDiagram
 
 | パス | 責務 |
 |---|---|
-| `BuilderApp.jsx` | ルート。季節の切替バー + 季節ごとの作業領域 (`SeasonWorkspace`、§5.1)、Provider 構成、自動生成の起動/キャンセル、容量監視・複数タブ検出 |
+| `BuilderApp.tsx` | ルート。季節の切替バー + 季節ごとの作業領域 (`SeasonWorkspace`、§5.1)、Provider 構成、自動生成の起動/キャンセル、容量監視・複数タブ検出 |
 | `components/SeasonBar.tsx` / `SeasonStartPanel.tsx` | 季節 (春期/夏期/冬期) の切替、まだ無い季節の始め方 (§5.1) |
 | `utils/seasons.ts` / `seasonProject.ts` / `seasonStart.ts` | 季節の定義・保存先 (依存なし) / 季節の推定・要約 / 設定だけ写した project (§5.1) |
 | `utils/projectFile.ts` | プロジェクト JSON の読み取り (📂 開く と季節の始め方で共有) |
@@ -305,7 +305,8 @@ sequenceDiagram
   分ける前の旧ノード) を `src/hooks/useBuilderProjects` で onValue 購読し、講習コマと外部授業
   （externalSessions）を個人月間スケジュール（MonthView）へ「講」/「外」
   カードとして反映する
-  （`src/utils/builderLessons` が純関数で変換。書き戻しは一切無い）。
+  （`src/utils/builderLessons` が純関数で変換。RTDB への書き戻しは一切無い。この端末の
+  LocalStorage の旧キーだけは、移行が済んだら消す — §5.1）。
   受信判定は `decideRemoteProject` の縮退版 `parseBuilderProject` —
   identical / apply の区別が要らないため「解釈できたら採用・できなければ
   直前値を保持」に単純化してあり、stale-client（新しい version）も
@@ -317,8 +318,6 @@ sequenceDiagram
   local-only モードで走る。firebase の挙動を検証するテストは module mock
   （`vi.mock`）で `isConfigured` を立てる。
 
----
-
 ### 5.1 季節ごとの project（2026-10-23）
 
 講習は毎年 春期・夏期・冬期 の 3 回あるので、project は季節ごとに 1 つずつ持つ
@@ -327,7 +326,7 @@ sequenceDiagram
 | | LocalStorage | RTDB |
 |---|---|---|
 | 春期 / 夏期 / 冬期 | `builder.schedule_project.<季節>` | `appData/builder/schedule_project_<季節>` |
-| 季節に分ける前（読むだけ） | `builder.schedule_project`（＋旧スタンドアロン版のキー） | `appData/builder/schedule_project` |
+| 季節に分ける前（読むだけ。この端末の分は移した後に消す） | `builder.schedule_project`（＋旧スタンドアロン版のキー） | `appData/builder/schedule_project` |
 
 ```mermaid
 flowchart TD
@@ -343,7 +342,8 @@ flowchart TD
 ```
 
 - **季節の状態** (`resolveSeasonProjects`): `ready`（クラウド or この端末にある）/
-  `legacy`（季節の project は無いが、旧ノードの project がこの季節のもの。日付から
+  `legacy`（季節の project は無いが、旧ノード（Firebase 未設定の端末ではこの端末の旧キー）の
+  project がこの季節のもの。日付から
   `inferProjectSeason` で推定）/ `missing` / `loading`（クラウドをまだ読めていない。
   読めるまで決めない）
 - **出どころは季節を開いた時点で 1 回だけ決める** (`SeasonWorkspace`): この端末に
@@ -365,6 +365,8 @@ flowchart TD
   済んでいたら (`isLegacyMigrated`) 本体の購読がこの端末の旧キーを消す
 - `UIProvider` も季節ごとに作り直す (開いたままの確認ダイアログを前の季節に効かせない)
 - 別タブの競合警告 (E6d) のチャネルも季節ごと（別の季節を開いたタブは競合しない）
+
+---
 
 ## 6. 守るべき設計上の約束
 
