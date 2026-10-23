@@ -12,7 +12,7 @@ import { DAY_BG as DB, DAY_COLOR as DC, DAYS } from "./data";
 
 import { VIEWS } from "./constants/views";
 import { VIEW_CHORDS, CHORD_TIMEOUT_MS } from "./constants/chords";
-import { useBuilderProject } from "./hooks/useBuilderProject";
+import { useBuilderProjects } from "./hooks/useBuilderProjects";
 import { useTeacherGroups } from "./hooks/useTeacherGroups";
 import { STAFF_GROUP_KEY } from "./utils/groupTeacherNames";
 import { useToasts } from "./hooks/useToasts";
@@ -47,13 +47,14 @@ import {
 import { useToday } from "./hooks/useToday";
 import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
 import { visibilityForTeacher } from "./utils/teacherTags";
-import { buildKoshuLessons } from "./utils/builderLessons";
+import { buildKoshuLessonsForSeasons } from "./utils/builderLessons";
 import { colors, font, S } from "./styles/common";
 import { LS, SS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
 import { EVENT_KIND, eventSectionAnchorId } from "./constants/eventKinds";
 import { DEFAULT_MASTER_TAB } from "./constants/masterTabs";
 import { DEFAULT_STAFF_TAB, STAFF_TAB } from "./constants/staffTabs";
+import { defaultKoshuSeason, isKoshuSeason } from "./timetable-builder/utils/seasons";
 import { fmtDate, fmtDateWeekday } from "./utils/dateHelpers";
 import { sortJa } from "./utils/sortJa";
 import { sortTeacherNames } from "./utils/teacherKana";
@@ -133,7 +134,7 @@ const AbsenceWorkflowView = lazy(() =>
 // 旧 jikanwarikun を timetable-builder/ として取り込み。
 // 講習 (夏・冬・春) 用の時間割を MRV+バックトラッキングで自動生成する。
 // 親アプリの Slot/Sub データには触れず、独自に LocalStorage + RTDB
-// (appData/builder) で永続化。親アプリ側は useBuilderProject でこれを
+// (appData/builder、季節ごと) で永続化。親アプリ側は useBuilderProjects でこれを
 // 読み取り専用購読し、個人月間スケジュールへ講習コマとして反映する
 // (utils/builderLessons — 書き戻しは無く、正は常に builder 側)。
 const BuilderApp = lazy(() => import("./timetable-builder/BuilderApp"));
@@ -315,14 +316,16 @@ export default function App() {
     saveEventVisibility,
   } = appData;
 
-  // 講習時間割作成 (builder) の project を読み取り専用で購読し、個人月間
-  // スケジュール (MonthView) に載せる講習コマへ変換する。編集は builder 側。
+  // 講習時間割作成 (builder) の季節ごと (春期 / 夏期 / 冬期) の project を
+  // 読み取り専用で購読し、個人月間スケジュール (MonthView) に載せる講習コマへ
+  // 変換する (全季節)。編集は builder 側。講習時間割作成の画面にも季節ごとの
+  // 状態 (未作成 / 読み込み中…) として渡す。
   // 日付ラベルの年は project.updatedAt を基準に推定するため todayYmd は
   // updatedAt/createdAt を持たない外部 JSON 由来データの保険にすぎない。
-  const builderProject = useBuilderProject();
+  const builderSeasonProjects = useBuilderProjects();
   const koshuLessons = useMemo(
-    () => buildKoshuLessons(builderProject, { todayYmd: fmtDate(new Date()) }),
-    [builderProject]
+    () => buildKoshuLessonsForSeasons(builderSeasonProjects, { todayYmd: fmtDate(new Date()) }),
+    [builderSeasonProjects]
   );
 
   // 講習時間割作成の出勤可能調査で「バイトのみ」に絞るための名前 (読み取り専用)
@@ -478,6 +481,24 @@ export default function App() {
   // 講師管理のタブ。同じく App が持つ (サイドバー / メインメニュー / Cmd+K /
   // 有給・半休の「講師の所属」から直接そのタブを開く)
   const [staffTab, setStaffTab] = useState(DEFAULT_STAFF_TAB);
+  // 講習時間割作成で開いている季節 (春期 / 夏期 / 冬期)。サイドバーの子項目・
+  // メインメニュー・Cmd+K から直接その季節を開くので App が持つ。リロードしても
+  // 同じ季節 (sessionStorage = タブ単位)、新しいタブでは次に来る講習から
+  const [koshuSeason, setKoshuSeason] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem(SS.koshuSeason);
+      return isKoshuSeason(saved) ? saved : defaultKoshuSeason();
+    } catch {
+      return defaultKoshuSeason();
+    }
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SS.koshuSeason, koshuSeason);
+    } catch {
+      /* 保存できなくても季節の切替自体は妨げない */
+    }
+  }, [koshuSeason]);
   // 一覧から欠勤振替画面へ遷移するときの初期日 (YYYY-MM-DD)
   const [absenceFlowInitDate, setAbsenceFlowInitDate] = useState(null);
   // Cmd+K の日付ジャンプでダッシュボードを開くときの表示日 (YYYY-MM-DD)
@@ -1087,6 +1108,9 @@ export default function App() {
         case "staffTab":
           selectView(VIEWS.STAFF, () => setStaffTab(item.tab));
           break;
+        case "koshuSeason":
+          selectView(VIEWS.BUILDER, () => setKoshuSeason(item.season));
+          break;
         case "modal":
           if (item.modal === "dayReschedule") setShowDayReschedule(true);
           else if (item.modal === "multiDayAbsence") setMultiDayAbsence({});
@@ -1171,6 +1195,10 @@ export default function App() {
         staffTab={staffTab}
         onSelectStaffTab={(tabKey) => {
           selectView(VIEWS.STAFF, () => setStaffTab(tabKey));
+        }}
+        koshuSeason={koshuSeason}
+        onSelectKoshuSeason={(season) => {
+          selectView(VIEWS.BUILDER, () => setKoshuSeason(season));
         }}
         onJumpToRequestedSubs={() =>
           selectView(VIEWS.SUBS, () => setSubsInitFilter({ status: "open" }))
@@ -1823,6 +1851,11 @@ export default function App() {
             // 他校舎の授業を講習の「講師不在」へ取り込む・出勤可能調査をバイトで
             // 絞るための読み取り専用データ
             <BuilderApp
+              // 季節ごとの project (春期 / 夏期 / 冬期)。季節の切替バーの名前・期間と、
+              // 未作成の季節の始め方 (他の季節から写す) に使う
+              season={koshuSeason}
+              onSeasonChange={setKoshuSeason}
+              seasonProjects={builderSeasonProjects}
               offsiteLessons={offsiteLessons}
               holidays={holidays}
               partTimeStaffNames={partTimeStaffNames}
@@ -2348,6 +2381,10 @@ export default function App() {
             }}
             onSelectStaffTab={(tabKey) => {
               selectView(VIEWS.STAFF, () => setStaffTab(tabKey));
+              setCmdPaletteOpen(false);
+            }}
+            onSelectKoshuSeason={(season) => {
+              selectView(VIEWS.BUILDER, () => setKoshuSeason(season));
               setCmdPaletteOpen(false);
             }}
             onShowShortcuts={() => setShortcutsHelpOpen(true)}

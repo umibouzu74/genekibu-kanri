@@ -12,6 +12,8 @@ import SubjectManager from './SubjectManager';
 import CombinedGroupSettings from './CombinedGroupSettings';
 import GenerationSettings from './GenerationSettings';
 import TemplateManager from './TemplateManager';
+import { koshuSeasonDef, suggestSeasonProjectName, type KoshuSeason } from '../../utils/seasons';
+import { buildFreshSeasonProject } from '../../utils/seasonStart';
 
 const TITLE_ID = 'builder-config-modal-title';
 
@@ -28,10 +30,13 @@ const TABS = [
   ['templates', '🗂 テンプレート'],
 ];
 
-export default function ConfigModal({ onClose }: { onClose: () => void }) {
+// season: 開いている講習の季節 (リセット・作り直しはこの季節の時間割だけ)。
+// 単体で描くテストでは省略できる
+export default function ConfigModal({ onClose, season }: { onClose: () => void; season?: KoshuSeason }) {
   const [configTab, setConfigTab] = useState('basic');
-  const { project, handleResetAll, updateProjectName } = useProjectContext();
-  const { showConfirm } = useUI();
+  const { project, handleResetAll, updateProjectName, pushHistory } = useProjectContext();
+  const { showConfirm, showInput, showToast } = useUI();
+  const seasonLabel = season ? koshuSeasonDef(season).label : 'この講習';
   const [projectNameInput, setProjectNameInput] = useState(project.name || "");
   const dialogRef = useRef(null);
 
@@ -73,8 +78,35 @@ export default function ConfigModal({ onClose }: { onClose: () => void }) {
   };
 
   const handleResetClick = async () => {
-    const ok = await showConfirm("全データを削除しますか？\nこの操作は元に戻せません。", { title: "データリセット", danger: true, confirmLabel: "全削除" });
+    const ok = await showConfirm(
+      `${seasonLabel}の時間割のデータをすべて削除して初期値に戻しますか？\nほかの講習 (春期・夏期・冬期のうち別の季節) はそのままです。\nこの操作は元に戻せません。`,
+      { title: "データリセット", danger: true, confirmLabel: "全削除" },
+    );
     if (ok) handleResetAll();
+  };
+
+  // 去年の同じ季節の時間割を、今年の講習用に作り直す (設定だけ残す)。
+  // 作り直した後は Ctrl+Z で戻せる (project/replace = 履歴に積む)
+  const handleRebuildClick = async () => {
+    const nextName = await showInput('新しい講習の名前', {
+      title: `次の${seasonLabel}用に作り直す`,
+      defaultValue: season ? suggestSeasonProjectName(season) : '',
+      placeholder: '例: 2027 冬期講習',
+      confirmLabel: '次へ',
+    });
+    if (nextName == null) return;
+    const name = String(nextName).trim() || project.name || '';
+    const ok = await showConfirm(
+      `「${project.name || seasonLabel}」を「${name}」に作り直します。\n\n` +
+        `残すもの: 講師 (担当科目・担当不可/優先クラス・上限)、学年タブ (クラス・コマ数・使う時限)、科目と色、時限、全日程の合同授業、自動生成の設定\n` +
+        `空にするもの: 日付、時間割、日ごとのチェック、講師不在・NG、出勤可能調査の回答、他学年セッション、スナップショット\n\n` +
+        `今の内容を残しておきたいときは、先に 💾 プロジェクト保存 (JSON) か 🗂 テンプレートに保存してください。` +
+        `(作り直した直後なら 元に戻す Ctrl+Z で戻せます)`,
+      { title: `次の${seasonLabel}用に作り直す`, danger: true, confirmLabel: '作り直す' },
+    );
+    if (!ok) return;
+    pushHistory(buildFreshSeasonProject(project, { name }));
+    showToast(`「${name}」に作り直しました。基本設定の「⚡ 期間から自動生成」で日付を作ってください`, 'success', 6000);
   };
 
   return (
@@ -161,6 +193,14 @@ export default function ConfigModal({ onClose }: { onClose: () => void }) {
                     {project.updatedAt && <> / 更新日: {new Date(project.updatedAt).toLocaleDateString('ja-JP')}</>}
                   </div>
                 )}
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-builder-ink-muted">
+                  <button
+                    type="button"
+                    onClick={handleRebuildClick}
+                    className="px-2 py-1 text-xs font-bold rounded border border-builder-border bg-builder-surface text-builder-ink hover:bg-builder-surface-alt"
+                  >🔄 次の{seasonLabel}用に作り直す…</button>
+                  <span>講師・学年タブ・科目・時限を残して、日付と時間割を空にします (毎年同じ季節の時間割を使い回すとき)</span>
+                </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <BasicSettings />
@@ -169,7 +209,7 @@ export default function ConfigModal({ onClose }: { onClose: () => void }) {
             </>
           )}
           <div className="mt-6 border-t border-builder-border pt-4 text-right">
-            <button onClick={handleResetClick} className="text-xs text-builder-red hover:underline">⚠️ すべてのデータをリセット</button>
+            <button onClick={handleResetClick} className="text-xs text-builder-red hover:underline">⚠️ {seasonLabel}のデータをリセット</button>
           </div>
         </div>
       </div>

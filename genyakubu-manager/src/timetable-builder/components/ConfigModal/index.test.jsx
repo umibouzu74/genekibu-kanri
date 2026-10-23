@@ -141,3 +141,73 @@ describe('ConfigModal — プロジェクト名の外部変更への同期 (F5k)
     expect(updateProjectName).not.toHaveBeenCalled();
   });
 });
+
+// 講習は季節ごとの時間割 (2026-10-23)。リセットはその季節だけ、作り直しは設定を残す
+describe('ConfigModal の季節 (リセット・次の年度用に作り直す)', () => {
+  const summerProject = {
+    version: 4,
+    name: '2026 夏期講習',
+    createdAt: '2026-06-01T00:00:00.000Z',
+    updatedAt: '2026-08-20T00:00:00.000Z',
+    teachers: [{ name: '堀上', subjects: ['英語'], ngSlots: ['7/29(水)-1限'], ngClasses: [], priorityClasses: [] }],
+    activeTabId: 1,
+    dates: [{ id: 1, label: '7/29(水)' }],
+    periods: [{ id: 1, label: '1限' }],
+    tabs: [{ id: 1, name: '中3', config: { classes: [{ id: 1, label: '3S' }], subjectCounts: { 英語: 2 } }, schedule: { 'd1-p1-c1': { subject: '英語', teacher: '堀上' } } }],
+    subjects: ['英語'],
+    subjectColors: {},
+    combinedGroups: [],
+    externalCounts: {},
+    externalSessions: [],
+    externalSessionPresets: [],
+    snapshots: [],
+  };
+
+  function renderSeasonModal({ confirm = true, input = '2027 夏期講習' } = {}) {
+    const projectValue = {
+      project: summerProject,
+      handleResetAll: vi.fn(),
+      updateProjectName: vi.fn(),
+      pushHistory: vi.fn(),
+    };
+    const uiValue = {
+      showConfirm: vi.fn().mockResolvedValue(confirm),
+      showInput: vi.fn().mockResolvedValue(input),
+      showToast: vi.fn(),
+    };
+    render(
+      <ProjectContext.Provider value={projectValue}>
+        <UIContext.Provider value={uiValue}>
+          <ConfigModal onClose={vi.fn()} season="summer" />
+        </UIContext.Provider>
+      </ProjectContext.Provider>,
+    );
+    return { projectValue, uiValue };
+  }
+
+  it('リセットは「夏期講習のデータをリセット」で、確認にほかの季節は残ると出す', async () => {
+    const { projectValue, uiValue } = renderSeasonModal();
+    fireEvent.click(screen.getByRole('button', { name: /夏期講習のデータをリセット/ }));
+    await vi.waitFor(() => expect(projectValue.handleResetAll).toHaveBeenCalled());
+    expect(uiValue.showConfirm.mock.calls[0][0]).toContain('ほかの講習');
+  });
+
+  it('作り直すと、設定を残して日付・時間割・NG を空にした project を履歴に積む', async () => {
+    const { projectValue, uiValue } = renderSeasonModal();
+    fireEvent.click(screen.getByRole('button', { name: /次の夏期講習用に作り直す/ }));
+    await vi.waitFor(() => expect(projectValue.pushHistory).toHaveBeenCalledTimes(1));
+    const next = projectValue.pushHistory.mock.calls[0][0];
+    expect(next.name).toBe('2027 夏期講習');
+    expect(next.dates).toEqual([]);
+    expect(next.tabs[0].schedule).toEqual({});
+    expect(next.teachers[0]).toMatchObject({ name: '堀上', ngSlots: [] });
+    expect(uiValue.showToast).toHaveBeenCalled();
+  });
+
+  it('確認で取り消せば何もしない', async () => {
+    const { projectValue, uiValue } = renderSeasonModal({ confirm: false });
+    fireEvent.click(screen.getByRole('button', { name: /次の夏期講習用に作り直す/ }));
+    await vi.waitFor(() => expect(uiValue.showConfirm).toHaveBeenCalled());
+    expect(projectValue.pushHistory).not.toHaveBeenCalled();
+  });
+});

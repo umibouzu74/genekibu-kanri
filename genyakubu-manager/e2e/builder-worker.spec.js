@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { openSidebarCategory } from "./helpers.js";
+import { openKoshuBuilder } from "./helpers.js";
 
 // E3a: 講習時間割作成 (timetable-builder) の自動生成を実 Worker 経路で検証。
 //
@@ -25,11 +25,11 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-async function openBuilder(page) {
+async function openBuilder(page, opts) {
   await page.goto("/genekibu-kanri/");
-  // サイドバーから講習時間割作成ビューへ (chord g→b より DOM 依存が少ない)
-  await openSidebarCategory(page, "時間割");
-  await page.getByRole("button", { name: "🧩 講習時間割作成" }).click();
+  // サイドバーから講習時間割作成ビューへ (chord g→b より DOM 依存が少ない)。
+  // まだ無い季節は初期値 (既定の講師マスタ入り project) から始める
+  await openKoshuBuilder(page, opts);
   await expect(
     page.getByRole("button", { name: /自動作成/ }),
   ).toBeVisible({ timeout: 30_000 });
@@ -113,10 +113,11 @@ test("生成中に中止すると Worker が破棄され警告 toast が出る",
       snapshots: [],
       maxIterations: 5000000,
     };
-    localStorage.setItem("builder.schedule_project", JSON.stringify(project));
+    // 講習は季節ごとの時間割 (7 月の日付なので夏期)
+    localStorage.setItem("builder.schedule_project.summer", JSON.stringify(project));
   });
 
-  await openBuilder(page);
+  await openBuilder(page, { season: "summer" });
 
   await page.getByRole("button", { name: /自動作成/ }).click();
 

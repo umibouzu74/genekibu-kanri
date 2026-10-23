@@ -19,6 +19,7 @@
 //   "masterTab" … コースマスター管理のタブへ (tab = MASTER_TAB)
 //   "subsTab"   … 授業管理のタブへ (tab = SUBS_TABS の tab)
 //   "staffTab"  … 講師管理のタブへ (tab = STAFF_TAB)
+//   "koshuSeason" … 講習時間割作成をその季節で開く (season = timetable-builder/utils/seasons)
 
 import { VIEWS } from "./views";
 import { SIDEBAR_MENU } from "./sidebarMenu";
@@ -27,6 +28,7 @@ import { MASTER_TAB, MASTER_TABS } from "./masterTabs";
 import { TIMETABLE_SECTION, TIMETABLE_SECTIONS } from "./timetableSections";
 import { SUBS_TABS } from "./subsTabs";
 import { STAFF_TAB, STAFF_TABS } from "./staffTabs";
+import { KOSHU_SEASONS } from "../timetable-builder/utils/seasons";
 import { VIEW_CHORD_BY_VIEW } from "./chords";
 import { MENU_CATEGORY, menuCategory } from "./menuCategories";
 
@@ -85,6 +87,20 @@ function masterTab(tab, desc) {
 function staffTab(tab, desc) {
   const t = STAFF_TABS.find((x) => x.key === tab);
   return { key: `staff:${tab}`, kind: "staffTab", tab, icon: t.icon, label: t.label, desc };
+}
+
+// 講習時間割作成の季節 (春期 / 夏期 / 冬期)。季節ごとに別の時間割なので、
+// 「講習時間割作成」1 つではなく季節ごとに並べる
+function koshuSeason(season, desc) {
+  const s = KOSHU_SEASONS.find((x) => x.key === season);
+  return {
+    key: `koshu:${season}`,
+    kind: "koshuSeason",
+    season,
+    icon: s.icon,
+    label: `${s.label}の時間割`,
+    desc,
+  };
 }
 
 // 授業管理のタブ (アイコンはタブに無いので、ここで付ける)
@@ -164,7 +180,9 @@ export const MAIN_MENU = Object.freeze([
       masterTab(MASTER_TAB.BIWEEKLY, "隔週コマの A 週・B 週の基準日"),
       masterTab(MASTER_TAB.EXCEL, "曜日ごとの時間割を表で見る"),
       navItem(VIEWS.REGULAR_BUILDER, "次の期の時間割を組んで本体へ反映する"),
-      navItem(VIEWS.BUILDER, "夏期・冬期・春期講習の時間割を組む"),
+      koshuSeason("spring", "講習時間割作成: 3 月末〜4 月頭の講習"),
+      koshuSeason("summer", "講習時間割作成: 7〜8 月の講習"),
+      koshuSeason("winter", "講習時間割作成: 12 月末〜1 月頭の講習"),
     ],
   },
   {

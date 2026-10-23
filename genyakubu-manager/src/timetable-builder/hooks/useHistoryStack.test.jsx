@@ -2,7 +2,11 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useHistoryStack } from './useHistoryStack';
-import { STORAGE_KEY_PROJECT } from '../utils/constants';
+import { seasonStorage } from '../utils/seasons';
+
+// 講習の project は季節ごとのキーに置く。ここでは夏期で検証する
+const STORAGE = seasonStorage('summer');
+const STORAGE_KEY_PROJECT = STORAGE.storageKey;
 
 // useHistoryStack は loadInitialProject 経由で localStorage を読む。
 // 各テストの開始時に localStorage をクリーンにして、デフォルトプロジェクトで
@@ -28,7 +32,7 @@ const makeProject = (id, extra = {}) => ({
 
 describe('useHistoryStack — 基本動作', () => {
   it('初期 state は loadInitialProject の結果 + 履歴 1 件', () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     expect(result.current.project).toBeTruthy();
     expect(result.current.history).toHaveLength(1);
     expect(result.current.historyIndex).toBe(0);
@@ -37,7 +41,7 @@ describe('useHistoryStack — 基本動作', () => {
   });
 
   it('dispatch は安定参照 (re-render 後も同一)', () => {
-    const { result, rerender } = renderHook(() => useHistoryStack());
+    const { result, rerender } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     const d1 = result.current.dispatch;
     rerender();
     expect(result.current.dispatch).toBe(d1);
@@ -46,7 +50,7 @@ describe('useHistoryStack — 基本動作', () => {
 
 describe('useHistoryStack — dispatch による履歴の進行', () => {
   it('project/replace で history に追加され index が進む', () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(1) } }));
     expect(result.current.history).toHaveLength(2);
     expect(result.current.historyIndex).toBe(1);
@@ -54,7 +58,7 @@ describe('useHistoryStack — dispatch による履歴の進行', () => {
   });
 
   it('複数回 dispatch すると履歴が順番に積まれる', () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(1) } }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(2) } }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(3) } }));
@@ -65,7 +69,7 @@ describe('useHistoryStack — dispatch による履歴の進行', () => {
   });
 
   it('MAX_HISTORY (50) を超えると古いものから捨てる', () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => {
       for (let i = 0; i < 50; i++) {
         result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(i) } });
@@ -80,7 +84,7 @@ describe('useHistoryStack — dispatch による履歴の進行', () => {
 
 describe('useHistoryStack — undo / redo', () => {
   it('undo で 1 つ前の state に戻る', () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(1) } }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(2) } }));
     expect(result.current.project.name).toBe('proj-2');
@@ -90,7 +94,7 @@ describe('useHistoryStack — undo / redo', () => {
   });
 
   it('index 0 で undo は no-op', () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     const initial = result.current.project;
     act(() => result.current.undo());
     expect(result.current.project).toBe(initial);
@@ -98,7 +102,7 @@ describe('useHistoryStack — undo / redo', () => {
   });
 
   it('undo 後の redo で進める', () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(1) } }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(2) } }));
     act(() => result.current.undo());
@@ -109,7 +113,7 @@ describe('useHistoryStack — undo / redo', () => {
   });
 
   it('history の末尾で redo は no-op', () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(1) } }));
     act(() => result.current.redo());
     expect(result.current.historyIndex).toBe(1);
@@ -119,7 +123,7 @@ describe('useHistoryStack — undo / redo', () => {
 
 describe('useHistoryStack — branch 切り捨て', () => {
   it('undo 後に dispatch すると redo 分岐は切り捨て', () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(1) } }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(2) } }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(3) } }));
@@ -145,13 +149,13 @@ describe('useHistoryStack — LocalStorage 保存 (F2c: 実書き込みの debou
 
   it('初回マウントでは保存しない (loadInitialProject 直後の書き戻しを避ける)', () => {
     expect(localStorage.getItem(STORAGE_KEY_PROJECT)).toBeNull();
-    renderHook(() => useHistoryStack());
+    renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => vi.advanceTimersByTime(1000));
     expect(localStorage.getItem(STORAGE_KEY_PROJECT)).toBeNull();
   });
 
   it('dispatch 後、debounce 経過で localStorage に保存される', () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(1) } }));
     // debounce 中はまだ書き込まれない
     expect(localStorage.getItem(STORAGE_KEY_PROJECT)).toBeNull();
@@ -162,7 +166,7 @@ describe('useHistoryStack — LocalStorage 保存 (F2c: 実書き込みの debou
 
   it('連続 dispatch は 1 回の書き込みにまとまり、最後の project が保存される', () => {
     const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(1) } }));
     act(() => vi.advanceTimersByTime(300));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(2) } }));
@@ -176,14 +180,14 @@ describe('useHistoryStack — LocalStorage 保存 (F2c: 実書き込みの debou
   });
 
   it('debounce 確定前にアンマウントしても未保存分が flush される', () => {
-    const { result, unmount } = renderHook(() => useHistoryStack());
+    const { result, unmount } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(7) } }));
     unmount();
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY_PROJECT)).name).toBe('proj-7');
   });
 
   it('pagehide (タブ閉じ/リロード) で未保存分が flush される', () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(8) } }));
     act(() => { window.dispatchEvent(new Event('pagehide')); });
     expect(JSON.parse(localStorage.getItem(STORAGE_KEY_PROJECT)).name).toBe('proj-8');
@@ -195,10 +199,65 @@ describe('useHistoryStack — LocalStorage 保存 (F2c: 実書き込みの debou
   });
 
   it('保存中の saveStatus が「💾 保存中...」→ debounce 後「✅ 保存済」に遷移する', () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(1) } }));
     expect(result.current.saveStatus).toBe('💾 保存中...');
     act(() => vi.advanceTimersByTime(800));
     expect(result.current.saveStatus).toBe('✅ 保存済');
   });
 });
+
+describe('useHistoryStack — 季節ごとの保存先と initialProject (2026-10-23)', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  const full = (name) => ({
+    version: 4,
+    name,
+    createdAt: '2026-10-01T00:00:00.000Z',
+    updatedAt: '2026-10-01T00:00:00.000Z',
+    teachers: [],
+    activeTabId: 1,
+    dates: [],
+    periods: [{ id: 1, label: '1限' }],
+    tabs: [{ id: 1, name: '中3', config: { classes: [{ id: 1, label: 'A' }], subjectCounts: {} }, schedule: {} }],
+    subjects: [],
+    subjectColors: {},
+    combinedGroups: [],
+    externalCounts: {},
+    externalSessions: [],
+    externalSessionPresets: [],
+    snapshots: [],
+  });
+
+  it('initialProject で始め、マウント直後にその季節のキーへ書く (編集しなくても季節が残る)', () => {
+    const onSaved = vi.fn();
+    window.addEventListener('builder:project-saved', onSaved);
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE, initialProject: full('2027 夏期講習') }));
+    window.removeEventListener('builder:project-saved', onSaved);
+    expect(result.current.project.name).toBe('2027 夏期講習');
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY_PROJECT)).name).toBe('2027 夏期講習');
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onSaved.mock.calls[0][0].detail).toEqual({ storageKey: STORAGE_KEY_PROJECT });
+    // 履歴は initialProject 1 つから
+    expect(result.current.history).toHaveLength(1);
+  });
+
+  it('LocalStorage にあっても initialProject を優先する (呼び出し側がこの端末に無いときだけ渡す)', () => {
+    localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(full('前の値')));
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE, initialProject: full('渡した値') }));
+    expect(result.current.project.name).toBe('渡した値');
+  });
+
+  it('別の季節のキーには書かない・読まない', () => {
+    const winter = seasonStorage('winter');
+    localStorage.setItem(winter.storageKey, JSON.stringify(full('冬期')));
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
+    expect(result.current.project.name).not.toBe('冬期');
+    act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject(5) } }));
+    act(() => vi.advanceTimersByTime(800));
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY_PROJECT)).name).toBe('proj-5');
+    expect(JSON.parse(localStorage.getItem(winter.storageKey)).name).toBe('冬期');
+  });
+});
+

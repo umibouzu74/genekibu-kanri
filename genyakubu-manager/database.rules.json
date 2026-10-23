@@ -47,6 +47,9 @@
 
       "builder": {
         "schedule_project": { ".validate": "newData.isString()" },
+        "schedule_project_spring": { ".validate": "newData.isString()" },
+        "schedule_project_summer": { ".validate": "newData.isString()" },
+        "schedule_project_winter": { ".validate": "newData.isString()" },
         "$other": { ".validate": false }
       },
 

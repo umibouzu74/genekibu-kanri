@@ -5,6 +5,7 @@ import { VIEWS } from "./views";
 import { EVENT_SECTIONS } from "./eventKinds";
 import { MASTER_TABS } from "./masterTabs";
 import { TIMETABLE_SECTION, TIMETABLE_SECTIONS } from "./timetableSections";
+import { KOSHU_SEASONS } from "../timetable-builder/utils/seasons";
 
 const allItems = (menu) => menu.flatMap((cat) => cat.items);
 
@@ -26,8 +27,11 @@ describe("MAIN_MENU", () => {
       item.key,
       ...(item.children || []).map((c) => c.key),
     ])
-      // 休講・テスト期間・イベント / コースマスター管理は中のセクション・タブで並べる
-      .filter((k) => ![VIEWS.MENU, VIEWS.DASH, VIEWS.HOLIDAYS, VIEWS.MASTER].includes(k));
+      // 休講・テスト期間・イベント / コースマスター管理は中のセクション・タブ、
+      // 講習時間割作成は季節で並べる
+      .filter(
+        (k) => ![VIEWS.MENU, VIEWS.DASH, VIEWS.HOLIDAYS, VIEWS.MASTER, VIEWS.BUILDER].includes(k)
+      );
     expect(sidebarKeys.filter((k) => !inMenu.has(k))).toEqual([]);
   });
 
@@ -57,6 +61,18 @@ describe("MAIN_MENU", () => {
     }
     // 時間割管理そのものも残す
     expect(items.some((i) => i.key === `nav:${VIEWS.TIMETABLE}`)).toBe(true);
+  });
+
+  // 講習は季節ごとに別の時間割 (2026-10-23)。「講習時間割作成」1 つではなく
+  // 季節ごとに並べ、名前・アイコンは KOSHU_SEASONS (サイドバーの子項目) と同じ
+  it("講習時間割作成は春期・夏期・冬期の 3 つ", () => {
+    const items = allItems(MAIN_MENU).filter((i) => i.kind === "koshuSeason");
+    expect(items.map((i) => i.season)).toEqual(KOSHU_SEASONS.map((s) => s.key));
+    for (const item of items) {
+      const s = KOSHU_SEASONS.find((x) => x.key === item.season);
+      expect(item).toMatchObject({ icon: s.icon, label: `${s.label}の時間割` });
+    }
+    expect(items.every((i) => menuItemChord(i) === null)).toBe(true);
   });
 
   it("名前・アイコン・権限はサイドバーと同じ", () => {

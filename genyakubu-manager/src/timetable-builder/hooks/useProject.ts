@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from 'react';
-import { useHistoryStack } from './useHistoryStack';
+import { useCallback, useMemo, useState } from 'react';
+import { useHistoryStack, type HistoryStackOptions } from './useHistoryStack';
 import { useJsonIO } from './useJsonIO';
 import { useScheduleActions } from './useScheduleActions';
 import { useSubjectActions } from './useSubjectActions';
@@ -24,7 +24,12 @@ import type { CombinedGroup, DayStatus, GenerationParamKey, Project } from '../t
 //
 // 公開 API は ProjectContext 経由で全コンポーネントから参照されるため、
 // 返り値のキー名・関数シグネチャは安易に変更しない。
-export function useProject() {
+//
+// options.storage = 開いている季節の保存先、options.initialProject = LocalStorage に
+// まだ無い季節の最初の project (useHistoryStack のコメント参照)。
+export function useProject(options: HistoryStackOptions) {
+  // 生存中は最初の保存先を使い続ける (季節を変えると ProjectProvider ごと作り直す)
+  const [storage] = useState(() => options.storage);
   const {
     project,
     dispatch,
@@ -35,7 +40,7 @@ export function useProject() {
     redo,
     loadError,
     syncEvent,
-  } = useHistoryStack();
+  } = useHistoryStack({ storage, initialProject: options.initialProject });
 
   // 派生データ
   const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
@@ -58,7 +63,7 @@ export function useProject() {
     handleResetAll,
     handleLoadJson,
     handleSaveJson,
-  } = useJsonIO({ project, activeTab, dispatch });
+  } = useJsonIO({ project, activeTab, dispatch, storage });
 
   const teacherActions = useTeacherActions(dispatch);
   const subjectActions = useSubjectActions(dispatch);

@@ -29,7 +29,12 @@ vi.mock('../../firebase/config', () => ({
 
 import { onValue, get, set } from 'firebase/database';
 import { useHistoryStack } from './useHistoryStack';
-import { FIREBASE_PROJECT_PATH, CURRENT_PROJECT_VERSION } from '../utils/constants';
+import { CURRENT_PROJECT_VERSION } from '../utils/constants';
+import { seasonStorage } from '../utils/seasons';
+
+// 講習の project は季節ごとのパスに置く。ここでは夏期で検証する
+const STORAGE = seasonStorage('summer');
+const FIREBASE_PROJECT_PATH = STORAGE.firebasePath;
 
 beforeEach(() => {
   localStorage.clear();
@@ -86,7 +91,7 @@ describe('useHistoryStack — Firebase への送信', () => {
   afterEach(() => vi.useRealTimers());
 
   it('dispatch 後の flushSave で JSON 文字列が RTDB パスへ書かれる (初回は get 確認後)', async () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject('p1') } }));
     act(() => vi.advanceTimersByTime(800));
     // 初回送信は get() の完了待ち
@@ -99,14 +104,14 @@ describe('useHistoryStack — Firebase への送信', () => {
     expect(typeof payload).toBe('string');
     expect(JSON.parse(payload).name).toBe('p1');
     // LocalStorage と同じ内容
-    expect(payload).toBe(localStorage.getItem('builder.schedule_project'));
+    expect(payload).toBe(localStorage.getItem(STORAGE.storageKey));
   });
 
   it('get 完了待ちの間の連続 flush は最新 1 件にまとめて送る', async () => {
     // get を手動 resolve にして「確認中」の窓を作る
     let resolveGet;
     get.mockImplementation(() => new Promise((res) => { resolveGet = res; }));
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject('p1') } }));
     act(() => vi.advanceTimersByTime(800));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject('p2') } }));
@@ -120,7 +125,7 @@ describe('useHistoryStack — Firebase への送信', () => {
   });
 
   it('受信適用後の autosave は同じ内容をサーバへ送り返さない (echo 抑制)', async () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     await flushMicrotasks();
     act(() => getServerCallback()({ val: () => JSON.stringify(makeProject('タブレット編集')) }));
     expect(result.current.project.name).toBe('タブレット編集');
@@ -129,13 +134,13 @@ describe('useHistoryStack — Firebase への送信', () => {
     act(() => vi.advanceTimersByTime(800));
     await flushMicrotasks();
     expect(set).not.toHaveBeenCalled();
-    expect(JSON.parse(localStorage.getItem('builder.schedule_project')).name).toBe('タブレット編集');
+    expect(JSON.parse(localStorage.getItem(STORAGE.storageKey)).name).toBe('タブレット編集');
   });
 
   it('初回 get が「新しいスキーマ」を返したら送信せず sync-stale (書込前の上書き防止)', async () => {
     const newer = { ...makeProject('サーバ側が新しい'), version: CURRENT_PROJECT_VERSION + 1 };
     get.mockImplementation(() => Promise.resolve({ val: () => JSON.stringify(newer) }));
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject('p1') } }));
     act(() => vi.advanceTimersByTime(800));
     await flushMicrotasks();
@@ -150,7 +155,7 @@ describe('useHistoryStack — Firebase への送信', () => {
 
   it('初回 get の失敗 (オフライン等) は送信を優先する (fail-open)', async () => {
     get.mockImplementation(() => Promise.reject(new Error('offline')));
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject('p1') } }));
     act(() => vi.advanceTimersByTime(800));
     await flushMicrotasks();
@@ -160,7 +165,7 @@ describe('useHistoryStack — Firebase への送信', () => {
 
 describe('useHistoryStack — サーバからの受信', () => {
   it('サーバが空なら現在の project を seed する (直前の合意値があっても)', async () => {
-    renderHook(() => useHistoryStack());
+    renderHook(() => useHistoryStack({ storage: STORAGE }));
     await flushMicrotasks();
     expect(onValue).toHaveBeenCalledTimes(1);
     act(() => getServerCallback()({ val: () => null }));
@@ -172,8 +177,21 @@ describe('useHistoryStack — サーバからの受信', () => {
     expect(JSON.parse(payload).version).toBe(CURRENT_PROJECT_VERSION);
   });
 
+  it('initialProject で始めた季節は、サーバが空ならその project を seed する', async () => {
+    const initial = { ...makeProject('移した講習'), version: CURRENT_PROJECT_VERSION, dates: [], periods: [], tabs: [{ id: 1, name: 'タブ', config: { classes: [{ id: 1, label: 'A' }], subjectCounts: {} }, schedule: {} }] };
+    renderHook(() => useHistoryStack({ storage: STORAGE, initialProject: initial }));
+    await flushMicrotasks();
+    act(() => getServerCallback()({ val: () => null }));
+    await flushMicrotasks();
+    expect(set).toHaveBeenCalledTimes(1);
+    const [dbRef, payload] = set.mock.calls[0];
+    expect(dbRef.__path).toBe(FIREBASE_PROJECT_PATH);
+    expect(JSON.parse(payload).name).toBe('移した講習');
+    expect(payload).toBe(localStorage.getItem(STORAGE.storageKey));
+  });
+
   it('ノード削除 (再び null) でも再 seed される (echo 抑制に食われない)', async () => {
-    renderHook(() => useHistoryStack());
+    renderHook(() => useHistoryStack({ storage: STORAGE }));
     await flushMicrotasks();
     // 1 回目の seed
     act(() => getServerCallback()({ val: () => null }));
@@ -188,7 +206,7 @@ describe('useHistoryStack — サーバからの受信', () => {
 
   it('seed の権限エラーは toast を出さない (開いただけの閲覧ユーザに警告しない)', async () => {
     set.mockImplementation(() => Promise.reject({ code: 'PERMISSION_DENIED', message: 'denied' }));
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     await flushMicrotasks();
     act(() => getServerCallback()({ val: () => null }));
     await flushMicrotasks();
@@ -197,7 +215,7 @@ describe('useHistoryStack — サーバからの受信', () => {
   });
 
   it('別内容の受信で project が置き換わり、履歴リセット + remote-apply イベント', async () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     await flushMicrotasks();
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject('ローカル編集') } }));
     expect(result.current.history.length).toBe(2);
@@ -218,7 +236,7 @@ describe('useHistoryStack — サーバからの受信', () => {
         { ...makeProject(name).tabs[0], id: 2, name: 'タブ2' },
       ],
     });
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     await flushMicrotasks();
     // ローカルはタブ 2 を表示中
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: twoTabs('ローカル', 2) } }));
@@ -229,7 +247,7 @@ describe('useHistoryStack — サーバからの受信', () => {
   });
 
   it('ローカルと同一内容の受信は何もしない (起動時の正常系)', async () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     await flushMicrotasks();
     const before = result.current.project;
     act(() => getServerCallback()({ val: () => JSON.stringify(before) }));
@@ -238,7 +256,7 @@ describe('useHistoryStack — サーバからの受信', () => {
   });
 
   it('activeTabId だけが違う受信は適用しない (タブ切替を編集として伝播させない)', async () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     await flushMicrotasks();
     const before = result.current.project;
     const remote = { ...JSON.parse(JSON.stringify(before)), activeTabId: 999 };
@@ -249,7 +267,7 @@ describe('useHistoryStack — サーバからの受信', () => {
 
   it('自分が送った JSON の echo は適用しない', async () => {
     vi.useFakeTimers();
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     await flushMicrotasks();
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject('p1') } }));
     act(() => vi.advanceTimersByTime(800));
@@ -264,7 +282,7 @@ describe('useHistoryStack — サーバからの受信', () => {
   });
 
   it('壊れた blob の受信は無視する (ローカル温存)', async () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     await flushMicrotasks();
     const before = result.current.project;
     act(() => getServerCallback()({ val: () => '{broken json' }));
@@ -280,7 +298,7 @@ describe('useHistoryStack — エラーと停止', () => {
   // 以降のテストでは先にサーバ空スナップショットを届けて初回 get 確認を
   // 済ませ、送信を同期的に観察できるようにする (seed は set 1 回消費)。
   async function mountSynced() {
-    const hook = renderHook(() => useHistoryStack());
+    const hook = renderHook(() => useHistoryStack({ storage: STORAGE }));
     await flushMicrotasks();
     act(() => getServerCallback()({ val: () => JSON.stringify(hook.result.current.project) }));
     return hook;
@@ -336,7 +354,7 @@ describe('useHistoryStack — エラーと停止', () => {
   });
 
   it('新しいスキーマ version を受信したら以降の送信を停止する (stale-client)', async () => {
-    const { result } = renderHook(() => useHistoryStack());
+    const { result } = renderHook(() => useHistoryStack({ storage: STORAGE }));
     await flushMicrotasks();
     const newer = { ...makeProject('新スキーマ'), version: CURRENT_PROJECT_VERSION + 1 };
     act(() => getServerCallback()({ val: () => JSON.stringify(newer) }));
@@ -348,7 +366,7 @@ describe('useHistoryStack — エラーと停止', () => {
     act(() => result.current.dispatch({ type: 'project/replace', payload: { project: makeProject('ローカル編集') } }));
     act(() => vi.advanceTimersByTime(800));
     await flushMicrotasks();
-    expect(JSON.parse(localStorage.getItem('builder.schedule_project')).name).toBe('ローカル編集');
+    expect(JSON.parse(localStorage.getItem(STORAGE.storageKey)).name).toBe('ローカル編集');
     expect(set).not.toHaveBeenCalled();
   });
 });

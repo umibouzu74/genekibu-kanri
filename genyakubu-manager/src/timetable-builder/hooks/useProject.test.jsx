@@ -2,7 +2,11 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { useProject } from './useProject';
-import { STORAGE_KEY_PROJECT } from '../utils/constants';
+import { seasonStorage } from '../utils/seasons';
+
+// 講習の project は季節ごとのキーに置く。ここでは夏期で検証する
+const STORAGE = seasonStorage('summer');
+const STORAGE_KEY_PROJECT = STORAGE.storageKey;
 import { makeKey, makeExternalKey, makeNgKey } from '../utils/scheduleKey';
 
 // 各テストの初期 project を localStorage に流し込んでから renderHook する。
@@ -36,7 +40,7 @@ function setupHook(override = {}) {
     ...override,
   };
   localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(baseProject));
-  return renderHook(() => useProject());
+  return renderHook(() => useProject({ storage: STORAGE }));
 }
 
 beforeEach(() => localStorage.clear());

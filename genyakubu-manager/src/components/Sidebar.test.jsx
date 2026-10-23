@@ -121,6 +121,40 @@ describe("Sidebar のコースマスター管理のタブ", () => {
   });
 });
 
+// 講習は春期・夏期・冬期で別の時間割 (2026-10-23)
+describe("Sidebar の講習時間割作成の季節", () => {
+  it("開いている間だけ季節を並べ、今の季節を示し、クリックで季節を通知する", () => {
+    renderSidebar();
+    expect(screen.queryByRole("button", { name: /冬期講習/ })).toBeNull();
+
+    cleanup();
+    const onSelectKoshuSeason = vi.fn();
+    renderSidebar({ view: VIEWS.BUILDER, koshuSeason: "winter", onSelectKoshuSeason });
+    expect(screen.getByRole("button", { name: /春期講習/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /冬期講習/ }).getAttribute("aria-current")).toBe("true");
+    expect(screen.getByRole("button", { name: /夏期講習/ }).getAttribute("aria-current")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /夏期講習/ }));
+    expect(onSelectKoshuSeason).toHaveBeenCalledWith("summer");
+  });
+
+  it("開いた画面は子項目ごと見える所へスクロールする (メニュー欄の下に隠さない)", () => {
+    const scrolled = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function () {
+      scrolled.push(this);
+    };
+    try {
+      renderSidebar({ view: VIEWS.BUILDER, koshuSeason: "winter" });
+      expect(scrolled).toHaveLength(1);
+      // 項目のボタンではなく、子項目 (季節) を含むまとまり
+      expect(scrolled[0].textContent).toContain("講習時間割作成");
+      expect(scrolled[0].textContent).toContain("冬期講習");
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+});
+
 // 時間割管理はカードが縦に並ぶ長い画面で、コース別終講日が見つけにくかった (C4)
 describe("Sidebar の時間割管理のセクション", () => {
   it("開いている間だけカードの名前 (コース別終講日) を並べ、クリックでキーを通知する", () => {

@@ -63,15 +63,14 @@ export const DEFAULT_TAB_CONFIG_BASE = {
 
 // --- localStorage キー ---
 // 親アプリ (genyakubu-manager) の LocalStorage と衝突しないよう
-// `builder.` で namespace している。旧スタンドアロン版の
-// `schedule_project` / `winter_schedule_project_v45` も読み込み互換のため
-// 残してあり、見つかれば新キーへ移行する。
-export const STORAGE_KEY_PROJECT = 'builder.schedule_project';
+// `builder.` で namespace している。
+// 講習の project は季節 (春期 / 夏期 / 冬期) ごとに別のキーに置く
+// (utils/seasons.seasonStorage)。STORAGE_KEY_PROJECT_LEGACY は季節に分ける前の
+// 単一 project で、読み込み互換のためだけに残す (日付から季節を推定して
+// その季節へ移す。hooks/useBuilderProjects)。旧スタンドアロン版の
+// `schedule_project` / `winter_schedule_project_v45` (LEGACY_STORAGE_KEYS) も同じ扱い。
+export const STORAGE_KEY_PROJECT_LEGACY = 'builder.schedule_project';
 export const STORAGE_KEY_USER_DEFAULTS = 'builder.schedule_user_defaults';
-// 読込失敗 (JSON 壊れ / 構造不正 / migration throw) 時に元データを退避する
-// 先 (F2f)。デフォルトへフォールバック後の最初の autosave が
-// STORAGE_KEY_PROJECT を上書きしても、こちらに原本が残り手動復旧できる。
-export const STORAGE_KEY_PROJECT_BACKUP = 'builder.schedule_project_corrupt';
 // 初回オンボーディングを表示済みかの 1 bit flag。値の存在 ('1') のみを見る
 // ので UI を学習・自動変形するものではない (CLAUDE.md の禁止事項に抵触しない)。
 export const STORAGE_KEY_ONBOARDING_SEEN = 'builder.onboarding_seen';
@@ -88,16 +87,20 @@ export const LEGACY_STORAGE_KEYS = [
   'schedule_project',
   'winter_schedule_project_v45',
 ];
+// 季節に分ける前の単一 project の LocalStorage キー (新しい順)。季節へ移した後は
+// 消す (BuilderApp。同じ project を 2 つ持って保存領域を食わないように)
+export const LEGACY_PROJECT_STORAGE_KEYS = [STORAGE_KEY_PROJECT_LEGACY, ...LEGACY_STORAGE_KEYS];
 
 // --- Firebase 同期先パス (E6a) ---
-// RTDB のキーに '.' は使えないため STORAGE_KEY_PROJECT
-// ('builder.schedule_project') をそのまま流用せず階層パスに読み替える。
-// 親アプリの appData/* と同じツリーに置き、既存の RTDB ルール
-// (.read: auth != null / .write: password provider) をそのまま継承する。
+// 季節ごとのパスは utils/seasons.seasonStorage (appData/builder/schedule_project_<季節>)。
+// これは季節に分ける前の単一 project のパスで、読むだけ (移行元)。書き込まない。
+// RTDB のキーに '.' は使えないため LocalStorage のキー ('builder.schedule_project')
+// をそのまま流用せず階層パスに読み替えている。親アプリの appData/* と同じツリーに
+// 置き、既存の RTDB ルール (.read: auth != null / .write: 管理者) を継承する。
 // 値は project の JSON **文字列**として保存する (オブジェクトのまま置くと
 // RTDB が空配列・空オブジェクトを刈り取り、schedule: {} や ngSlots: [] が
-// 読み戻し時に消えて echo 判定・validate を壊すため)。
-export const FIREBASE_PROJECT_PATH = 'appData/builder/schedule_project';
+// 読み戻し時に消えて echo 判定・validate を壊すため)。季節ごとのパスも同じ。
+export const FIREBASE_PROJECT_PATH_LEGACY = 'appData/builder/schedule_project';
 
 // --- 科目カラー ---
 export const DEFAULT_SUBJECT_COLORS: Record<string, string> = {

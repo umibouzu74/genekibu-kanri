@@ -10,11 +10,15 @@ import {
   DEFAULT_INITIAL_TEACHERS,
   DEFAULT_SUBJECTS,
   DEFAULT_SUBJECT_COLORS,
-  LEGACY_STORAGE_KEYS,
-  STORAGE_KEY_PROJECT,
-  STORAGE_KEY_PROJECT_BACKUP,
+  LEGACY_PROJECT_STORAGE_KEYS,
   STORAGE_KEY_USER_DEFAULTS,
 } from '../utils/constants';
+import { seasonStorage } from '../utils/seasons';
+
+// 講習の project は季節ごとのキーに置く。ここでは夏期で検証する
+const STORAGE = seasonStorage('summer');
+const STORAGE_KEY_PROJECT = STORAGE.storageKey;
+const STORAGE_KEY_PROJECT_BACKUP = STORAGE.backupKey;
 
 beforeEach(() => localStorage.clear());
 afterEach(() => localStorage.clear());
@@ -77,7 +81,7 @@ describe('loadInitialProject — branches', () => {
       subjectColors: {},
     };
     localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(saved));
-    const { project: loaded } = loadInitialProject();
+    const { project: loaded } = loadInitialProject(STORAGE);
     expect(loaded.name).toBe('saved');
     expect(loaded.version).toBe(4);
   });
@@ -104,7 +108,7 @@ describe('loadInitialProject — branches', () => {
       subjectColors: {},
     };
     localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(saved));
-    const { project: loaded } = loadInitialProject();
+    const { project: loaded } = loadInitialProject(STORAGE);
     expect(loaded.name).toBe('v3-saved');
     expect(loaded.version).toBe(4);
     expect(loaded.dates).toEqual([{ id: 1, label: 'x' }]);
@@ -112,7 +116,7 @@ describe('loadInitialProject — branches', () => {
     expect(loaded.tabs[0].config.dates).toBeUndefined();
   });
 
-  it('STORAGE_KEY_PROJECT 不在で legacy schedule_project があれば新キーに移行する', () => {
+  it('読むのはその季節のキーだけ。季節に分ける前のキー・別の季節のキーは読まない', () => {
     const saved = {
       version: 2,
       name: 'legacy-1',
@@ -124,31 +128,14 @@ describe('loadInitialProject — branches', () => {
       subjects: [],
       subjectColors: {},
     };
-    localStorage.setItem(LEGACY_STORAGE_KEYS[0], JSON.stringify(saved));
-    const { project: loaded } = loadInitialProject();
-    expect(loaded.name).toBe('legacy-1');
-    // 旧キーは削除され、新キーへ移行されている
-    expect(localStorage.getItem(LEGACY_STORAGE_KEYS[0])).toBeNull();
-    expect(localStorage.getItem(STORAGE_KEY_PROJECT)).not.toBeNull();
-  });
-
-  it('STORAGE_KEY_PROJECT 不在で legacy winter_schedule_project_v45 があれば新キーに移行する', () => {
-    const saved = {
-      version: 2,
-      name: 'legacy-2',
-      tabs: [{ id: 1, name: 'a', config: { dates: [], periods: [], classes: [], subjectCounts: {} }, schedule: {} }],
-      teachers: [],
-      activeTabId: 1,
-      combinedGroups: [],
-      externalCounts: {},
-      subjects: [],
-      subjectColors: {},
-    };
-    localStorage.setItem(LEGACY_STORAGE_KEYS[1], JSON.stringify(saved));
-    const { project: loaded } = loadInitialProject();
-    expect(loaded.name).toBe('legacy-2');
-    expect(localStorage.getItem(LEGACY_STORAGE_KEYS[1])).toBeNull();
-    expect(localStorage.getItem(STORAGE_KEY_PROJECT)).not.toBeNull();
+    for (const key of LEGACY_PROJECT_STORAGE_KEYS) localStorage.setItem(key, JSON.stringify(saved));
+    localStorage.setItem(seasonStorage('winter').storageKey, JSON.stringify({ ...saved, name: 'winter' }));
+    const { project: loaded } = loadInitialProject(STORAGE);
+    // 既定の project (旧キーの移行は本体の hooks/useBuilderProjects が季節を決めて行う)
+    expect(loaded.name).toBe('');
+    // 旧キーには触らない
+    for (const key of LEGACY_PROJECT_STORAGE_KEYS) expect(localStorage.getItem(key)).not.toBeNull();
+    expect(localStorage.getItem(STORAGE_KEY_PROJECT)).toBeNull();
   });
 
   it('project が無く user defaults があれば string 配列を {id, label} に正規化して createNewProject', () => {
@@ -157,7 +144,7 @@ describe('loadInitialProject — branches', () => {
       teachers: [{ name: 'X', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] }],
     };
     localStorage.setItem(STORAGE_KEY_USER_DEFAULTS, JSON.stringify(defaults));
-    const { project: loaded } = loadInitialProject();
+    const { project: loaded } = loadInitialProject(STORAGE);
     expect(loaded.teachers[0].name).toBe('X');
     expect(loaded.tabs).toHaveLength(1);
     expect(loaded.tabs[0].config.classes).toEqual([{ id: 1, label: 'A' }]);
@@ -174,7 +161,7 @@ describe('loadInitialProject — branches', () => {
       generationParams: { numPatterns: 5, generationSeed: 42, bogusKey: 9, maxDailyHours: 'x' },
     };
     localStorage.setItem(STORAGE_KEY_USER_DEFAULTS, JSON.stringify(defaults));
-    const { project: loaded } = loadInitialProject();
+    const { project: loaded } = loadInitialProject(STORAGE);
     expect(loaded.subjects).toEqual(['情報', '小論文']);
     expect(loaded.subjectColors).toEqual({ '情報': '#123456' });
     expect(loaded.numPatterns).toBe(5);
@@ -190,7 +177,7 @@ describe('loadInitialProject — branches', () => {
       teachers: [{ name: 'X', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] }],
     };
     localStorage.setItem(STORAGE_KEY_USER_DEFAULTS, JSON.stringify(defaults));
-    const { project: loaded } = loadInitialProject();
+    const { project: loaded } = loadInitialProject(STORAGE);
     expect(Array.isArray(loaded.subjects)).toBe(true);
     expect(loaded.subjects.length).toBeGreaterThan(0);
   });
@@ -201,13 +188,13 @@ describe('loadInitialProject — branches', () => {
       teachers: [{ name: 'Y', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] }],
     };
     localStorage.setItem('schedule_user_defaults', JSON.stringify(defaults));
-    const { project: loaded } = loadInitialProject();
+    const { project: loaded } = loadInitialProject(STORAGE);
     expect(loaded.teachers[0].name).toBe('Y');
     expect(loaded.tabs[0].config.classes).toEqual([{ id: 1, label: 'L' }]);
   });
 
   it('全部空ならデフォルトの 2 タブ (中３ / 中１・２) を返す', () => {
-    const { project: loaded } = loadInitialProject();
+    const { project: loaded } = loadInitialProject(STORAGE);
     expect(loaded.tabs).toHaveLength(2);
     expect(loaded.tabs[0].name).toBe('中３');
     expect(loaded.tabs[1].name).toBe('中１・２');
@@ -215,7 +202,7 @@ describe('loadInitialProject — branches', () => {
 
   it('壊れた JSON は読み込み失敗して fallback default + loadError を返す', () => {
     localStorage.setItem(STORAGE_KEY_PROJECT, '{not-json');
-    const { project: loaded, loadError } = loadInitialProject();
+    const { project: loaded, loadError } = loadInitialProject(STORAGE);
     // 例外が外に出ず、フォールバックの 2 タブが返る
     expect(loaded.tabs).toHaveLength(2);
     // loadError に説明文が入る (UI 層で toast 通知用)
@@ -225,7 +212,7 @@ describe('loadInitialProject — branches', () => {
 
   it('構造が壊れた JSON (tabs が配列でない) は fallback + loadError (E3d)', () => {
     localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify({ version: 3, tabs: 'oops', teachers: [] }));
-    const { project: loaded, loadError } = loadInitialProject();
+    const { project: loaded, loadError } = loadInitialProject(STORAGE);
     expect(loaded.tabs).toHaveLength(2); // フォールバックの 2 タブ
     expect(loadError).toBeTruthy();
     expect(loadError).toContain('構造');
@@ -237,7 +224,7 @@ describe('loadInitialProject — branches', () => {
       tabs: [{ id: 1, name: 'a', config: { dates: 'x', periods: [], classes: [], subjectCounts: {} }, schedule: {} }],
     };
     localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(broken));
-    const { loadError } = loadInitialProject();
+    const { loadError } = loadInitialProject(STORAGE);
     expect(loadError).toBeTruthy();
   });
 
@@ -248,7 +235,7 @@ describe('loadInitialProject — branches', () => {
       teachers: [], activeTabId: 1, combinedGroups: [], externalCounts: {}, subjects: [], subjectColors: {},
     };
     localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(saved));
-    const { loadError } = loadInitialProject();
+    const { loadError } = loadInitialProject(STORAGE);
     expect(loadError).toBeNull();
   });
 
@@ -261,7 +248,7 @@ describe('loadInitialProject — branches', () => {
       activeTabId: 1,
     };
     localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(legacy));
-    const { project: loaded } = loadInitialProject();
+    const { project: loaded } = loadInitialProject(STORAGE);
     expect(loaded.version).toBe(4);
     // v4: dates / periods は project レベル、classes は tab.config
     expect(loaded.dates).toEqual([{ id: 1, label: '12/25' }]);
@@ -326,7 +313,7 @@ describe('detectTeacherDiffs', () => {
 describe('loadInitialProject — 壊れたデータの退避 (F2f)', () => {
   it('壊れた JSON はフォールバック前に退避キーへ原本コピーされる', () => {
     localStorage.setItem(STORAGE_KEY_PROJECT, '{invalid json!');
-    const { loadError } = loadInitialProject();
+    const { loadError } = loadInitialProject(STORAGE);
     expect(localStorage.getItem(STORAGE_KEY_PROJECT_BACKUP)).toBe('{invalid json!');
     expect(loadError).toContain(STORAGE_KEY_PROJECT_BACKUP);
   });
@@ -334,7 +321,7 @@ describe('loadInitialProject — 壊れたデータの退避 (F2f)', () => {
   it('構造不正 (validate 弾き) でも原本が退避される', () => {
     const bad = JSON.stringify({ version: 4, tabs: 'not-an-array' });
     localStorage.setItem(STORAGE_KEY_PROJECT, bad);
-    const { loadError } = loadInitialProject();
+    const { loadError } = loadInitialProject(STORAGE);
     expect(localStorage.getItem(STORAGE_KEY_PROJECT_BACKUP)).toBe(bad);
     expect(loadError).toBeTruthy();
   });
@@ -347,12 +334,12 @@ describe('loadInitialProject — 壊れたデータの退避 (F2f)', () => {
       activeTabId: 1,
     };
     localStorage.setItem(STORAGE_KEY_PROJECT, JSON.stringify(ok));
-    loadInitialProject();
+    loadInitialProject(STORAGE);
     expect(localStorage.getItem(STORAGE_KEY_PROJECT_BACKUP)).toBeNull();
   });
 
   it('保存データが無いときのフォールバックでは退避キーに触れない', () => {
-    const { loadError } = loadInitialProject();
+    const { loadError } = loadInitialProject(STORAGE);
     expect(loadError).toBeNull();
     expect(localStorage.getItem(STORAGE_KEY_PROJECT_BACKUP)).toBeNull();
   });

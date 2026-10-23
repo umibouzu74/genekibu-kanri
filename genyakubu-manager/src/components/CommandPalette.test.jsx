@@ -67,6 +67,27 @@ describe("CommandPalette", () => {
     expect(screen.getByRole("option", { name: /欠勤組み換え.*ビューに移動/ })).toBeTruthy();
   });
 
+  // 講習は季節ごとの時間割 (2026-10-23)。以前は講習時間割作成・通常時間割作成が
+  // Cmd+K から引けなかった
+  it("「冬期」で講習時間割作成をその季節で開ける。空のときの一覧には並べない", () => {
+    const onSelectKoshuSeason = vi.fn();
+    const fns = renderPalette({ onSelectKoshuSeason });
+    expect(screen.queryByRole("option", { name: /講習時間割作成/ })).toBeNull();
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "冬期" } });
+    fireEvent.click(screen.getByRole("option", { name: /講習時間割作成: 冬期講習/ }));
+    expect(onSelectKoshuSeason).toHaveBeenCalledWith("winter");
+    expect(fns.onClose).toHaveBeenCalled();
+  });
+
+  it("「講習」で 3 季節とも出る / 「通常時間割」で通常時間割作成へ", () => {
+    const { onSelectView } = renderPalette({ onSelectKoshuSeason: vi.fn() });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "講習時間割" } });
+    expect(screen.getAllByRole("option", { name: /講習時間割作成: (春期|夏期|冬期)講習/ })).toHaveLength(3);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "通常時間割" } });
+    fireEvent.click(screen.getByRole("option", { name: /通常時間割作成/ }));
+    expect(onSelectView).toHaveBeenCalledWith(VIEWS.REGULAR_BUILDER);
+  });
+
   it("講師はよみでも当てる (「ふく」で 福江)", () => {
     const { onSelectTeacher } = renderPalette({ teacherKana: { 福江: "ふくえ", 香川: "かがわ" } });
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "ふく" } });

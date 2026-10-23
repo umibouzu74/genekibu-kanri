@@ -14,7 +14,10 @@ import SummaryPanel from './components/SummaryPanel';
 import ContextMenu from './components/ContextMenu';
 import ConfigModal from './components/ConfigModal';
 import OnboardingOverlay from './components/OnboardingOverlay';
-import { STORAGE_KEY_ONBOARDING_SEEN, STORAGE_KEY_VIEW_COMPACT, STORAGE_KEY_VIEW_SUMMARY, resolveGenerationParams, resolveBaseSeed } from './utils/constants';
+import SeasonBar, { type SeasonProjects } from './components/SeasonBar';
+import SeasonStartPanel from './components/SeasonStartPanel';
+import { LEGACY_PROJECT_STORAGE_KEYS, STORAGE_KEY_ONBOARDING_SEEN, STORAGE_KEY_VIEW_COMPACT, STORAGE_KEY_VIEW_SUMMARY, resolveGenerationParams, resolveBaseSeed } from './utils/constants';
+import { defaultKoshuSeason, koshuSeasonDef, seasonStorage, type KoshuSeason } from './utils/seasons';
 import { formatPrintDateJa } from './utils/printHeader';
 import { BUILDER_PRINT_STYLE } from './utils/builderPrintStyle';
 import { countFatalInfeasibilities } from './utils/fixSuggestions';
@@ -29,9 +32,11 @@ import type { GeneratorHandle } from './logic/runGenerator';
 import type { GenerationResult } from './logic/autoGenerator';
 import type { GeneratedPattern } from './components/SummaryPanel';
 import type { BuilderContextMenuState, CellClipboard } from './components/ContextMenu';
+import type { Project } from './types';
 
-function ScheduleApp() {
+function ScheduleApp({ season }: { season: KoshuSeason }) {
   const { project, currentConfig, bulkClearCells, bulkSetLockCells, loadError, analysis, syncEvent } = useProjectContext();
+  const seasonDef = koshuSeasonDef(season);
   const { showToast, showConfirm } = useUI();
   // N2f: undo/redo は「何が戻ったか」の toast + 該当セルスクロール付きで使う
   const { undoWithFeedback: undo, redoWithFeedback: redo } = useUndoRedoFeedback();
@@ -42,12 +47,12 @@ function ScheduleApp() {
   useEffect(() => {
     const base = '時間割作成くん';
     const previousTitle = document.title;
-    document.title = project.name ? `${project.name} - ${base}` : base;
+    document.title = `${project.name || seasonDef.label} - ${base}`;
     return () => {
       // Builder アンマウント時に親アプリの title へ戻す
       document.title = previousTitle;
     };
-  }, [project.name]);
+  }, [project.name, seasonDef.label]);
 
   // 初期マウント時に load error があれば toast で通知 (一度のみ)。
   // 起動時のサイレント失敗を可視化するため。
@@ -100,7 +105,7 @@ function ScheduleApp() {
       lastRemoteApplyToastAtRef.current = now;
       showToast('☁️ 他の端末で保存された時間割を反映しました (この端末の未保存の編集と Undo 履歴は破棄されます)', 'success', 5000);
     } else if (syncEvent.kind === 'sync-auth') {
-      showToast('クラウドへの書込が拒否されました。管理者ログインが必要です (編集はこの端末に保存されていますが、他の端末でクラウドが更新されると失われることがあります)。', 'warning', 8000);
+      showToast('クラウドへの書込が拒否されました。管理者ログインが必要です (編集はこの端末に保存されていますが、他の端末でクラウドが更新されると失われることがあります。管理者でログインしているのに出るときは、Firebase のルールが最新になっているか確かめてください)。', 'warning', 8000);
     } else if (syncEvent.kind === 'sync-stale') {
       showToast('クラウド上の時間割データがこのアプリより新しい形式のため、同期を一時停止しました。ページを再読み込みして最新版に更新してください。', 'warning', 8000);
     } else {
@@ -108,15 +113,17 @@ function ScheduleApp() {
     }
   }, [syncEvent, showToast]);
 
-  // 同一ブラウザで複数タブ開いた時に一度だけ警告 (E6d)。autosave の相互上書き予防。
+  // 同一ブラウザで同じ季節を複数タブ開いた時に一度だけ警告 (E6d)。autosave の
+  // 相互上書き予防。季節ごとに保存先が別なので、別の季節を開いているタブとは競合しない
   useTabPresence(
     useCallback(() => {
       showToast(
-        'このツールを別のタブでも開いています。複数タブで編集すると保存が競合し、変更が失われることがあります。1 つのタブに絞ることをおすすめします。',
+        `${seasonDef.label}を別のタブでも開いています。複数タブで編集すると保存が競合し、変更が失われることがあります。1 つのタブに絞ることをおすすめします。`,
         'warning',
         8000,
       );
-    }, [showToast]),
+    }, [showToast, seasonDef.label]),
+    seasonStorage(season).presenceChannel,
   );
 
   // N2a: セルの複数選択。Ctrl(⌘)+クリックでトグル、Shift+クリックで
@@ -487,14 +494,14 @@ function ScheduleApp() {
           generatedSeed={generatedSeed}
         />
 
-        {showConfig && <ConfigModal onClose={handleCloseConfig} />}
+        {showConfig && <ConfigModal onClose={handleCloseConfig} season={season} />}
 
         {/* L1f: 印刷専用の見出し。Header (プロジェクト名) と TabBar (学年) は
             no-print のため、これが無いと紙面が無記名になり、複数学年を刷った
             ときにどの紙がどの学年か分からない。 */}
         <div className="hidden print:block mb-2" aria-hidden="true">
           <div className="text-lg font-bold text-builder-ink">
-            {(project.name || '講習時間割')}
+            {(project.name || seasonDef.label)}
             {activeTabForPrint ? ` — ${activeTabForPrint.name}` : ''}
           </div>
           <div className="text-xs text-builder-ink-muted">印刷日: {formatPrintDateJa(new Date())}</div>
@@ -537,6 +544,19 @@ function ScheduleApp() {
           </div>
         )}
 
+        {/* 日付がまだ無いタブ (季節を新しく始めた直後など) は表がまっさらになるので、
+            どこで日付を作るかを出す */}
+        {currentConfig.dates.length === 0 && (
+          <div role="status" className="flex flex-wrap items-center gap-2 mb-2 px-3 py-2 bg-builder-warning-soft border border-builder-warning-border rounded no-print text-sm text-builder-ink">
+            <span>📅 「{activeTabForPrint?.name}」にはまだ講習の日付がありません。⚙️ 設定 → 基本設定 の「⚡ 期間から自動生成」で日程を作ってください。</span>
+            <button
+              type="button"
+              onClick={() => setShowConfig(true)}
+              className="px-2 py-1 text-xs font-bold rounded bg-builder-primary text-white hover:bg-builder-primary-hover"
+            >⚙️ 設定を開く</button>
+          </div>
+        )}
+
         <ScheduleTable
           isCompact={isCompact}
           onContextMenu={handleContextMenu}
@@ -557,24 +577,130 @@ function ScheduleApp() {
   );
 }
 
-// 本体 (App.jsx) から読み取り専用のデータを受け取る (他校舎の授業の取り込み・
-// 出勤可能調査のバイト絞り込み用。contexts/hostDataContext)。単体で描くときは空のまま
+// 季節 1 つぶんの作業領域。季節を切り替えると key で作り直す (保存先も変わる)。
+// その季節の project の出どころは開いた時点の状態で決める (開いた後の購読の
+// 変化 = 自分の保存の echo では作り直さない):
+//   - ready   … この端末にあればそれ (loadInitialProject)。無ければクラウドの値
+//   - legacy  … 季節に分ける前の単一 project をこの季節へ移す (この端末の旧キーは
+//               移した後に消す。クラウドの旧ノードは消さない)
+//   - missing … 始め方 (SeasonStartPanel) を出す。選ぶとその project で開く
+//   - loading … クラウドを読めるまで待つ
+// seasonProjects が無い (単体で描く) ときは、この端末の値 (無ければ初期値) で開く
+function SeasonWorkspace({
+  season,
+  seasonProjects,
+  hostData,
+}: {
+  season: KoshuSeason;
+  seasonProjects?: SeasonProjects;
+  hostData: HostData;
+}) {
+  const { showToast } = useUI();
+  const def = koshuSeasonDef(season);
+  const storage = useMemo(() => seasonStorage(season), [season]);
+  const entry = seasonProjects?.[season];
+  const [started, setStarted] = useState<Project | null>(null);
+  const [opened, setOpened] = useState<{ initialProject: Project | null; fromLegacy: boolean } | null>(null);
+
+  // 開ける状態なら、その出どころ。開いたら 1 回だけ opened に控えて以後は変えない
+  const candidate = useMemo(() => {
+    if (started) return { initialProject: started, fromLegacy: false };
+    if (!seasonProjects) return { initialProject: null, fromLegacy: false };
+    if (entry?.status === 'ready') {
+      return { initialProject: hasLocalProject(storage.storageKey) ? null : (entry.project ?? null), fromLegacy: false };
+    }
+    if (entry?.status === 'legacy' && entry.project) return { initialProject: entry.project, fromLegacy: true };
+    return null;
+  }, [started, seasonProjects, entry, storage.storageKey]);
+  const decided = opened ?? candidate;
+  useEffect(() => {
+    if (!opened && candidate) setOpened(candidate);
+  }, [opened, candidate]);
+
+  // 単一 project を移したら知らせ、この端末の旧キーを消す。子 (ProjectProvider) の
+  // effect が先に走るので、ここに来た時点でこの季節のキーは書かれている
+  const fromLegacy = Boolean(opened?.fromLegacy);
+  useEffect(() => {
+    if (!fromLegacy) return;
+    try {
+      if (localStorage.getItem(storage.storageKey) != null) {
+        LEGACY_PROJECT_STORAGE_KEYS.forEach(k => localStorage.removeItem(k));
+      }
+    } catch {
+      // 消せなくても動作には関係ない (次に開いたときも季節のキーを先に読む)
+    }
+    showToast(
+      `これまでの講習時間割を${def.label}として開きました。ほかの講習 (春期・夏期・冬期) は上の切替から別の時間割として作れます`,
+      'success',
+      7000,
+    );
+  }, [fromLegacy, storage.storageKey, def.label, showToast]);
+
+  const handleStart = useCallback((project: Project, message: string) => {
+    setStarted(project);
+    showToast(message, 'success', 7000);
+  }, [showToast]);
+
+  if (!decided) {
+    if (entry?.status === 'missing') {
+      return <SeasonStartPanel season={season} seasonProjects={seasonProjects} onStart={handleStart} />;
+    }
+    return (
+      <div role="status" className="bg-builder-surface p-6 rounded-lg border border-builder-border text-sm text-builder-ink-muted">
+        ☁️ {def.label}の時間割を読み込んでいます… (時間がかかるときはネットワークを確認してください)
+      </div>
+    );
+  }
+  return (
+    <ProjectProvider storage={storage} initialProject={decided.initialProject}>
+      <HostDataContext.Provider value={hostData}>
+        <ScheduleApp season={season} />
+      </HostDataContext.Provider>
+    </ProjectProvider>
+  );
+}
+
+function hasLocalProject(storageKey: string): boolean {
+  try {
+    return localStorage.getItem(storageKey) != null;
+  } catch {
+    return false;
+  }
+}
+
+// 本体 (App.jsx) から受け取るもの:
+// - season / onSeasonChange: 開いている講習の季節 (春期 / 夏期 / 冬期)。App が持つ
+//   (サイドバー・メインメニュー・Cmd+K から季節を指定して開くため)
+// - seasonProjects: 季節ごとの project の状態 (hooks/useBuilderProjects)
+// - 読み取り専用のデータ (他校舎の授業の取り込み・出勤可能調査のバイト絞り込み用。
+//   contexts/hostDataContext)
+// 単体で描くとき (テスト) は季節を自前で持ち、データは空のまま
 export default function BuilderApp({
+  season: seasonProp,
+  onSeasonChange,
+  seasonProjects,
   offsiteLessons = EMPTY_HOST_LIST,
   holidays = EMPTY_HOST_LIST,
   partTimeStaffNames = EMPTY_HOST_NAMES,
-}: Partial<HostData> = {}) {
+}: Partial<HostData> & {
+  season?: KoshuSeason;
+  onSeasonChange?: (season: KoshuSeason) => void;
+  seasonProjects?: SeasonProjects;
+} = {}) {
+  const [ownSeason, setOwnSeason] = useState<KoshuSeason>(() => defaultKoshuSeason());
+  const season = seasonProp ?? ownSeason;
+  const changeSeason = onSeasonChange ?? setOwnSeason;
   const hostData = useMemo(
     () => ({ offsiteLessons, holidays, partTimeStaffNames }),
     [offsiteLessons, holidays, partTimeStaffNames],
   );
   return (
     <UIProvider>
-      <ProjectProvider>
-        <HostDataContext.Provider value={hostData}>
-          <ScheduleApp />
-        </HostDataContext.Provider>
-      </ProjectProvider>
+      {/* koshu-builder: 罫線・ボタンの土台を講習側だけに当てる印 (tailwind.css) */}
+      <div className="font-sans builder-root koshu-builder">
+        <SeasonBar season={season} onSeasonChange={changeSeason} seasonProjects={seasonProjects} />
+        <SeasonWorkspace key={season} season={season} seasonProjects={seasonProjects} hostData={hostData} />
+      </div>
     </UIProvider>
   );
 }

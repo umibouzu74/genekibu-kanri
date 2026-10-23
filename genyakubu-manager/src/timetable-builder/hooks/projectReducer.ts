@@ -150,15 +150,15 @@ export type ProjectAction =
 export const MAX_HISTORY = 50;
 
 // 日付プールから複数日をまとめて削除する共通処理 (dates/removeFromPool と
-// L4b の dates/removeUnusedFromPool が共用)。ラベルベース参照の cascade
-// cleanup を怠ると、同じラベルの日付を後で再追加したときに古い NG・外部
-// コマ数・他学年セッションが silent に復活する (UI の確認文言も「講師不在
+// L4b の dates/removeUnusedFromPool、季節の作り直しの utils/seasonStart が共用)。
+// ラベルベース参照の cascade cleanup を怠ると、同じラベルの日付を後で再追加した
+// ときに古い NG・外部コマ数・他学年セッションが silent に復活する (UI の確認文言も「講師不在
 // /NG から消えます」と約束している)。NG キーは makeNgKey(date, period) =
 // `${date}-${period}`、externalCounts キーは makeExternalKey(date, teacher)。
 // 照合は prefix 一致だが、「8/1」と「8/1-補講」のように一方が他方の prefix
 // になるラベルの巻き添えを避けるため、プール全ラベルの中で最長一致した
 // ものが削除対象のときだけ消す (makeDateKeyDropMatcher)。
-function removeDatesFromPool(project: Project, dateIds: number[]): Project {
+export function removeDatesFromPool(project: Project, dateIds: number[]): Project {
   const pool = project.dates || [];
   const idSet = new Set(dateIds);
   const targets = pool.filter(d => idSet.has(d.id));

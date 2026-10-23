@@ -64,7 +64,10 @@ sequenceDiagram
 
 | パス | 責務 |
 |---|---|
-| `BuilderApp.jsx` | ルート。Provider 構成、自動生成の起動/キャンセル、容量監視・複数タブ検出 |
+| `BuilderApp.jsx` | ルート。季節の切替バー + 季節ごとの作業領域 (`SeasonWorkspace`、§5.1)、Provider 構成、自動生成の起動/キャンセル、容量監視・複数タブ検出 |
+| `components/SeasonBar.tsx` / `SeasonStartPanel.tsx` | 季節 (春期/夏期/冬期) の切替、まだ無い季節の始め方 (§5.1) |
+| `utils/seasons.ts` / `seasonProject.ts` / `seasonStart.ts` | 季節の定義・保存先 (依存なし) / 季節の推定・要約 / 設定だけ写した project (§5.1) |
+| `utils/projectFile.ts` | プロジェクト JSON の読み取り (📂 開く と季節の始め方で共有) |
 | `contexts/` | `ProjectContext` / `UIContext`（value は memo 化して再描画を抑制） |
 | `hooks/projectReducer.js` | 純粋 reducer。30+ action types を 1 箇所に集約 |
 | `hooks/useHistoryStack.js` | reducer ＋ Undo/Redo（最大 50）＋ debounce autosave ＋ Firebase 同期（§5） |
@@ -206,7 +209,7 @@ v1→v4 の migration 実装で確立したパターンを、次に version を�
    上げなくてよい（`snapshots` や生成パラメータがこの方式）。
 4. **失敗時の安全網は退避 + フォールバック**（F2f）。migration 関数自身は
    「解釈できないなら throw」でよい。`loadInitialProject` が catch して
-   原本を `builder.schedule_project_corrupt` へ退避し、default へ
+   原本を季節ごとの退避キー (`builder.schedule_project_corrupt.<季節>`) へ退避し、default へ
    フォールバック + toast で退避先を知らせる。migration 内で無理に
    握りつぶさない。
 5. **ID 参照を変えるときは「旧 ID → ラベル → 新 ID」の 2 段 remap**
@@ -241,7 +244,7 @@ email/password）へ project を同期し、タブレット等の別端末から
 ```mermaid
 sequenceDiagram
   participant A as 端末A useHistoryStack
-  participant FB as RTDB appData/builder/schedule_project
+  participant FB as RTDB appData/builder/schedule_project_<季節>
   participant B as 端末B useHistoryStack
   A->>A: dispatch → debounce (800ms)
   A->>A: flushSave: localStorage.setItem(json)
@@ -255,7 +258,7 @@ sequenceDiagram
   空配列・空オブジェクト（`schedule: {}` / `ngSlots: []` 等）を刈り取り、キー順も
   保存順と変わるため、echo 判定と `validateProjectShape` が壊れる。文字列なら
   LocalStorage と完全に同一のバイト列が往復する。パスに `.` が使えないため
-  `appData/builder/schedule_project`（`constants.FIREBASE_PROJECT_PATH`）。
+  `appData/builder/schedule_project_<季節>`（`utils/seasons.seasonStorage`。§5.1）。
 - **権限は親アプリと同一**（database.rules.json）: 読みは認証済（匿名含む）、
   書きは管理者（password provider）のみ。未ログイン端末の編集はローカルに残り、
   失敗エピソードごとに 1 度だけ toast で知らせる（`sync-auth`。書込が一度
@@ -298,8 +301,8 @@ sequenceDiagram
 - **同期対象は project のみ**。`builder.templates`（テンプレート）と
   `builder.schedule_user_defaults`（デフォルト保存）は端末ローカルのまま
   （JSON 書き出しにテンプレートが同梱されるので移行はそちらで可能）。
-- **読み取り専用の消費者（親アプリ）**: 親アプリも同じノードを
-  `src/hooks/useBuilderProject` で onValue 購読し、講習コマと外部授業
+- **読み取り専用の消費者（親アプリ）**: 親アプリも同じノード (3 季節 + 季節に
+  分ける前の旧ノード) を `src/hooks/useBuilderProjects` で onValue 購読し、講習コマと外部授業
   （externalSessions）を個人月間スケジュール（MonthView）へ「講」/「外」
   カードとして反映する
   （`src/utils/builderLessons` が純関数で変換。書き戻しは一切無い）。
@@ -315,6 +318,46 @@ sequenceDiagram
   （`vi.mock`）で `isConfigured` を立てる。
 
 ---
+
+### 5.1 季節ごとの project（2026-10-23）
+
+講習は毎年 春期・夏期・冬期 の 3 回あるので、project は季節ごとに 1 つずつ持つ
+（以前は 1 つで、夏期の project を冬期に作り替えていた）。
+
+| | LocalStorage | RTDB |
+|---|---|---|
+| 春期 / 夏期 / 冬期 | `builder.schedule_project.<季節>` | `appData/builder/schedule_project_<季節>` |
+| 季節に分ける前（読むだけ） | `builder.schedule_project`（＋旧スタンドアロン版のキー） | `appData/builder/schedule_project` |
+
+```mermaid
+flowchart TD
+  App[親アプリ App.jsx] -->|koshuSeason / setKoshuSeason| BuilderApp
+  App --> UBP[hooks/useBuilderProjects<br/>3 季節 + 旧ノードを購読]
+  UBP --> RSP[utils/builderSeasons<br/>resolveSeasonProjects]
+  RSP -->|季節 → status / project| BuilderApp
+  RSP -->|全季節| Lessons[builderLessons<br/>buildKoshuLessonsForSeasons → 月間の「講」]
+  BuilderApp --> SeasonBar
+  BuilderApp --> WS["SeasonWorkspace (key = 季節)"]
+  WS -->|missing| Start[SeasonStartPanel]
+  WS -->|ready / legacy / 始めた| PP["ProjectProvider<br/>storage = seasonStorage(季節)<br/>initialProject"]
+```
+
+- **季節の状態** (`resolveSeasonProjects`): `ready`（クラウド or この端末にある）/
+  `legacy`（季節の project は無いが、旧ノードの project がこの季節のもの。日付から
+  `inferProjectSeason` で推定）/ `missing` / `loading`（クラウドをまだ読めていない。
+  読めるまで決めない）
+- **出どころは季節を開いた時点で 1 回だけ決める** (`SeasonWorkspace`): この端末に
+  あれば `loadInitialProject`、無ければクラウドの値・旧 project・始め方で選んだ project を
+  `initialProject` として渡す。`useHistoryStack` は `initialProject` で始めたらマウント
+  直後に LocalStorage へ書き、クラウドが空なら購読の seed がそのまま送る（新しい送信
+  経路は作っていない）。旧 project を移したらこの端末の旧キーを消す。旧ノードは消さない
+- **始め方** (`SeasonStartPanel`): ほかの季節の講習 / テンプレートから設定を写す
+  (`utils/seasonStart.buildFreshSeasonProject` — 日付の後始末は
+  `projectReducer.removeDatesFromPool` と同じ cascade) ・ JSON を開く
+  (`utils/projectFile.parseProjectFile`。ヘッダの 📂 開く と共有) ・ 初期値から
+- 同じタブで保存したことは `BUILDER_PROJECT_SAVED_EVENT` で親に知らせる
+  (Firebase 未設定の端末で、月間の「講」と季節の切替バーを追従させるため)
+- 別タブの競合警告 (E6d) のチャネルも季節ごと（別の季節を開いたタブは競合しない）
 
 ## 6. 守るべき設計上の約束
 

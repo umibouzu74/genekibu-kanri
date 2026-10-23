@@ -432,8 +432,57 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   **`courseDates.usedDateLabels` (どれかのタブが使う日) で絞る**。プール全体を
   使うと、前の夏の予備校が翌年 7 月の予定として出る / 講師別 Excel の期間が
   「7/29〜1/7」になる
-- 本体が読むのは現在の講習 project 1 つだけ。夏期の project を冬期に作り替えると
-  夏期の「講」は本体から消える (授業時間の集計は作り替える前に締める)
+- 本体は春期・夏期・冬期の 3 つの project を全部読む (下の「講習時間割作成は季節
+  ごと」)。同じ季節の project を翌年用に作り直すと、前の年のその季節の「講」は本体から
+  消える (授業時間の集計は作り直す前に締める)
+
+## 講習時間割作成は季節ごと (春期 / 夏期 / 冬期、2026-10-23)
+
+講習は毎年 春期・夏期・冬期 の 3 回あるので、project を**季節ごとに 1 つずつ**持つ
+(以前は 1 つだけで、夏期の project を冬期に作り替えていた)。季節の project は翌年の
+同じ季節に作り直して使う。
+
+- **季節の定義・保存先は `timetable-builder/utils/seasons.ts` の 1 か所** (依存なし。
+  本体のサイドバー定義からも import する)。LocalStorage は
+  `builder.schedule_project.<季節>`、RTDB は `appData/builder/schedule_project_<季節>`
+  (JSON 文字列、`database.rules.json` に列挙済み)。**3 季節を 1 つの JSON にまとめない**
+  (編集のたびに 3 季節ぶん送ることになり、旧クライアントの stale-client 検出
+  (version + tabs) も壊れる)
+- builder は季節ごとに `ProjectProvider` を作り直す (`BuilderApp` の `SeasonWorkspace`、
+  key = 季節)。`useHistoryStack({ storage, initialProject })` は**生存中は最初の保存先を
+  使い続ける**。全リセットはその季節のキーだけ、別タブの競合警告も同じ季節だけ
+  (`seasonStorage.presenceChannel`)
+- **季節ごとの状態は `utils/builderSeasons.resolveSeasonProjects` の 1 か所**
+  (ready / legacy / missing / loading)。本体の `hooks/useBuilderProjects` がクラウドと
+  LocalStorage を読んで渡し、講習時間割作成の画面 (開く / 始め方 / 待つ) と講師の月間の
+  「講」(`builderLessons.buildKoshuLessonsForSeasons`、全季節) が同じ決定を使う
+  - **クラウドを読めるまでは loading** (未作成と決めない。先に決めると、クラウドにある
+    季節を「まだありません」と出したり、古い端末のキャッシュを移したりする)
+- **季節に分ける前の単一 project (旧 `builder.schedule_project` /
+  `appData/builder/schedule_project`) は、日付から推定した季節へ移す**
+  (`seasonProject.inferProjectSeason`: タブが使う日の月の多数決 → 名前の春/夏/冬 →
+  最終編集日)。クラウドが使える端末ではクラウドの旧ノードが正 (読めるまで待つ)。
+  移すのはその季節を開いたとき (`initialProject` で始めてすぐ保存 → 空のノードへ seed)。
+  **旧ノードは消さない・書かない** (古い版を開いたままの端末が書くかもしれない)。
+  この端末の旧キーは移した後に消す (同じ project を 2 つ持って保存領域を食わない)
+- **まだ無い季節を開いても既定の project を勝手に作らない**。始め方
+  (`components/SeasonStartPanel`) を出し、人が選んだときだけ作る: ほかの季節の講習 /
+  テンプレートから設定を写す (`utils/seasonStart.buildFreshSeasonProject`) ・ JSON を開く ・
+  初期値から (全リセットと同じ中身)
+- **設定を写す / 次の年度用に作り直す (⚙ 設定 → 基本設定の「🔄 次の◯期講習用に
+  作り直す」) は `buildFreshSeasonProject` の 1 か所**。残すのは講師・学年タブ (クラス・
+  コマ数・使う時限)・科目と色・時限・全日程の合同・プリセット・生成の設定。日付の
+  後始末は `projectReducer.removeDatesFromPool` (日付プールからの削除と同じ cascade) を
+  通し、NG・出勤可能調査の回答・他学年セッション・スナップショットも外す。**日付
+  ラベルを参照するデータを足したら、ここで消えるかを確かめる**
+- 開いたときの季節は**日付で決める** (`defaultKoshuSeason` = 次に来る講習: 1/10 まで冬期・
+  4/10 まで春期・8/31 まで夏期・それ以降冬期)。選んだ季節は App が sessionStorage
+  (`SS.koshuSeason`) に持つ (リロードでは保つ、新しいタブでは日付から)。使用頻度・履歴では
+  決めない (A18)
+- 導線: 講習時間割作成の上の季節の切替バー (`components/SeasonBar`)・サイドバーの子項目
+  (`sections: KOSHU_SEASONS`)・メインメニュー (季節ごとの `koshuSeason` 項目)・Cmd+K
+  (「冬期」などで引ける)。**季節を指定して開く導線は `selectView(VIEWS.BUILDER, () =>
+  setKoshuSeason(...))` を通す**
 
 ## 講習時間割作成の罫線・ボタンの土台 (2026-10-09)
 
@@ -2112,8 +2161,8 @@ RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノ
 - `null` からの localStorage seed は**セッション中 1 回だけ**。値を受け取った
   後の `null` は無視して手元を保つ (再 seed すると端末同士で書き戻し合う)
 - **`useSyncedStorage` を通さずに `appData/*` へ `set()` する経路を足さない**。
-  足すなら同じ encode / decode を通す (講習作成の `builder/schedule_project`
-  は JSON 文字列なので対象外)
+  足すなら同じ encode / decode を通す (講習作成の `builder/schedule_project_<季節>`
+  (と季節に分ける前の `builder/schedule_project`) は JSON 文字列なので対象外)
 - 配列のキーに RTDB がオブジェクト (`{0: …, 2: …}`) を返す場合は decode で
   配列に直す。`migrate` 側でこれを前提にしない
 
@@ -2130,7 +2179,7 @@ RTDB は `[]` / `{}` (子が全部空のオブジェクトも) を書くと**ノ
 だけで、左下の「同期中」は接続 (ソケット) しか見ていなかったので気付けなかった。
 
 - **読み取りの結果は `firebase/cloudState` に集める** (Firebase の SDK に依存しない
-  置き場)。`useSyncedStorage` / `useSyncedStorageRaw` / `useBuilderProject` の onValue は
+  置き場)。`useSyncedStorage` / `useSyncedStorageRaw` / `useBuilderProjects` の onValue は
   成功で `reportCloudRead`、拒否で `reportCloudReadError`、匿名ログインの失敗は
   config が `reportAuthError`。**onValue を張る新しい経路を足すときも報告する**
 - 画面: 左下の `SyncStatus` は拒否があれば「読み込みエラー」、ログイン失敗は
