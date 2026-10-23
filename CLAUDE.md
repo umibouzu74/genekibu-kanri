@@ -876,7 +876,7 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
 - **タブで切り替わる画面**も同じ扱い。開いている間だけタブ名を子項目に出し、
   クリックでそのタブへ切り替える (`Sidebar` の `SectionLinks` を共有)
 
-いま `sections` を持つのは 5 画面。**どれも画面名から辿れない機能が
+いま `sections` を持つのは 6 画面。**どれも画面名から辿れない機能が
 あるのが理由**なので、中身を増やしたら定義側の配列に足すこと:
 
 - **「休講・テスト期間・イベント」** (休講 / テスト期間 / 特別イベント /
@@ -904,6 +904,9 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   (`CohortCutoffEditor` の `expandRequest`)。`adminOnly` のセクション (時刻一括変換) は
   閲覧者の画面に描かれないので、目次・サイドバー・Cmd+K にも出さない。カードを
   足したら配列と画面のアンカーの両方に足す
+- **「授業時間の集計」** (授業時間 / **バイト出勤表**) = タブ切替 (2026-10-23)。定義は
+  `constants/minutesTabs.js` の `MINUTES_TABS` (画面のタブ・サイドバー・メインメニューの
+  `minutesTab`・Cmd+K が共有)。タブは App が持つ (`minutesTab`)
 - **「講習時間割作成」** (🌸 春期講習 / 🌻 夏期講習 / ⛄ 冬期講習) = 季節の切替
   (2026-10-23)。定義は `timetable-builder/utils/seasons.ts` の `KOSHU_SEASONS`
   (画面の上の切替バー・メインメニューの `koshuSeason` 項目・Cmd+K が共有)。季節は
@@ -1770,6 +1773,44 @@ PrintButton (window.print) 系統で足りる (Excel 出力は作らない)。
 - 印刷はトップバーの 🖨 (popup 系統)。操作部は `no-print`。見出し (h2) に期間と
   選択を書いて紙面に載せ、印刷ジョブ名は `data-print-title` (上の「印刷システムの
   二系統」)
+
+## バイト出勤表 (給与用、2026-10-23 実装)
+
+バイトの給与 (出勤日数 × 単価) の月の表。手で作っていた
+`アルバイトコマ数YYYY.M.D-M.D.xlsx` をアプリのデータから出す。授業時間の集計の
+タブ (`constants/minutesTabs` の `MINUTES_TABS`。サイドバーの子項目・メインメニュー・
+Cmd+K「バイト」「出勤」「給与」から直接開く。タブは App が持つ = `minutesTab`、
+sessionStorage `SS.teachingMinutesTab`)。画面 `components/views/PartTimeAttendanceSheet.jsx`、
+数え方 `utils/partTimeAttendance.js`、Excel `utils/partTimeAttendanceExport.js` (dynamic import)。
+
+- **授業は `computeTeachingMinutes` の rows をそのまま使う** (集計画面と同じ結果を
+  親から渡す)。出勤表の側で授業を拾い直さない
+- **出勤日数 = 1 日の「時間の離れたかたまり」の数** (`countDayAttendance`)。開始時刻順に
+  並べ、前の授業の終わりから次の開始までが `gapMinutes` (既定 60 分、ちょうど 60 で別) 以上
+  空いたら別のかたまり。**コマ数は関係ない** (連続 3 コマ = 1、離れた 1 + 1 = 2)。種別が
+  混じっても時刻だけで分ける。既存の「出勤日数」列 (`summarizeTeacherRow().days` = 日付の
+  数) は変えていない — 2 つを混ぜない
+- 「要確認」(数はルールどおり、印だけ): かたまり 3 つ以上 / 時刻の読めない授業 (開始なしは
+  かたまりを作らない。時刻のある授業が無い日は 1。終了なしは開始を終わりとみなす)
+- 合計に含める種別は集計画面と**同じ選択** (`LS.teachingMinutesIncluded`)。締め日は
+  **タブごと** (`LS.partTimeAttendanceClosingDay`、既定 20 日)。タブを切り替えたとき、
+  「◯月分」で見ていたら同じ月をそのタブの締め日で作り直す。バイト出勤表から始めると
+  **締め終わった最新の月分** (`latestClosedPeriodYm`。給与を締めるのは締め日の後)
+- **1 日ずつの手での上書きはこの端末だけ** (`LS.partTimeAttendanceOverrides`、期間キー
+  `開始日_終了日`、新しい方から 12 期間)。appData に書き戻さない (依頼どおり。閲覧者は
+  appData に書けない)。単価・空き時間も端末ごとの表示の好み (A18 とは別物)
+- **閲覧者 (経理) も使う** — 出勤表を出すのは経理のことが多い。サイドバー・メニューの項目に
+  adminOnly を付けない、画面・Excel・🖨 を権限で出し分けない (`mainMenu.test.js` が見ている)
+- 行 = `partTimeStaff` (講師管理のバイト一覧の並び順)。授業の無いバイトも 0 で出す
+- 担当の目安 (「（火H2・水T3）」) は期間中に有効な通常の時間割から (`buildDutyHints`):
+  中学 = T・高校 = H・中学のプレップ = P、学年をドットで。講師は `splitTeacherField` +
+  `biweeklyPartner` (B 週の相手も担当)
+- Excel は手書きの様式: 1 行目 表題・年 (表題がはみ出す分を空けて日付の 8 列目)・単価
+  (1 セル)、2 行目 月、3 行目 日、4 行目 曜日、月の切れ目に空の列。A 列「◯◯ 先生」+
+  改行して担当の目安。**日数 =SUM、金額 =日数 × 単価セル、合計 =SUM の式** (出力後に
+  Excel で直しても合う)。A4 横・幅 1 ページ・1〜4 行目の繰り返し
+- 印刷は 🖨 (popup 系統)。`.pt-attendance-sheet` があると `printStyles` が A4 横 +
+  横スクロール・先頭列固定を外す CSS (`attendancePrintCss`) を入れる
 
 ## 予定表チェック (2026-10-09 実装)
 

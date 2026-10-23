@@ -114,6 +114,25 @@ describe("buildPageRule", () => {
       "@page{size:A4 portrait;margin:12mm 8mm}"
     );
   });
+
+  it("バイト出勤表 (日付が横に並ぶ) も横向き", () => {
+    expect(buildPageRule({ hasMonthView: false, hasAttendanceSheet: true })).toBe(
+      "@page{size:A4 landscape;margin:8mm}"
+    );
+  });
+});
+
+describe("buildPrintStyles — バイト出勤表", () => {
+  it("横 A4 にして、横スクロールと先頭列の固定を外す", () => {
+    const css = buildPrintStyles({ hasTimetableGrid: false, hasMonthView: false, hasAttendanceSheet: true });
+    expect(css).toContain("@page{size:A4 landscape;margin:8mm}");
+    expect(css).toContain(".pt-attendance-scroll{overflow:visible !important}");
+    expect(css).toContain("position:static !important");
+  });
+  it("ほかの画面には入れない", () => {
+    const css = buildPrintStyles({ hasTimetableGrid: false, hasMonthView: false });
+    expect(css).not.toContain(".pt-attendance-sheet");
+  });
 });
 
 describe("buildPrintStyles", () => {

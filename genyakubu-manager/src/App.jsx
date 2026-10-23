@@ -54,6 +54,7 @@ import { LAYOUT } from "./constants/layout";
 import { EVENT_KIND, eventSectionAnchorId } from "./constants/eventKinds";
 import { DEFAULT_MASTER_TAB } from "./constants/masterTabs";
 import { DEFAULT_STAFF_TAB, STAFF_TAB } from "./constants/staffTabs";
+import { normalizeMinutesTab } from "./constants/minutesTabs";
 import { defaultKoshuSeason, isKoshuSeason } from "./timetable-builder/utils/seasons";
 import { fmtDate, fmtDateWeekday } from "./utils/dateHelpers";
 import { sortJa } from "./utils/sortJa";
@@ -481,6 +482,25 @@ export default function App() {
   // 講師管理のタブ。同じく App が持つ (サイドバー / メインメニュー / Cmd+K /
   // 有給・半休の「講師の所属」から直接そのタブを開く)
   const [staffTab, setStaffTab] = useState(DEFAULT_STAFF_TAB);
+  // 授業時間の集計のタブ (授業時間 / バイト出勤表)。サイドバーの子項目・メイン
+  // メニュー・Cmd+K から直接バイト出勤表を開くので App が持つ。リロードしても
+  // 同じタブ (sessionStorage = タブ単位)
+  const [minutesTab, setMinutesTabState] = useState(() => {
+    try {
+      return normalizeMinutesTab(sessionStorage.getItem(SS.teachingMinutesTab));
+    } catch {
+      return normalizeMinutesTab(null);
+    }
+  });
+  const setMinutesTab = useCallback((tab) => {
+    const next = normalizeMinutesTab(tab);
+    setMinutesTabState(next);
+    try {
+      sessionStorage.setItem(SS.teachingMinutesTab, next);
+    } catch {
+      /* 保存できなくてもタブの切替自体は妨げない */
+    }
+  }, []);
   // 講習時間割作成で開いている季節 (春期 / 夏期 / 冬期)。サイドバーの子項目・
   // メインメニュー・Cmd+K から直接その季節を開くので App が持つ。リロードしても
   // 同じ季節 (sessionStorage = タブ単位)、新しいタブでは次に来る講習から
@@ -1108,6 +1128,9 @@ export default function App() {
         case "staffTab":
           selectView(VIEWS.STAFF, () => setStaffTab(item.tab));
           break;
+        case "minutesTab":
+          selectView(VIEWS.MINUTES, () => setMinutesTab(item.tab));
+          break;
         case "koshuSeason":
           selectView(VIEWS.BUILDER, () => setKoshuSeason(item.season));
           break;
@@ -1122,7 +1145,7 @@ export default function App() {
           break;
       }
     },
-    [selectView, openMonthBatch, openTimetableSection]
+    [selectView, openMonthBatch, openTimetableSection, setMinutesTab]
   );
 
   // 月間 (講師選択中) の ← / → / t = 前の月 / 次の月 / 今月。まとめて印刷の
@@ -1195,6 +1218,10 @@ export default function App() {
         staffTab={staffTab}
         onSelectStaffTab={(tabKey) => {
           selectView(VIEWS.STAFF, () => setStaffTab(tabKey));
+        }}
+        minutesTab={minutesTab}
+        onSelectMinutesTab={(tabKey) => {
+          selectView(VIEWS.MINUTES, () => setMinutesTab(tabKey));
         }}
         koshuSeason={koshuSeason}
         onSelectKoshuSeason={(season) => {
@@ -1515,6 +1542,8 @@ export default function App() {
               subjects={subjects}
               teacherKana={teacherKana}
               onSelectTeacher={selectTeacher}
+              tab={minutesTab}
+              onTabChange={setMinutesTab}
             />
           )}
           {view === VIEWS.MASTER && !selected && (
@@ -2381,6 +2410,10 @@ export default function App() {
             }}
             onSelectStaffTab={(tabKey) => {
               selectView(VIEWS.STAFF, () => setStaffTab(tabKey));
+              setCmdPaletteOpen(false);
+            }}
+            onSelectMinutesTab={(tabKey) => {
+              selectView(VIEWS.MINUTES, () => setMinutesTab(tabKey));
               setCmdPaletteOpen(false);
             }}
             onSelectKoshuSeason={(season) => {

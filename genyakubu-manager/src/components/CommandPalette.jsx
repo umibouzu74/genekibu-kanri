@@ -4,6 +4,7 @@ import { EVENT_KIND } from "../constants/eventKinds";
 import { MASTER_TABS } from "../constants/masterTabs";
 import { SUBS_TABS } from "../constants/subsTabs";
 import { STAFF_TABS } from "../constants/staffTabs";
+import { MINUTES_TAB } from "../constants/minutesTabs";
 import { TIMETABLE_SECTIONS } from "../constants/timetableSections";
 import { KOSHU_SEASONS } from "../timetable-builder/utils/seasons";
 import { formatDateRange } from "../utils/dateHelpers";
@@ -44,6 +45,8 @@ export function CommandPalette({
   onSelectTimetableSection,
   // 講師管理のタブ (講師の所属 / 担当教科・よみ など) を名前で開く
   onSelectStaffTab,
+  // 授業時間の集計のタブ (バイト出勤表) を名前で開く
+  onSelectMinutesTab,
   // 講習時間割作成をその季節 (春期 / 夏期 / 冬期) で開く
   onSelectKoshuSeason,
   onOpenDayReschedule,
@@ -432,6 +435,24 @@ export function CommandPalette({
       }
     }
 
+    // 授業時間の集計の「バイト出勤表」。画面名 (授業時間の集計) からは辿り着け
+    // ないので、「バイト」「出勤」「給与」でも引けるようにする。空のときの固定
+    // 一覧には並べない (他の操作を押し出さない)
+    if (onSelectMinutesTab && !empty) {
+      const label = "バイト出勤表 (出勤日数 × 単価・給与用)";
+      if (matchLabel(label)) {
+        hits.push({
+          type: "view",
+          label,
+          detail: "授業時間の集計のタブに移動",
+          action: () => {
+            onSelectMinutesTab(MINUTES_TAB.ATTENDANCE);
+            onClose();
+          },
+        });
+      }
+    }
+
     // 講習時間割作成の季節。「講習」「冬期」などで引ける。空のときの固定一覧には
     // 並べない (3 件で他の操作が押し出される)
     if (onSelectKoshuSeason && !empty) {
@@ -581,6 +602,7 @@ export function CommandPalette({
     onSelectMasterTab,
     onSelectTimetableSection,
     onSelectStaffTab,
+    onSelectMinutesTab,
     onSelectKoshuSeason,
     onOpenDayReschedule,
     onOpenMultiDayAbsence,

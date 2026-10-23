@@ -28,6 +28,7 @@ import { EVENT_SECTIONS } from "./eventKinds";
 import { TIMETABLE_SECTIONS } from "./timetableSections";
 import { MASTER_TABS } from "./masterTabs";
 import { STAFF_TABS } from "./staffTabs";
+import { MINUTES_TABS } from "./minutesTabs";
 import { KOSHU_SEASONS } from "../timetable-builder/utils/seasons";
 import { MENU_CATEGORIES, MENU_CATEGORY } from "./menuCategories";
 
@@ -105,7 +106,16 @@ export const SIDEBAR_MENU = [
 
   // ── 講師・スタッフ ──
   { key: VIEWS.ALL, icon: "📊", label: "全講師一覧", category: C.STAFF },
-  { key: VIEWS.MINUTES, icon: "⏱", label: "授業時間の集計", category: C.STAFF },
+  // 授業時間 / バイト出勤表 (給与用) のタブ。画面名からは「バイト出勤表」に
+  // 辿り着けないので、開いている間だけタブ名を出す (講師管理と同じ)。経理など
+  // 閲覧者も使うので adminOnly にしない (書き込みは端末の localStorage だけ)
+  {
+    key: VIEWS.MINUTES,
+    icon: "⏱",
+    label: "授業時間の集計",
+    sections: MINUTES_TABS,
+    category: C.STAFF,
+  },
   // 講師管理 (旧「バイト管理」)。バイト一覧・講師の所属・担当教科とよみ・
   // 教科マスターのタブ。画面名からは「講師の所属」に辿り着けないので、
   // 開いている間だけタブ名を出す (コースマスター管理と同じ)
