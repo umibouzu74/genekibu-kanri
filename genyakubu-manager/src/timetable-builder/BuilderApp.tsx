@@ -16,8 +16,9 @@ import ConfigModal from './components/ConfigModal';
 import OnboardingOverlay from './components/OnboardingOverlay';
 import SeasonBar, { type SeasonProjects } from './components/SeasonBar';
 import SeasonStartPanel from './components/SeasonStartPanel';
-import { LEGACY_PROJECT_STORAGE_KEYS, STORAGE_KEY_ONBOARDING_SEEN, STORAGE_KEY_VIEW_COMPACT, STORAGE_KEY_VIEW_SUMMARY, resolveGenerationParams, resolveBaseSeed } from './utils/constants';
-import { KOSHU_SEASONS, defaultKoshuSeason, koshuSeasonDef, seasonStorage, type KoshuSeason } from './utils/seasons';
+import { STORAGE_KEY_PROJECT_LEGACY, STORAGE_KEY_ONBOARDING_SEEN, STORAGE_KEY_VIEW_COMPACT, STORAGE_KEY_VIEW_SUMMARY, resolveGenerationParams, resolveBaseSeed } from './utils/constants';
+import { KOSHU_SEASONS, defaultKoshuSeason, koshuSeasonDef, notifyBuilderProjectSaved, seasonStorage, type KoshuSeason } from './utils/seasons';
+import { removeStaleLegacyCopies } from './utils/seasonProject';
 import { formatPrintDateJa } from './utils/printHeader';
 import { BUILDER_PRINT_STYLE } from './utils/builderPrintStyle';
 import { countFatalInfeasibilities } from './utils/fixSuggestions';
@@ -548,8 +549,8 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
             どこで日付を作るかを出す。日付はあるがこのタブで使う日を選んでいないときは
             そう出し分ける */}
         {currentConfig.dates.length === 0 && (
-          <div role="status" className="flex flex-wrap items-center gap-2 mb-2 px-3 py-2 bg-builder-warning-soft border border-builder-warning-border rounded no-print text-sm text-builder-ink">
-            <span>
+          <div className="flex flex-wrap items-center gap-2 mb-2 px-3 py-2 bg-builder-warning-soft border border-builder-warning-border rounded no-print text-sm text-builder-ink">
+            <span role="status">
               {(project.dates || []).length === 0
                 ? <>📅 まだ講習の日付がありません。⚙️ 設定 &gt; 基本設定 の「⚡ 期間から自動生成」で日付を作ってください。</>
                 : <>📅 「{activeTabForPrint?.name}」で使う日が選ばれていません。⚙️ 設定 &gt; 基本設定 の「使う日」で選んでください。</>}
@@ -586,9 +587,10 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
 // その季節の project の出どころは開いた時点の状態で決める (開いた後の購読の
 // 変化 = 自分の保存の echo では作り直さない):
 //   - ready   … この端末にあればそれ (loadInitialProject)。無ければクラウドの値
-//   - legacy  … 季節に分ける前の単一 project をこの季節へ移す (この端末の旧キーは
-//               移した後に消す。クラウドの旧ノードは消さない)
-//   - missing … 始め方 (SeasonStartPanel) を出す。選ぶとその project で開く
+//   - legacy  … 季節に分ける前の単一 project をこの季節へ移す (この端末の旧キーは、
+//               移した project より新しくなければ消す。クラウドの旧ノードは消さない)
+//   - missing … 始め方 (SeasonStartPanel) を出す。選ぶとその project で開く。この端末に
+//               使われなかった旧キー (この季節のもの) があれば、それから始めることもできる
 //   - loading … クラウドを読めるまで待つ。長く読めない (オフライン) ときは、この端末に
 //               残っている季節に分ける前の project を人が選べば開ける (localFallback)
 // どの状態でも、この端末にその季節のキーがあればそれを開く (別のタブで先に移した /
@@ -611,6 +613,8 @@ function SeasonWorkspace({
   // オフラインで、この端末に残っている控えから始めると人が選んだ project
   const [fallback, setFallback] = useState<Project | null>(null);
   const [opened, setOpened] = useState<{ initialProject: Project | null; fromLegacy: boolean } | null>(null);
+  // 始め方を出したか (人が選ぶ前に別のタブ・ほかの端末でこの季節ができて開いたら知らせる)
+  const shownStartRef = useRef(false);
 
   // 開ける状態なら、その出どころ。開いたら 1 回だけ opened に控えて以後は変えない
   const candidate = useMemo(() => {
@@ -623,20 +627,22 @@ function SeasonWorkspace({
   }, [started, fallback, seasonProjects, entry, storage.storageKey]);
   const decided = opened ?? candidate;
   useEffect(() => {
-    if (!opened && candidate) setOpened(candidate);
-  }, [opened, candidate]);
+    if (opened || !candidate) return;
+    setOpened(candidate);
+    if (shownStartRef.current && !started && !fallback) {
+      showToast(`${def.label}は別のタブかほかの端末で作られたので、その時間割を開きました`, 'warning', 7000);
+    }
+  }, [opened, candidate, started, fallback, def.label, showToast]);
 
-  // 単一 project を移したら知らせ、この端末の旧キーを消す。子 (ProjectProvider) の
+  // 単一 project を移したら知らせ、この端末の旧キーのうち移した project より新しくない
+  // ものを消す (新しい控え = クラウドに届かなかった編集は残す)。子 (ProjectProvider) の
   // effect が先に走るので、ここに来た時点でこの季節のキーは書かれている
-  const fromLegacy = Boolean(opened?.fromLegacy);
+  const legacyReference = opened?.fromLegacy ? opened.initialProject : null;
   useEffect(() => {
-    if (!fromLegacy) return;
-    try {
-      if (localStorage.getItem(storage.storageKey) != null) {
-        LEGACY_PROJECT_STORAGE_KEYS.forEach(k => localStorage.removeItem(k));
-      }
-    } catch {
-      // 消せなくても動作には関係ない (次に開いたときも季節のキーを先に読む)
+    if (!legacyReference) return;
+    if (hasLocalProject(storage.storageKey) && removeStaleLegacyCopies(legacyReference) > 0) {
+      // 本体の購読 (hooks/useBuilderProjects) に旧キーを読み直させる
+      notifyBuilderProjectSaved(STORAGE_KEY_PROJECT_LEGACY);
     }
     const others = KOSHU_SEASONS.filter(s => s.key !== season).map(s => s.label).join('・');
     showToast(
@@ -644,7 +650,7 @@ function SeasonWorkspace({
       'success',
       7000,
     );
-  }, [fromLegacy, storage.storageKey, season, def.label, showToast]);
+  }, [legacyReference, storage.storageKey, season, def.label, showToast]);
 
   const handleStart = useCallback((project: Project, message: string) => {
     // 始め方を選んでいる間に、別のタブがこの季節を作っていたらそちらを開く (上書きしない)
@@ -666,26 +672,42 @@ function SeasonWorkspace({
     return () => clearTimeout(id);
   }, [isLoading]);
 
+  const showingStart = !decided && entry?.status === 'missing';
+  useEffect(() => {
+    if (showingStart) shownStartRef.current = true;
+  }, [showingStart]);
+
   if (!decided) {
+    const localFallback = entry?.localFallback ?? null;
     if (entry?.status === 'missing') {
-      return <SeasonStartPanel season={season} seasonProjects={seasonProjects} onStart={handleStart} />;
+      return (
+        <SeasonStartPanel
+          season={season}
+          seasonProjects={seasonProjects}
+          onStart={handleStart}
+          localFallback={localFallback}
+          onStartFromLocal={() => setFallback(localFallback)}
+        />
+      );
     }
-    const localFallback = entry?.localFallback;
+    // 読み上げの領域 (role="status") は文だけ。ボタンを入れると、出たときにボタンの
+    // 名前や説明まで読み直される
     return (
-      <div role="status" className="bg-builder-surface p-6 rounded-lg border border-builder-border text-sm text-builder-ink-muted space-y-3">
-        <div>☁️ {def.label}の時間割を読み込んでいます…</div>
+      <div className="bg-builder-surface p-6 rounded-lg border border-builder-border text-sm text-builder-ink-muted space-y-3">
+        <div role="status">☁️ {def.label}の時間割を読み込んでいます…</div>
         {slow && (
-          <div className="text-builder-ink">
-            クラウドから読めていません (オフラインかもしれません)。つながると自動で開きます。
+          <div className="text-builder-ink space-y-2">
+            <p role="status">クラウドから読めていません (オフラインかもしれません)。つながると自動で開きます。</p>
             {localFallback && (
-              <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setFallback(localFallback)}
                   className="px-3 py-1.5 text-sm font-bold rounded border border-builder-border bg-builder-surface text-builder-ink hover:bg-builder-surface-alt"
                 >この端末に残っている「{localFallback.name || def.label}」を開く</button>
                 <span className="text-xs text-builder-ink-muted">
-                  この端末に最後に保存した内容です。ほかの端末で新しく直していても、その分は入りません
+                  この端末に最後に保存した内容で始めます。直した内容は、つながったときにクラウドの
+                  {def.label}の時間割を上書きします (ほかの端末で作っていた場合も、こちらの内容になります)
                 </span>
               </div>
             )}
@@ -740,16 +762,18 @@ export default function BuilderApp({
     () => ({ offsiteLessons, holidays, partTimeStaffNames }),
     [offsiteLessons, holidays, partTimeStaffNames],
   );
-  // UIProvider も季節ごとに作り直す (key)。開いたままの確認ダイアログが、季節を
-  // 切り替えた後に前の季節の操作 (リセット・作り直し) を実行しないように
+  // 季節ごとに作り直すのは作業領域だけ (key)。UIProvider も中に入れて作り直すので、
+  // 開いたままの確認ダイアログが、季節を切り替えた後に前の季節の操作 (リセット・
+  // 作り直し) を実行しない。切替バーは作り直さない (押したボタンからフォーカスが
+  // 外れないように。切替バーは useUI を使わない)
   return (
-    <UIProvider key={season}>
-      {/* koshu-builder: 罫線・ボタンの土台を講習側だけに当てる印 (tailwind.css) */}
-      <div className="font-sans builder-root koshu-builder">
-        <SeasonBar season={season} onSeasonChange={changeSeason} seasonProjects={seasonProjects} />
-        <SeasonWorkspace key={season} season={season} seasonProjects={seasonProjects} hostData={hostData} />
-      </div>
-    </UIProvider>
+    // koshu-builder: 罫線・ボタンの土台を講習側だけに当てる印 (tailwind.css)
+    <div className="font-sans builder-root koshu-builder">
+      <SeasonBar season={season} onSeasonChange={changeSeason} seasonProjects={seasonProjects} />
+      <UIProvider key={season}>
+        <SeasonWorkspace season={season} seasonProjects={seasonProjects} hostData={hostData} />
+      </UIProvider>
+    </div>
   );
 }
 

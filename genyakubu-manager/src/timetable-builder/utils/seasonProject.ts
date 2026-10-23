@@ -5,6 +5,7 @@
 // - summarizeSeasonProject: 季節の切替バーに出す名前・期間・コマ数
 
 import { parseDateLabel, projectBaseYmd, resolveDateLabelsYmd, usedDateLabels } from './courseDates';
+import { LEGACY_PROJECT_STORAGE_KEYS } from './constants';
 import { KOSHU_SEASONS, defaultKoshuSeason, seasonOfMonth, type KoshuSeason } from './seasons';
 import type { Project } from '../types';
 
@@ -54,6 +55,35 @@ export function inferProjectSeason(
   const byDate = defaultKoshuSeason(edited);
   if (leaders.length === 0 || leaders.includes(byDate)) return byDate;
   return leaders[0];
+}
+
+/**
+ * この端末に残った季節に分ける前の project (旧キー) のうち、reference (季節へ移した
+ * project / クラウドの旧ノードの project) より新しくないものだけを消す。新しい控え
+ * (= クラウドに届かなかった編集を含みうる。オフラインの編集・管理者でないときの編集)
+ * は残す。新しさは updatedAt で比べ、どちらかに無ければ消さない。消した数を返す
+ */
+export function removeStaleLegacyCopies(
+  reference: Partial<Pick<Project, 'updatedAt'>> | null | undefined,
+  keys: readonly string[] = LEGACY_PROJECT_STORAGE_KEYS,
+): number {
+  const refAt = typeof reference?.updatedAt === 'string' ? reference.updatedAt : null;
+  if (!refAt) return 0;
+  let removed = 0;
+  for (const key of keys) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw == null) continue;
+      const at = JSON.parse(raw)?.updatedAt;
+      if (typeof at === 'string' && at <= refAt) {
+        localStorage.removeItem(key);
+        removed += 1;
+      }
+    } catch {
+      // 読めない控えは残す (手で直せる余地を残す)
+    }
+  }
+  return removed;
 }
 
 export interface SeasonProjectSummary {

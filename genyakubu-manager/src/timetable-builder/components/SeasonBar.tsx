@@ -54,7 +54,8 @@ export default function SeasonBar({
           <button
             key={s.key}
             type="button"
-            aria-pressed={selected}
+            // 3 つのうち 1 つを選ぶもの (押して外すトグルではない) なので aria-current
+            aria-current={selected ? 'true' : undefined}
             aria-label={`${s.label}: ${name}${detail ? ` (${detail})` : ''}`}
             onClick={() => { if (!selected) onSeasonChange?.(s.key); }}
             className={`flex-1 min-w-0 text-left rounded-lg border px-2 sm:px-3 py-2 transition-colors ${

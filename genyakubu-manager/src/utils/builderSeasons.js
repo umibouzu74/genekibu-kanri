@@ -22,8 +22,11 @@
 //     クラウドが使えない端末 (未設定 / 旧ノードが空・読めない) でだけ使う。
 //     クラウドに季節が 1 つでもあれば (= どこかの端末で移行が始まっている)、この端末の
 //     旧キーは使わない (旧ノードが後から空になったとき、古い控えを生き返らせない)
-//   - loading の季節には、この端末の旧キーがその季節のものなら localFallback に付ける
-//     (オフラインで開いたとき、人が選べば手元の控えで始められるように。自動では使わない)
+//     旧ノードが空 / 読めないときは、季節のノードを全部読めるまで決めない (読めた順に
+//     よっては、季節のある端末で古い旧キーを legacy として開いてしまう)
+//   - loading / missing の季節には、この端末の旧キーがその季節のものなら localFallback に
+//     付ける (オフラインで開いたとき・クラウドに季節があって旧キーを使わないときに、人が
+//     選べば手元の控えで始められるように。自動では使わない)
 
 import { KOSHU_SEASONS } from "../timetable-builder/utils/seasons";
 import { inferProjectSeason } from "../timetable-builder/utils/seasonProject";
@@ -41,16 +44,26 @@ import { inferProjectSeason } from "../timetable-builder/utils/seasonProject";
  * @param {{configured: boolean, legacyCloud?: CloudSlot, legacyLocal?: LocalSlot}} args
  * @returns {{pending: boolean, project: object|null}}
  */
-export function resolveLegacyProject({ configured, legacyCloud, legacyLocal, anySeasonInCloud = false }) {
+export function resolveLegacyProject({
+  configured,
+  legacyCloud,
+  legacyLocal,
+  anySeasonInCloud = false,
+  allSeasonsKnown = true,
+}) {
   if (configured) {
     if (legacyCloud?.raw != null) return { pending: false, project: legacyCloud.project ?? null };
     if (!legacyCloud?.received && !legacyCloud?.error) return { pending: true, project: null };
+    // 旧ノードが空 / 読めない: この端末の旧キーを使うかは、季節のノードを全部読んでから
+    if (legacyLocal?.project && !allSeasonsKnown) return { pending: true, project: null };
     if (anySeasonInCloud) return { pending: false, project: null };
   }
   return { pending: false, project: legacyLocal?.project ?? null };
 }
 
 const anySeasonIn = (cloud) => KOSHU_SEASONS.some(({ key }) => cloud?.[key]?.raw != null);
+const allSeasonsKnownIn = (cloud) =>
+  KOSHU_SEASONS.every(({ key }) => cloud?.[key]?.received || cloud?.[key]?.error);
 
 /**
  * クラウドの旧ノードの project が、推定した季節のノードへ移し終わっているか
@@ -87,6 +100,7 @@ export function resolveSeasonProjects({
     legacyCloud,
     legacyLocal,
     anySeasonInCloud: configured && anySeasonIn(cloud),
+    allSeasonsKnown: !configured || allSeasonsKnownIn(cloud),
   });
   const legacySeason = legacy.project ? inferProjectSeason(legacy.project, today) : null;
   const localLegacySeason = legacyLocal?.project ? inferProjectSeason(legacyLocal.project, today) : null;
@@ -111,7 +125,12 @@ export function resolveSeasonProjects({
     } else if (legacySeason === key) {
       out[key] = { status: "legacy", source: "legacy", project: legacy.project };
     } else {
-      out[key] = { status: "missing", source: null, project: null };
+      out[key] = {
+        status: "missing",
+        source: null,
+        project: null,
+        localFallback: localLegacySeason === key ? legacyLocal.project : null,
+      };
     }
   }
   return out;

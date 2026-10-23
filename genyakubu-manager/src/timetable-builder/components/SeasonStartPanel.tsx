@@ -24,11 +24,16 @@ export default function SeasonStartPanel({
   season,
   seasonProjects,
   onStart,
+  localFallback = null,
+  onStartFromLocal,
   today = new Date(),
 }: {
   season: KoshuSeason;
   seasonProjects?: SeasonProjects;
   onStart: (project: Project, message: string) => void;
+  /** この端末にだけ残っている季節に分ける前の project (この季節のもの)。あれば選べる */
+  localFallback?: Project | null;
+  onStartFromLocal?: () => void;
   today?: Date;
 }) {
   const { showToast } = useUI();
@@ -120,6 +125,20 @@ export default function SeasonStartPanel({
           写して始めるとき・初期値から始めるときの名前です (JSON ファイルを開くときはファイルの中の名前のまま)
         </p>
       </div>
+
+      {localFallback && onStartFromLocal && (
+        <div className="mb-5">
+          <h3 className="text-sm font-bold text-builder-ink mb-2">この端末に残っている時間割</h3>
+          <button type="button" className={cardCls} onClick={onStartFromLocal}>
+            <div className="text-sm font-bold text-builder-ink">
+              「{localFallback.name || '(名前なし)'}」を{def.label}として開く
+            </div>
+            <div className="text-xs text-builder-ink-muted">
+              季節に分ける前に、この端末にだけ保存されていた時間割です (クラウドには届いていません)。そのまま開きます
+            </div>
+          </button>
+        </div>
+      )}
 
       {sources.length > 0 && (
         <div className="mb-5">

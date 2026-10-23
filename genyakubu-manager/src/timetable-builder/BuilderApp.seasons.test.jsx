@@ -3,6 +3,7 @@
 // 切替バーの表示、未作成の季節の始め方、季節に分ける前の project の移行を通しで見る。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import BuilderApp from './BuilderApp';
 import { seasonStorage } from './utils/seasons';
 
@@ -54,7 +55,7 @@ describe('BuilderApp の季節', () => {
     const group = screen.getByRole('group', { name: '講習の季節' });
     expect(group.textContent).toContain('2026 夏期講習');
     expect(group.textContent).toContain('2026/7/29〜7/30');
-    expect(screen.getByRole('button', { name: /^冬期講習: まだありません/ }).getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: /^冬期講習: まだありません/ }).getAttribute('aria-current')).toBe('true');
     expect(screen.getByRole('button', { name: /^春期講習: 読み込み中/ })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /^夏期講習:/ }));
     expect(onSeasonChange).toHaveBeenCalledWith('summer');
@@ -184,6 +185,61 @@ describe('BuilderApp の季節', () => {
     rerender(<BuilderApp season="winter" seasonProjects={seasonProjects} />);
     expect(screen.queryByRole('button', { name: 'リセット' })).toBeNull();
     expect(localStorage.getItem(seasonStorage('summer').storageKey)).not.toBeNull();
+  });
+
+  // 2 回目の校正 (2026-10-23)
+  it('季節を切り替えても、押した切替のボタンからフォーカスが外れない', async () => {
+    localStorage.setItem(seasonStorage('summer').storageKey, JSON.stringify(summer));
+    const seasonProjects = {
+      spring: { status: 'missing' },
+      summer: { status: 'ready', source: 'local', project: summer },
+      winter: { status: 'missing' },
+    };
+    function Host() {
+      const [season, setSeason] = useState('summer');
+      return <BuilderApp season={season} onSeasonChange={setSeason} seasonProjects={seasonProjects} />;
+    }
+    render(<Host />);
+    const winter = screen.getByRole('button', { name: /^冬期講習:/ });
+    winter.focus();
+    fireEvent.click(winter);
+    await waitFor(() => expect(screen.getByRole('heading', { name: /冬期講習の時間割はまだありません/ })).toBeTruthy());
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /^冬期講習:/ }));
+  });
+
+  it('クラウドに季節があって使われなかったこの端末の旧データは、始め方から開ける', async () => {
+    localStorage.setItem('builder.schedule_project', JSON.stringify(summer));
+    render(
+      <BuilderApp
+        season="summer"
+        seasonProjects={{ summer: { status: 'missing', localFallback: summer }, winter: { status: 'ready', project: { ...summer, name: '冬期' } } }}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /「2026 夏期講習」を夏期講習として開く/ }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: '2026 夏期講習' })).toBeTruthy());
+    expect(JSON.parse(localStorage.getItem(seasonStorage('summer').storageKey)).name).toBe('2026 夏期講習');
+    // 旧キーは移した project と同じ (新しくない) ので消える
+    await waitFor(() => expect(localStorage.getItem('builder.schedule_project')).toBeNull());
+  });
+
+  it('移した project よりこの端末の旧キーが新しい (クラウドに届かなかった編集) ときは旧キーを残す', async () => {
+    localStorage.setItem('builder.schedule_project', JSON.stringify({ ...summer, updatedAt: '2026-07-20T00:00:00.000Z' }));
+    render(
+      <BuilderApp
+        season="summer"
+        seasonProjects={{ summer: { status: 'legacy', source: 'legacy', project: summer } }}
+      />,
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /自動作成/ })).toBeTruthy());
+    expect(localStorage.getItem('builder.schedule_project')).not.toBeNull();
+  });
+
+  it('始め方を出している間に別のタブ・ほかの端末で季節ができたら、開いて知らせる', async () => {
+    const { rerender } = render(<BuilderApp season="winter" seasonProjects={{ winter: { status: 'missing' } }} />);
+    expect(screen.getByRole('heading', { name: /冬期講習の時間割はまだありません/ })).toBeTruthy();
+    rerender(<BuilderApp season="winter" seasonProjects={{ winter: { status: 'ready', source: 'cloud', project: { ...summer, name: 'ほかの端末の冬期' } } }} />);
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'ほかの端末の冬期' })).toBeTruthy());
+    expect(await screen.findByText(/別のタブかほかの端末で作られた/)).toBeTruthy();
   });
 });
 

@@ -29,7 +29,7 @@ export async function openKoshuBuilder(page, { season } = {}) {
     const button = page.getByRole("group", { name: "講習の季節" }).getByRole("button", {
       name: new RegExp(`^${label}:`),
     });
-    if ((await button.getAttribute("aria-pressed")) !== "true") await button.click();
+    if ((await button.getAttribute("aria-current")) !== "true") await button.click();
   }
   const generate = page.getByRole("button", { name: /自動作成/ });
   const start = page.getByRole("button", { name: "初期値から始める" });

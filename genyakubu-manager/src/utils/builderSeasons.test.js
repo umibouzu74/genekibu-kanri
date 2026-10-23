@@ -180,3 +180,29 @@ describe("isLegacyMigrated", () => {
   });
 });
 
+describe("resolveSeasonProjects — 2 回目の校正 (2026-10-23)", () => {
+  it("旧ノードが空なら、季節のノードを全部読めるまでこの端末の旧キーで決めない", () => {
+    const out = resolveSeasonProjects({
+      configured: true,
+      // 冬期は読めて空、夏期・春期はまだ (夏期に値があるかもしれない)
+      cloud: { winter: received(null) },
+      legacyCloud: received(null),
+      legacyLocal: { exists: true, project: winter },
+      today,
+    });
+    expect(out.winter.status).toBe("loading");
+  });
+
+  it("使われなかったこの端末の旧キーは、その季節の missing に localFallback として付ける", () => {
+    const out = resolveSeasonProjects({
+      configured: true,
+      cloud: { winter: received(null), summer: received(summer), spring: received(null) },
+      legacyCloud: received(null),
+      legacyLocal: { exists: true, project: winter },
+      today,
+    });
+    expect(out.winter).toMatchObject({ status: "missing", localFallback: winter });
+    expect(out.spring).toMatchObject({ status: "missing", localFallback: null });
+  });
+});
+

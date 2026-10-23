@@ -18,6 +18,7 @@ import {
 } from "../timetable-builder/utils/seasons";
 import { parseBuilderProject } from "../utils/builderLessons";
 import { isLegacyMigrated, resolveSeasonProjects } from "../utils/builderSeasons";
+import { removeStaleLegacyCopies } from "../timetable-builder/utils/seasonProject";
 
 const LEGACY = "legacy";
 
@@ -50,7 +51,9 @@ function readLegacyLocal() {
 //   タブが書いたとき (storage イベント) も読み直す。別のタブで先に移した / 作った季節を、
 //   このタブの古い「legacy / missing」のまま開いて上書きしないため
 // - クラウドで移行が済んでいたら (旧ノードの project の季節のノードに値がある)、この端末に
-//   残った旧キーを消す (同じ project を 2 つ持って保存領域を食わない。クラウドには触らない)
+//   残った旧キーのうち、クラウドの旧ノードより新しくないものを消す (同じ project を 2 つ
+//   持って保存領域を食わないように。クラウドに届かなかった編集を含みうる新しい控えは残す。
+//   クラウドには触らない)
 // - 解釈できないペイロード (壊れた JSON / 構造不正 / このクライアントより新しい
 //   スキーマ) は project = null にする (表示はこの端末の値 → それも無ければ出さない)
 //
@@ -100,18 +103,16 @@ export function useBuilderProjects() {
     };
   }, []);
 
-  // クラウドで移行が済んでいたら、この端末に残った旧キーを消す
+  // クラウドで移行が済んでいたら、この端末に残った古い旧キーを消す
   const legacyMigrated = isLegacyMigrated({ cloud, legacyCloud: cloud[LEGACY] });
+  const legacyCloudProject = cloud[LEGACY]?.project ?? null;
   const hasLegacyLocal = Boolean(local[LEGACY]?.exists);
   useEffect(() => {
     if (!legacyMigrated || !hasLegacyLocal) return;
-    try {
-      LEGACY_PROJECT_STORAGE_KEYS.forEach((k) => localStorage.removeItem(k));
-    } catch {
-      return;
+    if (removeStaleLegacyCopies(legacyCloudProject) > 0) {
+      setLocal((prev) => ({ ...prev, [LEGACY]: readLegacyLocal() }));
     }
-    setLocal((prev) => ({ ...prev, [LEGACY]: { exists: false, project: null } }));
-  }, [legacyMigrated, hasLegacyLocal]);
+  }, [legacyMigrated, hasLegacyLocal, legacyCloudProject]);
 
   useEffect(() => {
     if (!isConfigured || !db) return undefined;

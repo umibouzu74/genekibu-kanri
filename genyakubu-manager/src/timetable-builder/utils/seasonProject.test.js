@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { formatSeasonRange, inferProjectSeason, summarizeSeasonProject } from './seasonProject';
+import { formatSeasonRange, inferProjectSeason, removeStaleLegacyCopies, summarizeSeasonProject } from './seasonProject';
 
 const project = (dates, extra = {}) => ({
   version: 4,
@@ -95,3 +96,31 @@ describe('formatSeasonRange', () => {
     expect(formatSeasonRange(null, null)).toBe('');
   });
 });
+
+describe('removeStaleLegacyCopies', () => {
+  const keys = ['builder.schedule_project', 'schedule_project'];
+  const at = (updatedAt) => JSON.stringify({ updatedAt });
+
+  it('reference より新しくない控えだけを消し、新しい控え・読めない控えは残す', () => {
+    localStorage.clear();
+    localStorage.setItem(keys[0], at('2026-08-01T00:00:00.000Z'));
+    localStorage.setItem(keys[1], at('2026-09-01T00:00:00.000Z'));
+    expect(removeStaleLegacyCopies({ updatedAt: '2026-08-01T00:00:00.000Z' }, keys)).toBe(1);
+    expect(localStorage.getItem(keys[0])).toBeNull();
+    expect(localStorage.getItem(keys[1])).not.toBeNull();
+    localStorage.setItem(keys[0], '{壊れた');
+    expect(removeStaleLegacyCopies({ updatedAt: '2026-12-01T00:00:00.000Z' }, keys)).toBe(1);
+    expect(localStorage.getItem(keys[0])).toBe('{壊れた');
+    localStorage.clear();
+  });
+
+  it('reference に updatedAt が無ければ何も消さない', () => {
+    localStorage.clear();
+    localStorage.setItem(keys[0], at('2020-01-01T00:00:00.000Z'));
+    expect(removeStaleLegacyCopies({}, keys)).toBe(0);
+    expect(removeStaleLegacyCopies(null, keys)).toBe(0);
+    expect(localStorage.getItem(keys[0])).not.toBeNull();
+    localStorage.clear();
+  });
+});
+
