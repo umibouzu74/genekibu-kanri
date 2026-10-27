@@ -527,6 +527,52 @@ describe('Toolbar', () => {
   });
 });
 
+describe('Toolbar — NG に当たっている割当の一覧', () => {
+  const NG_ITEMS = [
+    { tabId: 1, tabName: '中３', key: 'd2-p1-c6', dateLabel: '12/26(土)', periodLabel: '1限 (13:00~14:00)', classLabels: ['3C'], subject: '理科', teacher: '滝澤', reasons: ['予備校３限 理科基礎 12:25〜13:35'] },
+    { tabId: 2, tabName: '中1・中2', key: 'd1-p2-c1', dateLabel: '12/25(金)', periodLabel: '2限', classLabels: ['1S'], subject: '英語', teacher: '小松', reasons: ['手動NG'] },
+  ];
+  const ngAnalysis = {
+    ngViolationList: NG_ITEMS,
+    violations: {
+      teacherConflict: { count: 0, firstKey: null },
+      teacherNgAssigned: { count: 1, firstKey: 'd2-p1-c6' },
+      subjectDup: { count: 0, firstKey: null },
+      subjectOver: { count: 0, firstKey: null },
+      teacherOverDaily: { count: 0, items: [] },
+    },
+  };
+
+  it('割当を理由つきで並べ、このタブの行はセルへ、ほかのタブの行はタブを切り替えて飛ぶ', () => {
+    const switchTab = vi.fn();
+    renderToolbar({
+      projectOverrides: {
+        analysis: ngAnalysis,
+        switchTab,
+        project: { snapshots: [], teachers: [], activeTabId: 1 },
+      },
+    });
+    fireEvent.click(screen.getByText(/⚠️ 1件/));
+    expect(screen.getByText('NG に当たっている割当 (1件)')).toBeInTheDocument();
+    expect(screen.getByText('12/26(土) 1限 3C 理科 滝澤')).toBeInTheDocument();
+    expect(screen.getByText('NG: 予備校３限 理科基礎 12:25〜13:35')).toBeInTheDocument();
+    // ほかのタブの行はタブ名つき
+    expect(screen.getByText('中1・中2 12/25(金) 2限 1S 英語 小松')).toBeInTheDocument();
+
+    const el = document.createElement('div');
+    el.id = 'select-2-1-6-cell';
+    document.body.appendChild(el);
+    fireEvent.click(screen.getByRole('button', { name: '12/26(土) 1限 3C 理科 滝澤 のセルへ移動' }));
+    expect(scrollSpy).toHaveBeenCalled();
+    expect(switchTab).not.toHaveBeenCalled();
+    el.remove();
+
+    fireEvent.click(screen.getByText(/⚠️ 1件/));
+    fireEvent.click(screen.getByRole('button', { name: '中1・中2 12/25(金) 2限 1S 英語 小松 のセルへ移動' }));
+    expect(switchTab).toHaveBeenCalledWith(2);
+  });
+});
+
 describe('Toolbar — 講師ハイライト (L2a)', () => {
   it('setHighlightTeacher があれば講師選択 select を表示し、変更で通知する', () => {
     const setHighlightTeacher = vi.fn();

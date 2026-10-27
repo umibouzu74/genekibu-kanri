@@ -175,7 +175,7 @@ export default function ConfigModal({ onClose, season }: { onClose: () => void; 
           ) : configTab === 'colors' ? (
             <SubjectColorSettings />
           ) : configTab === 'absence-ng' ? (
-            <AbsenceNgPanel />
+            <AbsenceNgPanel onCloseModal={onClose} />
           ) : configTab === 'availability' ? (
             <AvailabilityPanel />
           ) : configTab === 'classes' ? (

@@ -405,6 +405,25 @@ describe('AbsenceNgPanel — 他学年セッションの一括登録 (E3e)', () 
     expect(screen.getByLabelText('堀上 を対象に含める')).toBeChecked();
   });
 
+  it('期間の中の日を外すと、その日は登録しない。期間を変えると外した日は戻る', () => {
+    const addExternalSessions = vi.fn();
+    renderPanel({ overrides: { project: makeFullProject(), addExternalSessions } });
+    checkTeacher('堀上');
+    fireEvent.change(screen.getByLabelText('終了日'), { target: { value: '2' } });
+    const chip = screen.getByRole('button', { name: '7/24(金) を登録する' });
+    expect(chip).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(chip);
+    expect(chip).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByText(/登録 1 \/ 2 日/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('他学年セッションとして追加'));
+    expect(addExternalSessions.mock.calls[0][0].map(it => it.date)).toEqual(['7/25(土)']);
+
+    // 期間を変えたら外した日は戻る
+    fireEvent.change(screen.getByLabelText('終了日'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('終了日'), { target: { value: '2' } });
+    expect(screen.getByRole('button', { name: '7/24(金) を登録する' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('講師未選択では追加ボタンが disabled', () => {
     const addExternalSessions = vi.fn();
     renderPanel({ overrides: { project: makeFullProject(), addExternalSessions } });
@@ -808,5 +827,39 @@ describe('AbsenceNgPanel — プリセット改名の登録済みセッション
     expect(updateExternalSessionPreset).toHaveBeenCalledWith(
       1, expect.objectContaining({ name: '予備校2限' }), false,
     );
+  });
+});
+
+describe('AbsenceNgPanel — NG に当たっている割当', () => {
+  it('全タブの割当を並べ、→ で設定を閉じてそのタブのセルへ移る', () => {
+    const onCloseModal = vi.fn();
+    const switchTab = vi.fn();
+    const item = { tabId: 2, tabName: '中３', key: 'd2-p1-c6', dateLabel: '12/26(土)', periodLabel: '1限', classLabels: ['3C'], subject: '理科', teacher: '滝澤', reasons: ['予備校３限 12:25〜13:35'] };
+    const projectValue = {
+      project: { ...makeFullProject(), activeTabId: 1 },
+      handleExternalCountChange: vi.fn(), addExternalSessions: vi.fn(), removeExternalSession: vi.fn(),
+      addExternalSessionPreset: vi.fn(), updateExternalSessionPreset: vi.fn(), removeExternalSessionPreset: vi.fn(),
+      applyPresetMemosToSessions: vi.fn(), toggleTeacherNg: vi.fn(), setNgBatch: vi.fn(),
+      clearAllManualNg: vi.fn(), clearAllNg: vi.fn(), switchTab,
+      analysis: { autoNgByTeacher: new Map(), ngViolationList: [item] },
+    };
+    render(
+      <ProjectContext.Provider value={projectValue}>
+        <UIContext.Provider value={{ showConfirm: vi.fn(), showToast: vi.fn() }}>
+          <AbsenceNgPanel onCloseModal={onCloseModal} />
+        </UIContext.Provider>
+      </ProjectContext.Provider>,
+    );
+    const section = screen.getByRole('region', { name: 'NG に当たっている割当' });
+    expect(section).toHaveTextContent('⚠ NG に当たっている割当 1 件');
+    expect(section).toHaveTextContent('中３ 12/26(土) 1限 3C 理科 滝澤');
+    fireEvent.click(screen.getByRole('button', { name: '中３ 12/26(土) 1限 3C 理科 滝澤 のセルへ移動' }));
+    expect(onCloseModal).toHaveBeenCalled();
+    expect(switchTab).toHaveBeenCalledWith(2);
+  });
+
+  it('当たっている割当が無ければ欄を出さない', () => {
+    renderPanel({ overrides: { project: makeFullProject() } });
+    expect(screen.queryByRole('region', { name: 'NG に当たっている割当' })).toBeNull();
   });
 });

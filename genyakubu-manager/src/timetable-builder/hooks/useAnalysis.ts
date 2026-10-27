@@ -12,6 +12,7 @@ import {
 import { computeAutoNgByTeacher } from '../utils/autoNg';
 import { answeredTeacherNames, computeSurveyDays } from '../utils/availability';
 import { buildFixSuggestions } from '../utils/fixSuggestions';
+import { computeNgViolationList } from '../utils/ngViolations';
 
 const DEFAULT_MAX_DAILY_HOURS = 6;
 
@@ -54,6 +55,15 @@ export function useAnalysis(project: Project, currentSchedule: Schedule, current
       computeSurveyDays({ dates: project.dates, periods: project.periods, tabs: project.tabs }),
     ),
     [project.teachers, project.dates, project.periods, project.tabs],
+  );
+
+  // NG に当たっている割当 (全タブ)。⚠ の内訳と講師不在・NG の一覧に出す
+  const ngViolationList = useMemo(
+    () => computeNgViolationList(
+      { tabs: project.tabs, dates: project.dates, periods: project.periods, teachers: project.teachers },
+      autoNgByTeacher,
+    ),
+    [project.tabs, project.dates, project.periods, project.teachers, autoNgByTeacher],
   );
 
   const activeAnalysis = useMemo(
@@ -118,8 +128,8 @@ export function useAnalysis(project: Project, currentSchedule: Schedule, current
   );
 
   const analysis = useMemo(
-    () => ({ ...activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds, surveyAnsweredTeachers }),
-    [activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds, surveyAnsweredTeachers],
+    () => ({ ...activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds, surveyAnsweredTeachers, ngViolationList }),
+    [activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds, surveyAnsweredTeachers, ngViolationList],
   );
 
   const dashboard = useMemo(

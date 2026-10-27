@@ -47,7 +47,9 @@ export function decodeCsvBytes(buffer: ArrayBuffer): { text: string; encoding: '
 
 const REQUIRED_HEADERS = ['name', 'subjects'];
 
-function parseLine(line: string): string[] {
+// 1 行をフィールドに分ける。delimiter は既定のカンマ (他学年セッションの取り込みは
+// Excel から貼り付けたタブ区切りも受けるので、タブを渡す)。
+export function parseCsvLine(line: string, delimiter = ','): string[] {
   // RFC4180 風: ダブルクォート対応の最小実装。
   // フィールド内に "," を含めたい場合は "..." で囲み、内部の " は "" にエスケープ。
   const fields: string[] = [];
@@ -67,7 +69,7 @@ function parseLine(line: string): string[] {
         cur += ch;
       }
     } else {
-      if (ch === ',') {
+      if (ch === delimiter) {
         fields.push(cur);
         cur = '';
       } else if (ch === '"' && cur === '') {
@@ -132,7 +134,7 @@ export function parseNgCsv(
     return { rows, errors: [{ line: 0, message: '空の入力です' }], unknownTeachers: [], unknownDates: [], unknownPeriods: [] };
   }
 
-  const headerFields = parseLine(lines[0]).map(s => s.trim().toLowerCase());
+  const headerFields = parseCsvLine(lines[0]).map(s => s.trim().toLowerCase());
   // name または teacher のどちらかが必須
   const nameIdx = headerFields.includes('name')
     ? headerFields.indexOf('name')
@@ -160,7 +162,7 @@ export function parseNgCsv(
   for (let i = 1; i < lines.length; i++) {
     const raw = lines[i];
     if (!raw || raw.trim() === '') continue;
-    const fields = parseLine(raw);
+    const fields = parseCsvLine(raw);
     const lineNo = i + 1;
 
     const name = (fields[nameIdx] || '').trim();
@@ -215,7 +217,7 @@ export function parseTeachersCsv(
   }
 
   // ヘッダ行
-  const headerFields = parseLine(lines[0]).map(s => s.trim().toLowerCase());
+  const headerFields = parseCsvLine(lines[0]).map(s => s.trim().toLowerCase());
   for (const required of REQUIRED_HEADERS) {
     if (!headerFields.includes(required)) {
       return {
@@ -233,7 +235,7 @@ export function parseTeachersCsv(
   for (let i = 1; i < lines.length; i++) {
     const raw = lines[i];
     if (!raw || raw.trim() === '') continue;
-    const fields = parseLine(raw);
+    const fields = parseCsvLine(raw);
     const lineNo = i + 1;
 
     const name = (fields[nameIdx] || '').trim();
