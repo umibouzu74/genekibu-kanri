@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CURRENT_SCHEMA_VERSION,
   isBiweeklyAnchor,
+  isCardForget,
   isCutoffGroup,
   isDaySchedule,
   isExamPeriod,
@@ -1171,6 +1172,32 @@ describe("v24 → v25: yobikoEvents (予備校部の予定)", () => {
     expect(v.ok).toBe(false);
     expect(v.path).toBe("yobikoEvents[1]");
     expect(validateExportBundle({ yobikoEvents: {} }).ok).toBe(false);
+  });
+});
+
+describe("v26 → v27: cardForgets (バイトのカード忘れ)", () => {
+  const rec = { id: 1, name: "川井", date: "2026-10-03", missing: "both", inTime: "16:50" };
+
+  it("既定値で埋めない (無ければ現状維持)", () => {
+    const out = migrateExportBundle({ schemaVersion: 26 }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out).not.toHaveProperty("cardForgets");
+  });
+
+  it("isCardForget: 形だけを見る (知らない種類・読めない時刻は読み込みで直すので通す)", () => {
+    expect(isCardForget(rec)).toBe(true);
+    expect(isCardForget({ ...rec, missing: "later", inTime: "夕方" })).toBe(true);
+    expect(isCardForget({ ...rec, name: " " })).toBe(false);
+    expect(isCardForget({ ...rec, date: "10/3" })).toBe(false);
+    expect(isCardForget({ ...rec, id: "1" })).toBe(false);
+    expect(isCardForget({ ...rec, memo: 1 })).toBe(false);
+  });
+
+  it("validateExportBundle は崩れた cardForgets を弾く", () => {
+    expect(validateExportBundle({ cardForgets: [rec] }).ok).toBe(true);
+    const v = validateExportBundle({ cardForgets: [rec, { id: 2 }] });
+    expect(v.ok).toBe(false);
+    expect(v.path).toBe("cardForgets[1]");
   });
 });
 

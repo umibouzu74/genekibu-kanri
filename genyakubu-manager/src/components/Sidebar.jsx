@@ -158,6 +158,8 @@ export function Sidebar({
   onOpenMultiDayAbsence,
   onOpenTestPrep,
   onOpenMonthBatch,
+  // バイトのカード忘れの記録 (管理者だけの項目)
+  onOpenCardForget,
   onSelectEventSection,
   // 時間割管理のセクション (コース別終講日など) へ飛ぶ (constants/timetableSections)
   onSelectTimetableSection,
@@ -359,6 +361,7 @@ export function Sidebar({
                 else if (item.modal === "multiDayAbsence") onOpenMultiDayAbsence?.();
                 else if (item.modal === "testPrep") onOpenTestPrep?.();
                 else if (item.modal === "monthBatch") onOpenMonthBatch?.();
+                else if (item.modal === "cardForget") onOpenCardForget?.();
                 else onOpenDataMgr();
                 onClose?.();
               } else {

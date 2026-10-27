@@ -127,6 +127,7 @@ export const MAIN_MENU = Object.freeze([
     items: [
       navItem(VIEWS.ABSENCE_FLOW, "先生が休む日の代行・合同・移動・振替を、その日の時間割の上で組む"),
       navItem("multi-day-absence", "何日も休むときに、期間 × 先生で欠勤をまとめて登録"),
+      navItem("card-forget", "バイトが出退勤のカードを通し忘れた日を残す (バイト出勤表・月間に印)"),
       navItem(VIEWS.SUBS, "代行の一覧・新規代行・月次集計"),
       subsTab("adjustment", "🔀", "合同・コマ移動・振替・コマ休講の一覧"),
       navItem(VIEWS.CONFIRMED_SUBS, "決まった代行を日付順に (印刷・共有用)"),

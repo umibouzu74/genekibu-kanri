@@ -23,6 +23,9 @@
 //      1 として数える)
 //   5. 1 日ずつ手で上書きできる (その月の表だけ。アプリのデータには書き戻さない)
 //
+// カード忘れ (utils/cardForgets。出退勤のカードを通し忘れた日) はセルと表の下の
+// 一覧に印を出すだけで、出勤日数には関与しない (経理がカードの記録と突き合わせる)。
+//
 // 既存の「出勤日数」(summarizeTeacherRow().days) は日付の数のままにしてある。
 
 import { biweeklyPartner, splitTeacherField } from "./biweekly";
@@ -31,6 +34,7 @@ import { dateToDay, isValidDateStr } from "./dateHelpers";
 import { gradeToDept } from "./scheduleHelpers";
 import { isTimetableActiveForDate } from "./timetable";
 import { MINUTE_KINDS, currentPeriodYm } from "./teachingMinutes";
+import { cardForgetKey, cardForgetsInRange, indexCardForgets } from "./cardForgets";
 
 export const DEFAULT_GAP_MINUTES = 60;
 export const DEFAULT_UNIT_PRICE = 5500;
@@ -231,6 +235,7 @@ export function setAttendanceOverride(store, periodKey, teacher, date, value) {
  * @param {Iterable<string>} [args.included] 合計に含める種別 (既定 = 全種別)
  * @param {Record<string, Record<string, number>>} [args.overrides] 講師名 → 日付 → 手で決めた日数 (この期間のぶん)
  * @param {number} [args.gapMinutes] 別のかたまりにする空き時間 (分)
+ * @param {object[]} [args.cardForgets] カード忘れの記録 (utils/cardForgets。全期間のままでよい)
  */
 export function buildPartTimeAttendanceSheet({
   rows,
@@ -239,14 +244,17 @@ export function buildPartTimeAttendanceSheet({
   included = MINUTE_KINDS,
   overrides = {},
   gapMinutes = DEFAULT_GAP_MINUTES,
+  cardForgets = [],
 } = {}) {
   const inc = included instanceof Set ? included : new Set(included);
   const gap = sanitizeGap(gapMinutes);
   const dateSet = new Set(dates);
   const checks = [];
   const overridden = [];
+  const cardIndex = indexCardForgets(cardForgets);
+  const staffNames = staffNamesOf(staff);
 
-  const sheetRows = staffNamesOf(staff).map((teacher) => {
+  const sheetRows = staffNames.map((teacher) => {
     const byDate = new Map();
     for (const e of rows?.get?.(teacher)?.entries || []) {
       if (!dateSet.has(e.date)) continue;
@@ -276,6 +284,7 @@ export function buildPartTimeAttendanceSheet({
         koma: auto.koma,
         entries: counted,
         excluded,
+        cardForget: cardIndex.get(cardForgetKey(teacher, date)) || null,
       };
       if (cell.needsCheck) checks.push({ teacher, date, flags: auto.flags, units, auto: auto.units });
       if (isOverridden) overridden.push({ teacher, date, units, auto: auto.units });
@@ -285,6 +294,24 @@ export function buildPartTimeAttendanceSheet({
   });
 
   const totalDays = sheetRows.reduce((s, r) => s + r.days, 0);
+
+  // 期間のカード忘れ (日付 → 表の行の順。バイト一覧にいない人の記録も黙って隠さない)
+  const rowIndex = new Map(staffNames.map((n, i) => [n, i]));
+  const rowOf = (n) => (rowIndex.has(n) ? rowIndex.get(n) : staffNames.length);
+  const unitsOf = new Map(
+    sheetRows.flatMap((r) => r.cells.filter((c) => c.cardForget).map((c) => [cardForgetKey(r.teacher, c.date), c.units]))
+  );
+  const cards =
+    dates.length === 0
+      ? []
+      : cardForgetsInRange(cardForgets, dates[0], dates[dates.length - 1], (a, b) => rowOf(a) - rowOf(b))
+          .filter((r) => dateSet.has(r.date))
+          .map((r) => {
+            const key = cardForgetKey(r.name, r.date);
+            const inSheet = unitsOf.has(key);
+            return { ...r, inSheet, units: inSheet ? unitsOf.get(key) : null };
+          });
+
   return {
     dates,
     gapMinutes: gap,
@@ -292,7 +319,20 @@ export function buildPartTimeAttendanceSheet({
     totalDays,
     checks,
     overridden,
+    // { ...記録, inSheet: 表の行にいる人か, units: その日の出勤 (表の行にいなければ null) }
+    cardForgets: cards,
   };
+}
+
+/**
+ * カード忘れの一覧 (sheet.cardForgets の 1 件) に添える注意。経理が突き合わせるときに
+ * 引っかかるもの: 表の行にいない人 / その日の出勤が 0 (授業が拾えていない)。無ければ ""
+ */
+export function cardForgetSheetNote(item) {
+  if (!item) return "";
+  if (!item.inSheet) return "バイト一覧にいない人";
+  if (item.units === 0) return "出勤表ではこの日の出勤 0";
+  return "";
 }
 
 // ─── 担当の目安 (「（火H2・水T3・木T3・金H2）」) ──────────────────────

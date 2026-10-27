@@ -133,6 +133,63 @@ describe("バイト出勤表", () => {
     expect(daysOf("川井")).toBe("8");
   });
 
+  describe("カード忘れ (打刻なし)", () => {
+    const cardForgets = [
+      { id: 1, name: "川井", date: "2026-10-03", missing: "both", inTime: "13:45", outTime: "22:00", memo: "責任者確認" },
+      // 授業の無い日の記録 (出勤 0) は一覧で注意する
+      { id: 2, name: "杉原", date: "2026-10-01", missing: "out" },
+      // 期間の外は出さない
+      { id: 3, name: "川井", date: "2026-10-24", missing: "in" },
+    ];
+
+    it("セルに 💳 と枠、表の下に一覧 (閲覧者も見える。日数は変えない)", () => {
+      renderView({ tab: MINUTES_TAB.ATTENDANCE, cardForgets });
+      const cell = screen.getByRole("button", { name: /^川井 10\/3 \(土\): 出勤 2、カード忘れ: 出勤・退勤の打刻なし/ });
+      expect(cell.textContent).toContain("💳");
+      expect(cell.closest("td").style.outline).toMatch(/2px solid/);
+      expect(daysOf("川井")).toBe("8");
+
+      const list = screen.getByRole("region", { name: "💳 カード忘れ (打刻なし) の記録 — 2 件" });
+      const rows = within(list).getAllByRole("row").slice(1);
+      expect(rows.map((r) => r.textContent)).toEqual([
+        "10/1 (木)杉原退勤だけ—⚠ 出勤表ではこの日の出勤 0",
+        "10/3 (土)川井出勤・退勤出勤 13:45 / 退勤 22:00責任者確認",
+      ]);
+      // 閲覧者には記録・直すボタンを出さない
+      expect(screen.queryByRole("button", { name: "💳 カード忘れを記録" })).toBeNull();
+      expect(within(list).queryByRole("button")).toBeNull();
+    });
+
+    it("記録の無い期間も「ありません」と出す", () => {
+      renderView({ tab: MINUTES_TAB.ATTENDANCE });
+      const list = screen.getByRole("region", { name: "💳 カード忘れ (打刻なし) の記録" });
+      expect(list.textContent).toContain("この期間の記録はありません");
+    });
+
+    it("管理者はツールバー・一覧・セルから記録のダイアログを開ける", () => {
+      const onEditCardForget = vi.fn();
+      renderView({ tab: MINUTES_TAB.ATTENDANCE, cardForgets, onEditCardForget });
+      fireEvent.click(screen.getByRole("button", { name: "💳 カード忘れを記録" }));
+      expect(onEditCardForget).toHaveBeenLastCalledWith({});
+      fireEvent.click(screen.getByRole("button", { name: "10/3 川井 のカード忘れを直す" }));
+      expect(onEditCardForget).toHaveBeenLastCalledWith({ name: "川井", date: "2026-10-03" });
+
+      // 記録のある日のセル: 内容と「直す」
+      fireEvent.click(screen.getByRole("button", { name: /^川井 10\/3 \(土\): 出勤 2/ }));
+      let dialog = screen.getByRole("dialog", { name: /川井 先生 — 10\/3 \(土\)/ });
+      expect(within(dialog).getByText(/💳 カード忘れ: 出勤・退勤の打刻なし \(出勤 13:45 \/ 退勤 22:00\)。責任者確認/)).toBeTruthy();
+      fireEvent.click(within(dialog).getByRole("button", { name: "直す" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+
+      // 記録の無い日のセル: 「この日のカード忘れを記録」
+      fireEvent.click(screen.getByRole("button", { name: /^奥村 10\/3 \(土\): 出勤 1/ }));
+      dialog = screen.getByRole("dialog", { name: /奥村 先生 — 10\/3 \(土\)/ });
+      fireEvent.click(within(dialog).getByRole("button", { name: "💳 この日のカード忘れを記録" }));
+      expect(onEditCardForget).toHaveBeenLastCalledWith({ name: "奥村", date: "2026-10-03" });
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+  });
+
   it("画面には金額・単価を出さない (Excel の書き出しで金額入りを選んだときだけ単価が見える)", () => {
     renderView({ tab: MINUTES_TAB.ATTENDANCE, attendanceSettings: { excelPassword: "12345" } });
     const sheet = document.querySelector(".pt-attendance-sheet");

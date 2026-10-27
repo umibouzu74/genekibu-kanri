@@ -24,6 +24,7 @@ import {
   offsiteStatus,
 } from "../../utils/offsiteLessons";
 import { leaveKindMeta } from "../../utils/staffLeave";
+import { describeCardForget } from "../../utils/cardForgets";
 import { isFullDayHoliday, isGranularHoliday } from "../../utils/scheduleHelpers";
 import { resolveSlotDaySchedule } from "../../utils/daySchedules";
 import { isCancelAdjustment } from "../../utils/slotCancel";
@@ -124,6 +125,40 @@ function LeaveDayChip({ record, onOpen }) {
   );
 }
 
+// 講師の月間の日付の横に出すカード忘れ (出退勤のカードを通し忘れた記録)。画面だけ
+// (紙面・画像には載せない — 月間はバイトへ画像で送り、グループにまとめて送ることも
+// あるので、本人の勤怠の記録を広げない)。経理が見る紙面はバイト出勤表
+function CardForgetDayChip({ record, onOpen }) {
+  const title = `カード忘れ: ${describeCardForget(record)}${onOpen ? "\nクリックで直せます" : ""}`;
+  const style = {
+    fontSize: 9,
+    fontWeight: 800,
+    padding: "0 4px",
+    borderRadius: 3,
+    background: "#fff7ed",
+    color: "#b45309",
+    border: "1px solid #fdba74",
+    lineHeight: 1.4,
+    whiteSpace: "nowrap",
+  };
+  return onOpen ? (
+    <button
+      type="button"
+      className="no-print"
+      onClick={onOpen}
+      title={title}
+      aria-label={`カード忘れ: ${describeCardForget(record)}`}
+      style={{ ...style, cursor: "pointer" }}
+    >
+      💳カード忘れ
+    </button>
+  ) : (
+    <span className="no-print" title={title} style={style}>
+      💳カード忘れ
+    </span>
+  );
+}
+
 export function MonthView({
   teacher,
   slots,
@@ -156,6 +191,12 @@ export function MonthView({
   // その日の有給・半休を入れる / 直す (講師が現役部 常勤で、書ける人のときだけ)。
   // 日付の横に 🌴 を出し、🌴有給 の印からも開く
   onEditLeave,
+  // カード忘れ (utils/cardForgets、出退勤のカードを通し忘れた日)。印は誰にでも出す
+  // (経理が見る)。onEditCardForget(date) は記録・直すダイアログを開く (管理者で、
+  // 講師がバイトのときだけ。今日までの、この講師のカードがある日の日付の横に 💳 を
+  // 出す。予定の無い日はサイドバーの「カード忘れの記録」から)
+  cardForgets = [],
+  onEditCardForget,
   classSets,
   biweeklyAnchors,
   sessionOverrides,
@@ -230,6 +271,14 @@ export function MonthView({
     }
     return m;
   }, [staffLeave, teacher]);
+  // 日付 → この講師のカード忘れ
+  const cardForgetByDate = useMemo(() => {
+    const m = new Map();
+    for (const r of cardForgets || []) {
+      if (r.name === teacher) m.set(r.date, r);
+    }
+    return m;
+  }, [cardForgets, teacher]);
   // この講師の他校舎の授業 (終了していないもの)。カレンダー上の一覧行に出す
   const todayStr = useToday();
   const teacherOffsite = useMemo(
@@ -1308,11 +1357,22 @@ export function MonthView({
             onSelectDate={onSelectDate}
             onJumpToAbsenceFlow={jumpToAbsenceFlow}
             onAddLeave={onEditLeave && !leaveByDate.has(ds) ? onEditLeave : undefined}
+            onAddCardForget={
+              onEditCardForget && ds <= todayStr && dayCards.length > 0 && !cardForgetByDate.has(ds)
+                ? onEditCardForget
+                : undefined
+            }
           />
           {leaveByDate.has(ds) && (
             <LeaveDayChip
               record={leaveByDate.get(ds)}
               onOpen={onEditLeave ? () => onEditLeave(ds) : onOpenLeave}
+            />
+          )}
+          {cardForgetByDate.has(ds) && (
+            <CardForgetDayChip
+              record={cardForgetByDate.get(ds)}
+              onOpen={onEditCardForget ? () => onEditCardForget(ds) : undefined}
             />
           )}
           {dayOff.off && (
@@ -1527,6 +1587,7 @@ export function MonthView({
             onSelectDate={onSelectDate}
             onJumpToAbsenceFlow={jumpToAbsenceFlow}
             onAddLeave={onEditLeave}
+            onAddCardForget={onEditCardForget}
             style={{ marginLeft: "auto" }}
           />
         </div>

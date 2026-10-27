@@ -18,6 +18,9 @@
 //   パスワードそのものを見せない。決まるまでは金額入りを選べない
 // - 単価・別の出勤にする空き時間・書き出しの種類はこの端末の好み (LS.partTimeAttendance*)
 // - 閲覧者 (経理) もそのまま使う。書き込みは端末の localStorage だけ
+// - カード忘れ (出退勤のカードを通し忘れた日、utils/cardForgets) はセルの 💳 と橙の枠、
+//   表の下の一覧 (紙面にも載せる) で見せる。出勤日数は変えない。記録・直すのは
+//   管理者だけ (onEditCardForget があるとき。App の CardForgetDialog を開く)
 // - 印刷はトップバーの 🖨 (popup 系統)。操作部・ダイアログは no-print、紙面は
 //   printStyles の attendance 用 CSS (A4 横) で詰める
 
@@ -25,10 +28,16 @@ import { Fragment, useId, useMemo, useState } from "react";
 import { Modal } from "../Modal";
 import { LS } from "../../constants/storageKeys";
 import { MINUTE_KIND_COLOR } from "../../constants/colors";
-import { S } from "../../styles/common";
+import { S, VISUALLY_HIDDEN } from "../../styles/common";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useToasts } from "../../hooks/useToasts";
-import { dateToDay, fmtMD, parseLocalDate } from "../../utils/dateHelpers";
+import { dateToDay, fmtMD, fmtMDWeekday, parseLocalDate } from "../../utils/dateHelpers";
+import {
+  cardForgetTimesText,
+  cardMissingMeta,
+  describeCardForget,
+  formatRecordedAt,
+} from "../../utils/cardForgets";
 import { MINUTE_KIND_LABELS, describeEntryNotes } from "../../utils/teachingMinutes";
 import {
   ATTENDANCE_FLAG_LABELS,
@@ -39,6 +48,7 @@ import {
   attendancePeriodKey,
   buildDutyHints,
   buildPartTimeAttendanceSheet,
+  cardForgetSheetNote,
   sanitizeAttendanceOverrides,
   sanitizeGapMinutes,
   sanitizeUnitPrice,
@@ -57,6 +67,9 @@ const HEAD_BG = "#eef1f6";
 const SAT_FG = "#1f5fa8";
 const SUN_FG = "#b42318";
 const MUTED = "#666";
+// カード忘れの枠・文字 (白地・淡い背景の上でコントラスト 4.5:1 以上)
+const CARD_FG = "#b45309";
+const CARD_BG = "#fff7ed";
 
 const weekdayOf = (date) => {
   const d = parseLocalDate(date);
@@ -74,6 +87,7 @@ function describeCell(teacher, cell) {
   const lines = [`${head}: 出勤 ${cell.units}`];
   if (cell.overridden) lines.push(`手で上書き (自動では ${cell.auto})`);
   for (const f of cell.flags) lines.push(`要確認: ${ATTENDANCE_FLAG_LABELS[f]}`);
+  if (cell.cardForget) lines.push(`カード忘れ: ${describeCardForget(cell.cardForget)}`);
   for (const e of cell.entries) {
     lines.push(`${e.time || "時刻なし"} ${MINUTE_KIND_LABELS[e.kind]} ${e.label}`);
   }
@@ -98,6 +112,10 @@ export function PartTimeAttendanceSheet({
   // 共有設定 ({ excelPassword })。onSaveSettings は管理者のときだけ渡る
   settings,
   onSaveSettings,
+  // カード忘れの記録 (utils/cardForgets)。onEditCardForget({name?, date?}) は
+  // 管理者のときだけ渡る (記録・直すダイアログを開く)
+  cardForgets = [],
+  onEditCardForget,
 }) {
   const baseId = useId();
   const [gapMinutes, setGapMinutes] = useLocalStorage(
@@ -122,8 +140,9 @@ export function PartTimeAttendanceSheet({
         included,
         overrides,
         gapMinutes,
+        cardForgets,
       }),
-    [rows, partTimeStaff, dates, included, overrides, gapMinutes]
+    [rows, partTimeStaff, dates, included, overrides, gapMinutes, cardForgets]
   );
   const staffNames = useMemo(() => staffNamesOf(partTimeStaff), [partTimeStaff]);
   const hints = useMemo(
@@ -208,6 +227,16 @@ export function PartTimeAttendanceSheet({
           以上空いたら別の出勤
         </label>
         <span style={{ flex: 1 }} />
+        {onEditCardForget && (
+          <button
+            type="button"
+            onClick={() => onEditCardForget({})}
+            aria-haspopup="dialog"
+            style={{ ...S.btn(false), border: `1px solid ${CARD_FG}`, color: CARD_FG, background: "#fff" }}
+          >
+            💳 カード忘れを記録
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setExportOpen(true)}
@@ -376,6 +405,8 @@ export function PartTimeAttendanceSheet({
                         ...td,
                         borderLeft: monthStart(i) ? "2px solid #8a93a3" : td.borderLeft,
                         background: cell.overridden ? OVERRIDE_BG : cell.needsCheck ? CHECK_BG : undefined,
+                        // カード忘れ: 橙の枠 (box-shadow は紙面に出ないことがあるので outline)
+                        ...(cell.cardForget ? { outline: `2px solid ${CARD_FG}`, outlineOffset: -2 } : null),
                       }}
                     >
                       <AttendanceCellButton
@@ -414,8 +445,14 @@ export function PartTimeAttendanceSheet({
           ✎ 上書き
         </span>
         {" = 手で数を直した日。"}
+        <span style={{ outline: `2px solid ${CARD_FG}`, outlineOffset: -2, padding: "0 4px", whiteSpace: "nowrap" }}>
+          💳 カード忘れ
+        </span>
+        {" = 出退勤のカードを通し忘れた記録がある日 (内容は下の一覧。日数は変えていません)。"}
         <span className="no-print">{"セルを押すとその日の授業を確かめ、数を直せます。"}</span>
       </p>
+
+      <CardForgetList items={sheet.cardForgets} onEdit={onEditCardForget} />
 
       {exportOpen && (
         <AttendanceExportDialog
@@ -435,6 +472,15 @@ export function PartTimeAttendanceSheet({
           cell={activeCell}
           gapMinutes={sheet.gapMinutes}
           onOverride={(value) => setOverride(active.teacher, activeCell.date, value)}
+          onEditCardForget={
+            onEditCardForget
+              ? () => {
+                  const target = { name: active.teacher, date: activeCell.date };
+                  setActive(null);
+                  onEditCardForget(target);
+                }
+              : undefined
+          }
           onClose={() => setActive(null)}
         />
       )}
@@ -446,12 +492,17 @@ function AttendanceCellButton({ teacher, cell, onOpen }) {
   const fg = cell.overridden ? OVERRIDE_FG : cell.needsCheck ? CHECK_FG : "#222";
   const mark = cell.overridden ? "✎" : cell.needsCheck ? "!" : "";
   const label = describeCell(teacher, cell);
+  // 読み上げは 1 行目 (出勤の数) + 上書き / 要確認 / カード忘れの印まで
+  const spoken = label
+    .split("\n")
+    .filter((l, i) => i === 0 || /^(手で上書き|要確認|カード忘れ)/.test(l))
+    .join("、");
   return (
     <button
       type="button"
       onClick={onOpen}
       title={label}
-      aria-label={label.split("\n").slice(0, 3).join("、")}
+      aria-label={spoken}
       style={{
         display: "block",
         width: "100%",
@@ -472,7 +523,91 @@ function AttendanceCellButton({ teacher, cell, onOpen }) {
           {mark}
         </span>
       )}
+      {cell.cardForget && (
+        <span aria-hidden="true" style={{ fontSize: 9, verticalAlign: "super", marginLeft: 1 }}>
+          💳
+        </span>
+      )}
     </button>
+  );
+}
+
+// 表の下: 期間のカード忘れ (打刻なし) の記録。経理がカードの記録と突き合わせるために
+// 紙面にも載せる。無い期間も「ありません」と書く (見落としと区別する)。
+// 直すボタンは管理者だけ (画面だけ)
+function CardForgetList({ items, onEdit }) {
+  const th = {
+    padding: "4px 8px",
+    background: CARD_BG,
+    borderBottom: "1px solid #fed7aa",
+    fontSize: 12,
+    fontWeight: 700,
+    textAlign: "left",
+    whiteSpace: "nowrap",
+  };
+  const td = { padding: "4px 8px", borderBottom: "1px solid #f1e4d6", fontSize: 12, verticalAlign: "top" };
+  return (
+    <section aria-labelledby="pt-card-forget-title" style={{ marginTop: 14 }}>
+      <h3 id="pt-card-forget-title" style={{ fontSize: 13, fontWeight: 800, margin: "0 0 6px", color: CARD_FG }}>
+        💳 カード忘れ (打刻なし) の記録
+        {items.length > 0 ? ` — ${items.length} 件` : ""}
+      </h3>
+      {items.length === 0 ? (
+        <p style={{ fontSize: 12, color: MUTED, margin: 0 }}>この期間の記録はありません</p>
+      ) : (
+        <div className="mobile-scroll-x" style={{ overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", background: "#fff", minWidth: 480 }}>
+            <thead>
+              <tr>
+                <th scope="col" style={th}>日付</th>
+                <th scope="col" style={th}>講師</th>
+                <th scope="col" style={th}>打刻なし</th>
+                <th scope="col" style={th}>実際の時刻</th>
+                <th scope="col" style={th}>メモ</th>
+                {onEdit && (
+                  <th scope="col" style={th} className="no-print">
+                    <span style={VISUALLY_HIDDEN}>操作</span>
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((r) => {
+                const note = cardForgetSheetNote(r);
+                return (
+                  <tr key={`${r.name}|${r.date}`}>
+                    <td style={{ ...td, whiteSpace: "nowrap" }}>{fmtMDWeekday(r.date)}</td>
+                    <td style={{ ...td, whiteSpace: "nowrap", fontWeight: 700 }}>{r.name}</td>
+                    <td style={{ ...td, whiteSpace: "nowrap" }}>{cardMissingMeta(r.missing).label}</td>
+                    <td style={{ ...td, whiteSpace: "nowrap" }}>{cardForgetTimesText(r) || "—"}</td>
+                    <td style={td}>
+                      {r.memo}
+                      {note && (
+                        <span style={{ display: "block", color: CHECK_FG, background: CHECK_BG, padding: "0 4px", borderRadius: 3 }}>
+                          ⚠ {note}
+                        </span>
+                      )}
+                    </td>
+                    {onEdit && (
+                      <td style={td} className="no-print">
+                        <button
+                          type="button"
+                          onClick={() => onEdit({ name: r.name, date: r.date })}
+                          aria-label={`${fmtMD(r.date)} ${r.name} のカード忘れを直す`}
+                          style={{ ...S.btn(false), padding: "2px 10px", fontSize: 12 }}
+                        >
+                          直す
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -519,7 +654,7 @@ function EntryRows({ entries, muted = false }) {
   });
 }
 
-function CellDetailDialog({ teacher, cell, gapMinutes, onOverride, onClose }) {
+function CellDetailDialog({ teacher, cell, gapMinutes, onOverride, onEditCardForget, onClose }) {
   const dow = weekdayOf(cell.date);
   const listStyle = { margin: "2px 0 8px", paddingLeft: 18, fontSize: 13 };
   const choiceBtn = (on) => ({
@@ -541,6 +676,36 @@ function CellDetailDialog({ teacher, cell, gapMinutes, onOverride, onClose }) {
           </span>
         )}
       </div>
+      {cell.cardForget && (
+        <div
+          role="note"
+          style={{
+            background: CARD_BG,
+            color: CARD_FG,
+            border: `1px solid #fed7aa`,
+            borderRadius: 6,
+            padding: "6px 10px",
+            fontSize: 12,
+            marginBottom: 10,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ flex: 1, minWidth: 0 }}>
+            💳 カード忘れ: {describeCardForget(cell.cardForget)}
+            {cell.cardForget.recordedAt && (
+              <span style={{ color: MUTED }}> ({formatRecordedAt(cell.cardForget.recordedAt)} 記録)</span>
+            )}
+          </span>
+          {onEditCardForget && (
+            <button type="button" onClick={onEditCardForget} style={{ ...S.btn(false), padding: "2px 10px", fontSize: 12 }}>
+              直す
+            </button>
+          )}
+        </div>
+      )}
       {cell.flags.length > 0 && (
         <div
           role="note"
@@ -620,6 +785,17 @@ function CellDetailDialog({ teacher, cell, gapMinutes, onOverride, onClose }) {
           この端末にだけ残ります (アプリのデータには書き戻しません)。
         </p>
       </div>
+      {onEditCardForget && !cell.cardForget && (
+        <div style={{ borderTop: "1px solid #eee", paddingTop: 10, marginTop: 10 }}>
+          <button
+            type="button"
+            onClick={onEditCardForget}
+            style={{ ...S.btn(false), border: `1px solid ${CARD_FG}`, color: CARD_FG, background: "#fff" }}
+          >
+            💳 この日のカード忘れを記録
+          </button>
+        </div>
+      )}
     </Modal>
   );
 }

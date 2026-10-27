@@ -156,6 +156,10 @@ export function TeachingMinutesView({
   // バイト出勤表の共有設定 (金額入りの Excel のパスワード)。保存は管理者だけ (渡されないと読むだけ)
   attendanceSettings,
   onSaveAttendanceSettings,
+  // バイトのカード忘れ (utils/cardForgets)。バイト出勤表に印と一覧を出す。
+  // onEditCardForget({name?, date?}) は管理者のときだけ (記録・直すダイアログを開く)
+  cardForgets = [],
+  onEditCardForget,
 }) {
   const baseId = useId();
   const today = useToday();
@@ -872,6 +876,8 @@ export function TeachingMinutesView({
             monthOf={monthOf}
             settings={attendanceSettings}
             onSaveSettings={onSaveAttendanceSettings}
+            cardForgets={cardForgets}
+            onEditCardForget={onEditCardForget}
           />
         ) : (
           <div style={{ ...panel, textAlign: "center", color: "#888", padding: 40 }}>期間を指定してください</div>

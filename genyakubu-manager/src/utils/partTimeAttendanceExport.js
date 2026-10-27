@@ -6,6 +6,7 @@
 //   3 行目: 日、4 行目: 曜日。月の切れ目に空の列を 1 つ入れる
 //   5 行目〜: バイト 1 人 1 行。A 列に「◯◯ 先生」と 2 行目に担当の目安
 //   右端に「日数」(=SUM) と「金額」(=日数 × 単価セル)、最下行に合計 (=SUM)
+//   合計の下: カード忘れ (打刻なし) の記録の一覧。記録のある日のセルは塗りとメモ
 // 日数・金額・合計は**式で入れる** (出力後に Excel 上で日を直しても合う)。
 // 単価は 1 つのセルに置き、全員の金額がそこを参照する。
 //
@@ -23,8 +24,9 @@
 
 import ExcelJS from "exceljs";
 import { WEEKDAYS } from "../constants/schools";
-import { parseLocalDate } from "./dateHelpers";
-import { attendanceFileName, sanitizeUnitPrice } from "./partTimeAttendance";
+import { fmtMDWeekday, parseLocalDate } from "./dateHelpers";
+import { attendanceFileName, cardForgetSheetNote, sanitizeUnitPrice } from "./partTimeAttendance";
+import { describeCardForget } from "./cardForgets";
 import { encryptOfficeFile } from "./officeEncryption";
 
 export const ATTENDANCE_SHEET_TITLE = "中学生/高校生　　現役アルバイト";
@@ -36,12 +38,16 @@ export const YEAR_LABEL_OFFSET = 7;
 const ARGB_BORDER = "FF999999";
 const ARGB_HEAD_FILL = "FFF2F2F2";
 const ARGB_TOTAL_FILL = "FFFFF2CC";
+// カード忘れの記録がある日のセル (画面の 💳 の枠と同じ橙系)
+export const ARGB_CARD_FORGET_FILL = "FFFCE4D6";
 const ARGB_SAT = "FF1F5FA8";
 const ARGB_SUN = "FFC03030";
 const thin = { style: "thin", color: { argb: ARGB_BORDER } };
 const BORDER = { top: thin, bottom: thin, left: thin, right: thin };
 const solidFill = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
 const CENTER = { horizontal: "center", vertical: "middle" };
+// 全角の空白 (一覧の区切り)
+const JA_SPACE = "\u3000";
 
 /**
  * 日付の列の並び。列 2 (B) から日付を置き、月が変わるところに空の列を 1 つ挟む。
@@ -199,6 +205,11 @@ export function buildPartTimeAttendanceWorkbook({ sheet, hints = new Map(), star
       xc.value = cell.units > 0 ? cell.units : null;
       xc.alignment = CENTER;
       xc.border = BORDER;
+      // カード忘れ: 塗り + セルのメモ (数は変えない。式の SUM はそのまま)
+      if (cell.cardForget) {
+        xc.fill = solidFill(ARGB_CARD_FORGET_FILL);
+        xc.note = `カード忘れ: ${describeCardForget(cell.cardForget)}`;
+      }
     });
     const days = ws.getCell(r, daysCol);
     days.value = {
@@ -249,6 +260,28 @@ export function buildPartTimeAttendanceWorkbook({ sheet, hints = new Map(), star
     cell.fill = solidFill(ARGB_TOTAL_FILL);
   }
   ws.getRow(totalRow).height = 20;
+
+  // 合計の 1 行下を空けて、カード忘れ (打刻なし) の記録。経理がカードの記録と
+  // 突き合わせるときに見る。無い期間も「ありません」と書く (見落としと区別する)
+  const cards = sheet.cardForgets || [];
+  const listLastCol = withAmounts ? amountCol : daysCol;
+  let listRow = totalRow + 2;
+  const listHead = ws.getCell(listRow, 1);
+  listHead.value =
+    cards.length > 0
+      ? `カード忘れ (打刻なし) の記録 ${cards.length} 件 — 表の塗りのある日 (セルのメモにも内容)`
+      : "カード忘れ (打刻なし) の記録: この期間はありません";
+  listHead.font = { bold: true };
+  for (const rec of cards) {
+    listRow += 1;
+    ws.mergeCells(listRow, 1, listRow, listLastCol);
+    const cell = ws.getCell(listRow, 1);
+    const note = cardForgetSheetNote(rec);
+    cell.value = [fmtMDWeekday(rec.date), `${rec.name} 先生`, describeCardForget(rec), note ? `※ ${note}` : ""]
+      .filter(Boolean)
+      .join(JA_SPACE);
+    cell.alignment = { vertical: "middle" };
+  }
 
   ws.pageSetup = {
     paperSize: 9, // A4

@@ -408,6 +408,22 @@ export interface OffsiteLesson {
   updatedAt?: string;
 }
 
+// ─── Card forget (バイトのカード忘れ) ─────────────────────────────
+// 出退勤のカードを通し忘れた日 (utils/cardForgets.js)。1 人 × 1 日で 1 件。
+// 責任者 (管理者) が記録し、経理がバイト出勤表・講師の月間で見る。
+// 出勤日数 (授業から数える) には関与しない。空の値はキーごと持たない。
+export type CardMissing = "both" | "in" | "out";
+export interface CardForget {
+  id: number;
+  name: string; // バイトの名前
+  date: string; // "YYYY-MM-DD"
+  missing: CardMissing; // 打刻できなかったもの (出勤・退勤 / 出勤だけ / 退勤だけ)
+  inTime?: string; // 実際の出勤時刻 "16:50" (出勤を打刻できなかったときだけ)
+  outTime?: string; // 実際の退勤時刻 "21:05" (退勤を打刻できなかったときだけ)
+  memo?: string;
+  recordedAt?: string; // 最後に記録した日時 (ISO)
+}
+
 // ─── Koshu lesson (講習コマ、派生表示) ───────────────────────────
 // 講習時間割作成 (timetable-builder) の project から
 // utils/builderLessons.buildKoshuLessons が導出する読み取り専用の表示モデル。
@@ -541,6 +557,7 @@ export interface ExportBundle {
   staffLeave?: StaffLeave;
   yoteihyoMapping?: YoteihyoMappingEntry[];
   yoteihyoConfirmed?: YoteihyoConfirmation[];
+  cardForgets?: CardForget[];
 }
 
 export interface ValidationResult<T> {

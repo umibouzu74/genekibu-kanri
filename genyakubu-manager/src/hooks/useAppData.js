@@ -32,6 +32,7 @@ import { EMPTY_STAFF_LEAVE, migrateStaffLeave } from "../utils/staffLeave";
 import { migrateCourseMapping } from "../utils/yoteihyo/courseMapping";
 import { migrateYoteihyoConfirmed } from "../utils/yoteihyo/confirmations";
 import { DEFAULT_ATTENDANCE_SETTINGS, sanitizeAttendanceSettings } from "../utils/partTimeAttendanceSettings";
+import { migrateCardForgets } from "../utils/cardForgets";
 import {
   DEFAULT_SPECIAL_EVENT_DISPLAY,
   normalizeSpecialEventDisplay,
@@ -244,6 +245,12 @@ export function useAppData({ toasts, isAdmin }) {
     DEFAULT_ATTENDANCE_SETTINGS,
     { migrate: sanitizeAttendanceSettings, onError: onStorageError }
   );
+  // バイトのカード忘れ (出退勤のカードを通し忘れた日)。書くのは管理者 (責任者)、
+  // 経理 (閲覧者) がバイト出勤表・講師の月間で見るので appData/ に置く
+  const [cardForgets, saveCardForgets] = useSyncedStorage(LS.cardForgets, EMPTY_LIST, {
+    migrate: migrateCardForgets,
+    onError: onStorageError,
+  });
   // 引継ぎメモ (責任者 → 後任)。閲覧者 (匿名ログイン) は appData/ を全部
   // 読めるので、管理者だけが読める adminData/ に置き、管理者のときだけ購読する。
   // 有給・半休も同じ (人事の記録)。handoverEnabled = 管理者だけのデータを扱えるか
@@ -335,6 +342,8 @@ export function useAppData({ toasts, isAdmin }) {
     saveYoteihyoConfirmed,
     attendanceSettings,
     saveAttendanceSettings,
+    cardForgets,
+    saveCardForgets,
     eventVisibility,
     saveEventVisibility,
   };
