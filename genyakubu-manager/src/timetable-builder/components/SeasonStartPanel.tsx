@@ -8,6 +8,7 @@ import { loadTemplates } from '../utils/templates';
 import { validateProjectShape } from '../utils/projectSchema';
 import { mergeImportedTemplates, parseProjectFile } from '../utils/projectFile';
 import { loadInitialProject } from '../hooks/projectFactory';
+import SeasonCopyDialog, { type SeasonCopyChoice } from './SeasonCopyDialog';
 import type { SeasonProjects } from './SeasonBar';
 import type { Project } from '../types';
 
@@ -49,10 +50,17 @@ export default function SeasonStartPanel({
 
   const projectName = name.trim() || suggestSeasonProjectName(season, today);
 
-  const startFrom = (source: Project, from: string) => {
+  // 写す元を選んだら、プリセットの時刻・写さない講師を確かめてから作る
+  // (SeasonCopyDialog)。夏期の予備校の時刻のまま冬期に写して気付かない事故を防ぐ
+  const [pending, setPending] = useState<{ source: Project; from: string } | null>(null);
+  const startFrom = (source: Project, from: string) => setPending({ source, from });
+  const confirmStart = ({ name: chosenName, presets, dropTeachers }: SeasonCopyChoice) => {
+    if (!pending) return;
+    const { source, from } = pending;
+    setPending(null);
     onStart(
-      buildFreshSeasonProject(source, { name: projectName, now: today }),
-      `${from}の設定を写して「${projectName}」を作りました。⚙️ 設定 > 基本設定 で講習の日付を作ってください`,
+      buildFreshSeasonProject(source, { name: chosenName, now: today, presets, dropTeachers }),
+      `${from}の設定を写して「${chosenName}」を作りました。⚙️ 設定 > 基本設定 で講習の日付を作ってください`,
     );
   };
 
@@ -202,6 +210,17 @@ export default function SeasonStartPanel({
         </p>
         <input type="file" accept=".json" ref={fileInputRef} onChange={handleFile} className="hidden" aria-hidden="true" tabIndex={-1} />
       </div>
+      {pending && (
+        <SeasonCopyDialog
+          mode="start"
+          source={pending.source}
+          sourceLabel={pending.from}
+          seasonLabel={def.label}
+          defaultName={projectName}
+          onConfirm={confirmStart}
+          onCancel={() => setPending(null)}
+        />
+      )}
     </section>
   );
 }

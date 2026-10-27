@@ -4,6 +4,7 @@ import { getSlotTeachers } from "../utils/biweekly";
 import {
   LEAVE_CATEGORY,
   PART_TIME_CATEGORY,
+  RETIRED_CATEGORY,
   indexAffiliationChanges,
   resolveAffiliation,
 } from "../utils/teacherAffiliations";
@@ -50,8 +51,12 @@ export function buildTeacherGroups({
     Array.isArray(affiliations) && affiliations.length > 0 && year != null
       ? indexAffiliationChanges(affiliations)
       : null;
-  const categoryOf = (t) =>
+  const rawCategoryOf = (t) =>
     affIndex ? resolveAffiliation(affIndex, t, year, staffNameSet).category : null;
+  // 区分で分けた見た目にするのは、退職以外の区分を誰かに付けたときだけ
+  // (退職を付けただけで、所属を使っていない人のサイドバーの見た目を変えない)
+  const grouped = !!affIndex && affiliations.some((c) => c?.category !== RETIRED_CATEGORY);
+  const categoryOf = (t) => (grouped ? rawCategoryOf(t) : null);
 
   // slot.subj 文字列から Subject を推定
   const matchSubject = (subjStr) => {
@@ -85,7 +90,9 @@ export function buildTeacherGroups({
 
   // 全教員を列挙 (slots + partTimeStaff)
   const allTeachers = new Set();
-  for (const s of slots) for (const t of getSlotTeachers(s)) allTeachers.add(t);
+  const slotTeachers = new Set();
+  for (const s of slots) for (const t of getSlotTeachers(s)) slotTeachers.add(t);
+  for (const t of slotTeachers) allTeachers.add(t);
   for (const s of partTimeStaff) allTeachers.add(s.name);
   // 現役部 常勤はコマが無くても並べる
   if (affIndex) {
@@ -102,11 +109,14 @@ export function buildTeacherGroups({
   const other = [];
   for (const t of allTeachers) {
     const cat = categoryOf(t);
+    // 退職・非表示の人は、時間割にコマが残っているときだけ (教科別に) 並べる
+    const retired = rawCategoryOf(t) === RETIRED_CATEGORY;
+    if (retired && !slotTeachers.has(t)) continue;
     if (cat === LEAVE_CATEGORY) {
       genyakuFulltime.push(t);
       continue;
     }
-    if (staffNameSet.has(t)) {
+    if (staffNameSet.has(t) && !retired) {
       staffGroup.push(t);
       continue;
     }
@@ -146,7 +156,7 @@ export function buildTeacherGroups({
   const SUBJECT_ORDER = ["英語", "数学", "国語", "理科", "社会"];
   // section: 所属を分けているときだけ "genyaku" / "yobiko" (サイドバーが
   // 「予備校部」の見出しを挟む)。分けていなければ付けない
-  const sec = (v) => (affIndex ? { section: v } : {});
+  const sec = (v) => (grouped ? { section: v } : {});
   const groups = [];
   if (genyakuFulltime.length) {
     groups.push({

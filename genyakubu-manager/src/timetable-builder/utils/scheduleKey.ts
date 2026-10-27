@@ -20,12 +20,13 @@
 // 注意: constants.js は本ファイルの parseKey を import しているため、
 // ここから constants.js を import すると循環になる。import してよいのは
 // 無依存モジュール (generationParams / dateGenerate / dateLabelUnify /
-// availabilityShape) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
+// availabilityShape / carriedTimetable) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
 // availabilityShape の無依存モジュールのみ。
 import { clampGenerationParam } from './generationParams';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { unifyDateLabelWeekdays } from './dateLabelUnify';
 import { sanitizeAvailability } from './availabilityShape';
+import { normalizeCarriedTimetable } from './carriedTimetable';
 import type {
   CombinedGroup,
   EffectiveConfig,
@@ -592,6 +593,18 @@ export function migrateProject(project: any): Project {
     }
     if (paramsChanged) {
       result = { ...result, ...clampedParams };
+    }
+  }
+
+  // 作り直す前の時間割の控え (任意フィールド)。形の崩れたものは落とす
+  // (写す画面が添字で引くので、範囲外の添字やラベルの欠けを残さない)
+  if (result.previousTimetable !== undefined) {
+    const carried = normalizeCarriedTimetable(result.previousTimetable);
+    if (!carried) {
+      const { previousTimetable: _dropped, ...rest } = result;
+      result = rest;
+    } else if (JSON.stringify(carried) !== JSON.stringify(result.previousTimetable)) {
+      result = { ...result, previousTimetable: carried };
     }
   }
 

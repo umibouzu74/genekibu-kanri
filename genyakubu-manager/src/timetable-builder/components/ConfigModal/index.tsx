@@ -14,6 +14,8 @@ import GenerationSettings from './GenerationSettings';
 import TemplateManager from './TemplateManager';
 import { KOSHU_SEASONS, koshuSeasonDef, suggestSeasonProjectName, type KoshuSeason } from '../../utils/seasons';
 import { buildFreshSeasonProject } from '../../utils/seasonStart';
+import SeasonCopyDialog, { type SeasonCopyChoice } from '../SeasonCopyDialog';
+import TimetableCopyDialog from '../TimetableCopyDialog';
 
 const TITLE_ID = 'builder-config-modal-title';
 
@@ -35,7 +37,7 @@ const TABS = [
 export default function ConfigModal({ onClose, season }: { onClose: () => void; season?: KoshuSeason }) {
   const [configTab, setConfigTab] = useState('basic');
   const { project, handleResetAll, updateProjectName, pushHistory } = useProjectContext();
-  const { showConfirm, showInput, showToast } = useUI();
+  const { showConfirm, showToast } = useUI();
   const seasonLabel = season ? koshuSeasonDef(season).label : '講習';
   // 名前の例 (季節に合わせる。作り直しの名前の案と同じ「2026 冬期講習」の形)
   const nameExample = `例: ${suggestSeasonProjectName(season ?? 'winter')}`;
@@ -91,28 +93,20 @@ export default function ConfigModal({ onClose, season }: { onClose: () => void; 
   };
 
   // 去年の同じ季節の時間割を、今年の講習用に作り直す (設定だけ残す)。
-  // 作り直した後は Ctrl+Z で戻せる (project/replace = 履歴に積む)
-  const handleRebuildClick = async () => {
-    const nextName = await showInput('作り直した後のプロジェクト名', {
-      title: `次の${seasonLabel}用に作り直す`,
-      defaultValue: season ? suggestSeasonProjectName(season) : '',
-      placeholder: nameExample,
-      confirmLabel: '次へ',
-    });
-    if (nextName == null) return;
-    const name = String(nextName).trim() || project.name || '';
-    const ok = await showConfirm(
-      `「${project.name || seasonLabel}」を「${name}」に作り直します。\n\n` +
-        `残すもの: 講師 (担当科目・担当不可/優先クラス・コマ数の上限)、学年タブ (クラス・コマ数・使う時限)、科目と色、時限、全日程の合同授業、自動生成の設定\n` +
-        `空にするもの: 日付、時間割、日ごとのチェック、講師不在・NG、出勤可能調査の回答、他学年セッション、スナップショット\n` +
-        `今の講習のコマは、講師の月間予定の「講」と授業時間の集計からも消えます (集計は先に締めてください)。\n\n` +
-        `今の内容を残しておきたいときは、先に 💾 プロジェクト保存 (JSON) か 🗂 テンプレートに保存してください。\n` +
-        `作り直した直後なら、ツールバーの ↩️ (元に戻す) か Ctrl+Z で戻せます。`,
-      { title: `次の${seasonLabel}用に作り直す`, danger: true, confirmLabel: '作り直す' },
+  // プリセットの時刻・写さない講師は SeasonCopyDialog で選ぶ。作り直す前の
+  // 時間割は控え (previousTimetable) に残し、日付を作ってから「📋 前の講習の
+  // 時間割を写す」で使う。作り直した後は Ctrl+Z で戻せる (project/replace = 履歴に積む)
+  const [rebuildOpen, setRebuildOpen] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const handleRebuildConfirm = ({ name: chosenName, presets, dropTeachers }: SeasonCopyChoice) => {
+    setRebuildOpen(false);
+    const name = chosenName || project.name || '';
+    pushHistory(buildFreshSeasonProject(project, { name, presets, dropTeachers, carryTimetable: true }));
+    showToast(
+      `「${name}」に作り直しました。基本設定の「⚡ 期間から自動生成」で日付を作ってから、「📋 前の講習の時間割を写す」で去年の時間割を写せます`,
+      'success',
+      8000,
     );
-    if (!ok) return;
-    pushHistory(buildFreshSeasonProject(project, { name }));
-    showToast(`「${name}」に作り直しました。基本設定の「⚡ 期間から自動生成」で日付を作ってください`, 'success', 6000);
   };
 
   return (
@@ -202,10 +196,21 @@ export default function ConfigModal({ onClose, season }: { onClose: () => void; 
                 <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-builder-ink-muted">
                   <button
                     type="button"
-                    onClick={handleRebuildClick}
+                    onClick={() => setRebuildOpen(true)}
                     className="px-2 py-1 text-xs font-bold rounded border border-builder-border bg-builder-surface text-builder-ink hover:bg-builder-surface-alt"
                   >🔄 次の{seasonLabel}用に作り直す…</button>
                   <span>講師・学年タブ・科目・時限を残して、日付と時間割を空にします (毎年同じ季節の時間割を使い回すとき)</span>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-builder-ink-muted">
+                  <button
+                    type="button"
+                    onClick={() => setCopyOpen(true)}
+                    className="px-2 py-1 text-xs font-bold rounded border border-builder-border bg-builder-surface text-builder-ink hover:bg-builder-surface-alt"
+                  >📋 前の講習の時間割を写す…</button>
+                  <span>
+                    作り直す前の時間割 (控え) か、保存した JSON から、科目・講師を N 日目 → N 日目に写します
+                    {project.previousTimetable && ` (控え:「${project.previousTimetable.name || '名前なし'}」)`}
+                  </span>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -214,6 +219,18 @@ export default function ConfigModal({ onClose, season }: { onClose: () => void; 
               </div>
             </>
           )}
+          {rebuildOpen && (
+            <SeasonCopyDialog
+              mode="rebuild"
+              source={project}
+              sourceLabel={`「${project.name || seasonLabel}」`}
+              seasonLabel={seasonLabel}
+              defaultName={season ? suggestSeasonProjectName(season) : project.name || ''}
+              onConfirm={handleRebuildConfirm}
+              onCancel={() => setRebuildOpen(false)}
+            />
+          )}
+          {copyOpen && <TimetableCopyDialog onClose={() => setCopyOpen(false)} />}
           <div className="mt-6 border-t border-builder-border pt-4 text-right">
             <button onClick={handleResetClick} className="text-xs text-builder-red hover:underline">⚠️ {seasonLabel}のデータをリセット</button>
           </div>

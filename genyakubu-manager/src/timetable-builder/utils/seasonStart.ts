@@ -12,18 +12,42 @@
 //
 // 日付の後始末は日付プールからの削除 (projectReducer.removeDatesFromPool) と同じ
 // 経路を通す (NG・出勤可能調査・合同・外部コマのラベル参照を取りこぼさない)。
+//
+// 写し方の選択 (2026-10-27、components/SeasonCopyDialog):
+// - presets: 写すプリセット (時刻を直したもの)。省略すると全部そのまま
+// - dropTeachers: 写さない講師 (本体で退職・非表示の人など)。プリセットの対象講師
+//   からも外す
+// - carryTimetable: 作り直す前の時間割を控えとして残す (previousTimetable。
+//   「📋 前の講習の時間割を写す」で使う)。同じ季節を翌年用に作り直すときだけ。
+//   今の時間割が空 (作り直した直後にもう一度作り直した) なら前の控えを残す
 
 import { removeDatesFromPool } from '../hooks/projectReducer';
 import { stripAvailability } from './availabilityShape';
 import { cleanSchedule, CURRENT_PROJECT_VERSION } from './constants';
 import { migrateProject } from './scheduleKey';
-import type { Project } from '../types';
+import { carryTimetable, countCarriedCells } from './timetableCopy';
+import type { ExternalSessionPreset, Project } from '../types';
 
 export function buildFreshSeasonProject(
   source: Project,
-  { name, now = new Date() }: { name: string; now?: Date },
+  {
+    name,
+    now = new Date(),
+    presets,
+    dropTeachers = [],
+    carryTimetable: keepTimetable = false,
+  }: {
+    name: string;
+    now?: Date;
+    presets?: ExternalSessionPreset[];
+    dropTeachers?: string[];
+    carryTimetable?: boolean;
+  },
 ): Project {
   const base = cleanSchedule(migrateProject(JSON.parse(JSON.stringify(source))));
+  const carried = keepTimetable ? carryTimetable(base, { now }) : null;
+  const previousTimetable = carried && countCarriedCells(carried) > 0 ? carried : (keepTimetable ? base.previousTimetable : undefined);
+  const dropped = new Set(dropTeachers);
   const cleared = removeDatesFromPool(base, (base.dates || []).map(d => d.id));
   const stamp = now.toISOString();
   const tabs = cleared.tabs.map(tab => {
@@ -33,8 +57,10 @@ export function buildFreshSeasonProject(
     const { dayStatuses: _dayStatuses, ...rest } = tab;
     return { ...rest, config, schedule: {} };
   });
+  const { previousTimetable: _oldPrevious, ...clearedRest } = cleared;
   return {
-    ...cleared,
+    ...clearedRest,
+    ...(previousTimetable ? { previousTimetable } : {}),
     version: CURRENT_PROJECT_VERSION,
     name,
     createdAt: stamp,
@@ -44,14 +70,15 @@ export function buildFreshSeasonProject(
     tabs,
     // 講師不在・NG は日付 × 時限なので全部外す (プールに無い日付の NG も残さない)。
     // 出勤可能調査の回答もその季節のもの
-    teachers: stripAvailability(cleared.teachers || []).map(t => ({ ...t, ngSlots: [] })),
+    teachers: stripAvailability((cleared.teachers || []).filter(t => !dropped.has(t.name))).map(t => ({ ...t, ngSlots: [] })),
     externalCounts: {},
     externalSessions: [],
     // プリセットの日付の範囲も前の季節のもの (プールに無いラベルは removeDatesFromPool
     // では外れないので、ここで全部外す)
-    externalSessionPresets: (cleared.externalSessionPresets || []).map(p => {
-      const { startDateLabel: _start, endDateLabel: _end, ...rest } = p;
-      return rest;
+    externalSessionPresets: (presets ?? cleared.externalSessionPresets ?? []).map(p => {
+      const { startDateLabel: _start, endDateLabel: _end, teachers, ...rest } = p;
+      const kept = Array.isArray(teachers) ? teachers.filter(t => !dropped.has(t)) : undefined;
+      return kept && kept.length > 0 ? { ...rest, teachers: kept } : rest;
     }),
     snapshots: [],
   };

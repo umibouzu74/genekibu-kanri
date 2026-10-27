@@ -2,7 +2,7 @@
 // 講習の季節 (春期 / 夏期 / 冬期) ごとの時間割 (2026-10-23)。
 // 切替バーの表示、未作成の季節の始め方、季節に分ける前の project の移行を通しで見る。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import BuilderApp from './BuilderApp';
 import { seasonStorage } from './utils/seasons';
@@ -77,6 +77,10 @@ describe('BuilderApp の季節', () => {
     expect(screen.queryByRole('button', { name: /春期講習「/ })).toBeNull();
     fireEvent.change(screen.getByRole('textbox', { name: 'プロジェクト名' }), { target: { value: '2026 冬期講習' } });
     fireEvent.click(screen.getByRole('button', { name: /夏期講習「2026 夏期講習」の設定を写して始める/ }));
+    // プリセット・写さない講師を確かめる画面を挟む (名前は始め方の欄のまま)
+    const dialog = screen.getByRole('dialog', { name: /夏期講習の設定を写して始める/ });
+    expect(within(dialog).getByLabelText('プロジェクト名')).toHaveValue('2026 冬期講習');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'この内容で始める' }));
 
     await waitFor(() => expect(screen.getByRole('button', { name: /自動作成/ })).toBeTruthy());
     const saved = JSON.parse(localStorage.getItem(seasonStorage('winter').storageKey));
@@ -148,6 +152,7 @@ describe('BuilderApp の季節', () => {
     );
     localStorage.setItem(seasonStorage('winter').storageKey, JSON.stringify({ ...summer, name: '別のタブの冬期' }));
     fireEvent.click(screen.getByRole('button', { name: /夏期講習「2026 夏期講習」の設定を写して始める/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'この内容で始める' }));
     await waitFor(() => expect(screen.getByRole('heading', { name: '別のタブの冬期' })).toBeTruthy());
     expect(await screen.findByText(/別のタブで先に作られていた/)).toBeTruthy();
   });

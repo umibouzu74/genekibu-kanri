@@ -486,6 +486,38 @@ describe('projectReducer — 講師管理', () => {
     expect(next.project.tabs[0].schedule[makeKey(1, 1, 2)].teacher).toBe('田中');
   });
 
+  it('teacher/removeByNames: 何人かを 1 回の履歴で外し、割当の講師を空にする', () => {
+    const state = makeState({
+      teachers: [
+        { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+        { name: '田中', subjects: ['数学'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+        { name: '高松', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      ],
+      externalSessions: [{ id: 1, date: '12/25(木)', teacherName: '高松', label: '', memo: '' }],
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: {
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
+          subjectCounts: { '英語': 1, '数学': 1 },
+        },
+        schedule: {
+          [makeKey(1, 1, 1)]: { subject: '英語', teacher: '高松' },
+          [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中' },
+        },
+      }],
+    });
+    const next = projectReducer(state, { type: 'teacher/removeByNames', payload: { names: ['高松', '田中', 'いない人'] } });
+    expect(next.project.teachers.map(t => t.name)).toEqual(['堀上']);
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '' });
+    expect(next.project.tabs[0].schedule[makeKey(1, 1, 2)].teacher).toBe('');
+    expect(next.project.externalSessions).toEqual([]);
+    expect(next.history.length).toBe(state.history.length + 1);
+    // 誰もいなければ何もしない
+    expect(projectReducer(state, { type: 'teacher/removeByNames', payload: { names: ['いない人'] } })).toBe(state);
+  });
+
   it('teacher/toggleNg: ngSlots を toggle', () => {
     let state = makeState();
     state = projectReducer(state, {
@@ -2775,6 +2807,42 @@ describe('teacher/rename と externalCounts キー (F2o)', () => {
 });
 
 // ─── タブ間複製 (K4a) ────────────────────────────────────
+
+describe('projectReducer — schedule/importCells (前の講習の時間割を写す)', () => {
+  it('セルに科目・講師を 1 回の履歴で書き、ロックしたセル・空の書き込みは飛ばす', () => {
+    const state = makeState({
+      tabs: [{
+        id: 1, name: 'メイン',
+        config: {
+          dates: [{ id: 1, label: '12/25(木)' }],
+          periods: [{ id: 1, label: '1限' }, { id: 2, label: '2限' }],
+          classes: [{ id: 1, label: '３S' }, { id: 2, label: '３A' }],
+          subjectCounts: { '英語': 1 },
+        },
+        schedule: { [makeKey(1, 2, 1)]: { subject: '', teacher: '', locked: true } },
+      }],
+    });
+    const next = projectReducer(state, {
+      type: 'schedule/importCells',
+      payload: {
+        writes: [
+          { tabId: 1, key: makeKey(1, 1, 1), subject: '英語', teacher: '堀上' },
+          { tabId: 1, key: makeKey(1, 1, 2), subject: '数学', teacher: '' },
+          { tabId: 1, key: makeKey(1, 2, 1), subject: '英語', teacher: '堀上' },
+          { tabId: 1, key: makeKey(1, 2, 2), subject: '', teacher: '' },
+          { tabId: 9, key: makeKey(1, 1, 1), subject: '英語', teacher: '堀上' },
+        ],
+      },
+    });
+    const sch = next.project.tabs[0].schedule;
+    expect(sch[makeKey(1, 1, 1)]).toEqual({ subject: '英語', teacher: '堀上' });
+    expect(sch[makeKey(1, 1, 2)]).toEqual({ subject: '数学', teacher: '' });
+    expect(sch[makeKey(1, 2, 1)]).toEqual({ subject: '', teacher: '', locked: true });
+    expect(sch[makeKey(1, 2, 2)]).toBeUndefined();
+    expect(next.history.length).toBe(state.history.length + 1);
+    expect(projectReducer(state, { type: 'schedule/importCells', payload: { writes: [] } })).toBe(state);
+  });
+});
 
 describe('projectReducer — schedule/copyFromTab', () => {
   // source (id:2) と target (id:1, active) の 2 タブ。dates/periods は共通、

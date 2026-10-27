@@ -100,7 +100,7 @@ export default function AvailabilityPanel() {
   // 本体のバイト管理にいる講師だけに絞る (調査は主にバイト向けなので、常勤が
   // 多いと一覧が長くなる)。本体の外で単体で描くときは出さない
   const [onlyPartTime, setOnlyPartTime] = useState(false);
-  const { partTimeStaffNames } = useHostData();
+  const { partTimeStaffNames, retiredTeacherNames } = useHostData();
 
   // 日付・時限・タブだけで決まる (回答を付けても作り直さない。一覧の行の memo が
   // 効くように)
@@ -113,7 +113,12 @@ export default function AvailabilityPanel() {
   const baseYmd = projectBaseYmd(project, todayYmd()) || todayYmd();
   const layout = useMemo(() => buildSurveyLayout(surveyDays, { baseYmd }), [surveyDays, baseYmd]);
 
-  const surveyTeachers = useMemo(() => project.teachers.filter(isSurveyTeacher), [project.teachers]);
+  // 本体で「退職・非表示」の講師は調査に出さない (講習の講師マスタに残っていても)
+  const retiredSet = useMemo(() => new Set(retiredTeacherNames || []), [retiredTeacherNames]);
+  const surveyTeachers = useMemo(
+    () => project.teachers.filter(t => isSurveyTeacher(t) && !retiredSet.has(t.name)),
+    [project.teachers, retiredSet],
+  );
   // 今の調査に回答済みの講師 (前の季節の日付に残った回答だけの人は未回答)
   const answeredNames = useMemo(() => answeredTeacherNames(surveyTeachers, surveyDays), [surveyTeachers, surveyDays]);
   const partTimeSet = useMemo(() => new Set(partTimeStaffNames || []), [partTimeStaffNames]);

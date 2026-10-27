@@ -482,3 +482,39 @@ describe('TeacherManager — 講師名フィルタ (N4f)', () => {
     expect(screen.getByText('堀上')).toBeInTheDocument();
   });
 });
+
+describe('TeacherManager — 本体で退職・非表示の講師', () => {
+  it('講師マスタにいれば割当のコマ数つきで知らせ、確認のあとまとめて外す', async () => {
+    const { HostDataContext } = await import('../../contexts/hostDataContext');
+    const removeTeachersByName = vi.fn();
+    const showConfirm = vi.fn().mockResolvedValue(true);
+    const projectValue = {
+      project: {
+        teachers: [{ name: '高松', subjects: ['英語'] }, { name: '堀上', subjects: ['英語'] }],
+        subjects: ['英語'],
+        tabs: [{ id: 1, schedule: { 'd1-p1-c1': { subject: '英語', teacher: '高松' }, 'd1-p2-c1': { subject: '英語', teacher: '堀上' } } }],
+      },
+      commonSubjects: ['英語'],
+      addTeacher: vi.fn(), importTeachers: vi.fn(), removeTeacher: vi.fn(), removeTeachersByName,
+      renameTeacher: vi.fn(), toggleTeacherSubject: vi.fn(), setTeacherLimit: vi.fn(), addSubjects: vi.fn(),
+    };
+    render(
+      <HostDataContext.Provider value={{ offsiteLessons: [], holidays: [], partTimeStaffNames: [], retiredTeacherNames: ['高松'] }}>
+        <ProjectContext.Provider value={projectValue}>
+          <UIContext.Provider value={{ showConfirm, showInput: vi.fn(), showToast: vi.fn() }}>
+            <TeacherManager />
+          </UIContext.Provider>
+        </ProjectContext.Provider>
+      </HostDataContext.Provider>,
+    );
+    expect(screen.getByText(/退職・非表示/).closest('[role="status"]')).toHaveTextContent('高松 (割当 1 コマ)');
+    fireEvent.click(screen.getByRole('button', { name: '講師マスタから外す' }));
+    await waitFor(() => expect(removeTeachersByName).toHaveBeenCalledWith(['高松']));
+    expect(showConfirm.mock.calls[0][0]).toContain('1 コマは講師なし');
+  });
+
+  it('退職の講師がいなければ何も出さない', () => {
+    renderManager({ project: { teachers: [{ name: '堀上', subjects: ['英語'] }] } });
+    expect(screen.queryByRole('button', { name: '講師マスタから外す' })).toBeNull();
+  });
+});

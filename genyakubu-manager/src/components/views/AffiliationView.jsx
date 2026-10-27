@@ -6,6 +6,7 @@ import { sortTeacherNames, teacherMatchesQuery } from "../../utils/teacherKana";
 import {
   AFFILIATION_CATEGORIES,
   DEFAULT_CATEGORY,
+  RETIRED_CATEGORY,
   categoryMeta,
   changesFromPreviousYear,
   fiscalYearOf,
@@ -108,9 +109,12 @@ export function AffiliationView({
     const set = teacherNamesForYear(slots, timetables, year);
     for (const n of partTimeNames) set.add(n);
     for (const n of index.keys()) {
-      if (resolveAffiliation(index, n, year, partTimeNames).category !== DEFAULT_CATEGORY) {
-        set.add(n);
-      }
+      const r = resolveAffiliation(index, n, year, partTimeNames);
+      if (r.category === DEFAULT_CATEGORY) continue;
+      // 退職した人は退職にした年度だけ並べる (時間割・バイト一覧にいれば上で入る)。
+      // 次の年度からは出さない (辞めた人をいつまでも並べない)
+      if (r.category === RETIRED_CATEGORY && r.source !== "this-year") continue;
+      set.add(n);
     }
     return sortTeacherNames([...set], teacherKana);
   }, [slots, timetables, year, partTimeNames, index, teacherKana]);
@@ -221,7 +225,9 @@ export function AffiliationView({
         </div>
         <div style={{ color: colors.inkMuted, fontSize: 12 }}>
           分けていない講師は予備校部、バイト一覧の人は最初から現役部 非常勤です。 「現役部
-          常勤」の人の有給・半休を記録できます。
+          常勤」の人の有給・半休を記録できます。辞めた人は「退職・非表示」にすると、その年度から
+          講習時間割作成・授業時間の集計・出勤可能調査・サイドバーの講師一覧に出なくなります
+          (授業の記録が残っている画面では出します)。
         </div>
       </section>
 

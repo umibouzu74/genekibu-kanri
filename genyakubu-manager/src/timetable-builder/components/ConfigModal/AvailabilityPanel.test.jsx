@@ -31,7 +31,7 @@ function baseProject(overrides = {}) {
   };
 }
 
-function renderPanel({ project = baseProject(), ui = {}, partTimeStaffNames = [] } = {}) {
+function renderPanel({ project = baseProject(), ui = {}, partTimeStaffNames = [], retiredTeacherNames = [] } = {}) {
   const setTeacherAvailability = vi.fn();
   const clearTeacherAvailability = vi.fn();
   const setTeacherAvailabilityMemo = vi.fn();
@@ -39,7 +39,7 @@ function renderPanel({ project = baseProject(), ui = {}, partTimeStaffNames = []
   const utils = render(
     <ProjectContext.Provider value={{ project, setTeacherAvailability, clearTeacherAvailability, setTeacherAvailabilityMemo }}>
       <UIContext.Provider value={uiValue}>
-        <HostDataContext.Provider value={{ offsiteLessons: [], holidays: [], partTimeStaffNames }}>
+        <HostDataContext.Provider value={{ offsiteLessons: [], holidays: [], partTimeStaffNames, retiredTeacherNames }}>
           <AvailabilityPanel />
         </HostDataContext.Provider>
       </UIContext.Provider>
@@ -200,6 +200,12 @@ describe('AvailabilityPanel — 回答の入力', () => {
     cleanup();
     renderPanel();
     expect(screen.queryByLabelText(/バイトのみ/)).toBeNull();
+  });
+
+  it('本体で退職・非表示の講師は一覧に出さない', () => {
+    renderPanel({ retiredTeacherNames: ['堀上'] });
+    expect(screen.queryByRole('button', { name: /^堀上/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /^山田/ })).toBeInTheDocument();
   });
 
   it('授業のある日が無いときは案内だけ出す', () => {

@@ -45,6 +45,7 @@ import { useToday } from "../../hooks/useToday";
 import { sortTeacherNames, teacherMatchesQuery } from "../../utils/teacherKana";
 import { biweeklyPartner, getSlotTeachers } from "../../utils/biweekly";
 import { groupTeacherNames } from "../../utils/groupTeacherNames";
+import { fiscalYearOf, retiredNamesForYear } from "../../utils/teacherAffiliations";
 import { dateToDay, fmtMD, isValidDateStr } from "../../utils/dateHelpers";
 import { downloadTableCsv } from "../../utils/csv";
 import {
@@ -144,6 +145,9 @@ export function TeachingMinutesView({
   partTimeStaff = [],
   subjects = [],
   teacherKana = {},
+  // 講師の所属 (utils/teacherAffiliations)。「退職・非表示」の人は、期間内に授業が
+  // 無ければ講師ボタン・バイト出勤表に出さない
+  affiliations = [],
   // 講師名クリックでその人の月間へ (第 2 引数 {month: "YYYY-MM"} でその月を開く)
   onSelectTeacher,
   // 開いているタブ (constants/minutesTabs)。App が持つ。渡されないときはこの画面で持つ
@@ -333,21 +337,35 @@ export function TeachingMinutesView({
     return m;
   }, [rows, includedSet]);
 
+  // 退職・非表示の人 (期間の終わりの年度で見る)。期間内に授業のあった人・選んで
+  // ある人は出す (給与から黙って消さない)
+  const retired = useMemo(
+    () => retiredNamesForYear(affiliations, fiscalYearOf(queryEnd || queryStart)),
+    [affiliations, queryEnd, queryStart]
+  );
   // 選択ボタンに並べる講師: 時間割に出てくる全員 (隔週の相手も)・バイト・
   // 期間内に授業のあった人・選んである人。月によって一覧から消えて選択が
   // 黙って外れないように (代行や特訓だけのバイトは月によって授業が無い)
   const allTeachers = useMemo(() => {
     const set = new Set();
+    const add = (t) => {
+      if (!retired.has(t)) set.add(t);
+    };
     for (const s of slots) {
-      for (const t of getSlotTeachers(s)) set.add(t);
+      for (const t of getSlotTeachers(s)) add(t);
       const partner = biweeklyPartner(s.note);
-      if (partner) set.add(partner);
+      if (partner) add(partner);
     }
-    for (const p of partTimeStaff) if (p?.name) set.add(p.name);
+    for (const p of partTimeStaff) if (p?.name) add(p.name);
     for (const t of rows.keys()) set.add(t);
     for (const t of selected) set.add(t);
     return sortTeacherNames([...set], teacherKana);
-  }, [slots, partTimeStaff, rows, selected, teacherKana]);
+  }, [slots, partTimeStaff, rows, selected, teacherKana, retired]);
+  // バイト出勤表の行にするバイト (退職・非表示で期間内に授業の無い人は外す)
+  const attendanceStaff = useMemo(
+    () => partTimeStaff.filter((p) => !retired.has(p?.name) || rows.has(p?.name)),
+    [partTimeStaff, retired, rows]
+  );
   const filtered = useMemo(
     () => allTeachers.filter((t) => teacherMatchesQuery(t, search, teacherKana)),
     [allTeachers, search, teacherKana]
@@ -390,7 +408,7 @@ export function TeachingMinutesView({
   }, [shownTeachers, rows, sums]);
 
   // バイト出勤表の行 (講師管理のバイト一覧の並び順) と列 (期間の日付)
-  const staffNames = useMemo(() => staffNamesOf(partTimeStaff), [partTimeStaff]);
+  const staffNames = useMemo(() => staffNamesOf(attendanceStaff), [attendanceStaff]);
   const sheetDates = useMemo(
     () => datesInRange(queryStart, queryEnd).dates,
     [queryStart, queryEnd]
@@ -844,7 +862,7 @@ export function TeachingMinutesView({
           <PartTimeAttendanceSheet
             rows={rows}
             dates={sheetDates}
-            partTimeStaff={partTimeStaff}
+            partTimeStaff={attendanceStaff}
             included={included}
             slots={slots}
             timetables={timetables}

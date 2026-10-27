@@ -84,6 +84,7 @@ export type ProjectAction =
   | { type: 'teacher/add'; payload: { name: string } }
   | { type: 'teacher/import'; payload: { teachers: Array<{ name: string; subjects?: string[] }>; mode?: 'append' | 'replace' } }
   | { type: 'teacher/remove'; payload: { idx: number } }
+  | { type: 'teacher/removeByNames'; payload: { names: string[] } }
   | { type: 'teacher/rename'; payload: { idx: number; newName: string } }
   | { type: 'teacher/toggleSubject'; payload: { idx: number; subject: string } }
   | { type: 'teacher/setLimit'; payload: { idx: number; key: 'maxDailyHours' | 'maxTotalHours' | 'maxConsecutivePeriods'; value: unknown } }
@@ -118,6 +119,7 @@ export type ProjectAction =
   | { type: 'schedule/clearUnlocked' }
   | { type: 'schedule/applyPattern'; payload: { pat: Schedule; tabId?: number } }
   | { type: 'schedule/copyFromTab'; payload: { sourceTabId: number } }
+  | { type: 'schedule/importCells'; payload: { writes: Array<{ tabId: number; key: string; subject: string; teacher: string }> } }
   | { type: 'snapshot/save'; payload: { name: string; createdAt?: string | null } }
   | { type: 'snapshot/apply'; payload: { id: number } }
   | { type: 'snapshot/rename'; payload: { id: number; name: string } }
@@ -1020,6 +1022,18 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const newSessions = cleanExternalSessionsForTeacher(project.externalSessions, targetName);
       return { ...project, teachers: newTeachers, tabs: newTabs, externalCounts: newExternal, externalSessions: newSessions };
     }
+    case 'teacher/removeByNames': {
+      // 何人かをまとめて外す (本体で退職にした講師を講師マスタから外す)。
+      // 1 人ずつは teacher/remove と同じ後始末 (割当の講師を空に・他学年
+      // セッションと外部コマを消す)。Undo 1 回で戻せるよう 1 アクションにする
+      const names = new Set(action.payload.names || []);
+      let next = project;
+      for (const name of names) {
+        const idx = next.teachers.findIndex(t => t.name === name);
+        if (idx >= 0) next = applyAction(next, { type: 'teacher/remove', payload: { idx } });
+      }
+      return next;
+    }
     case 'teacher/rename': {
       const { idx, newName } = action.payload;
       if (!newName) return project;
@@ -1825,6 +1839,35 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const newTabs = project.tabs.map(t =>
         t.id === target.id ? { ...t, schedule: newSchedule } : t
       );
+      return cleanSchedule({ ...project, tabs: newTabs });
+    }
+
+    // ─── 前の講習の時間割を写す (2026-10-27、utils/timetableCopy) ───
+    // 写す計画 (planTimetableCopy) が決めたセルに科目・講師を書く。ロックした
+    // セルには書かない (計画の後にロックされた場合も)。存在しないタブ・キーの
+    // セルは cleanSchedule が落とす
+    case 'schedule/importCells': {
+      const writes = action.payload.writes || [];
+      if (writes.length === 0) return project;
+      const byTab = new Map<number, typeof writes>();
+      writes.forEach(w => {
+        if (!byTab.has(w.tabId)) byTab.set(w.tabId, []);
+        byTab.get(w.tabId).push(w);
+      });
+      let changed = false;
+      const newTabs = project.tabs.map(tab => {
+        const list = byTab.get(tab.id);
+        if (!list) return tab;
+        const schedule = { ...tab.schedule };
+        list.forEach(w => {
+          if (!w.subject && !w.teacher) return;
+          if (schedule[w.key]?.locked) return;
+          schedule[w.key] = { subject: w.subject, teacher: w.teacher };
+          changed = true;
+        });
+        return { ...tab, schedule };
+      });
+      if (!changed) return project;
       return cleanSchedule({ ...project, tabs: newTabs });
     }
 

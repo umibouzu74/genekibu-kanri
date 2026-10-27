@@ -64,6 +64,7 @@ import {
   fiscalYearOf,
   indexAffiliationChanges,
   resolveAffiliation,
+  retiredNamesForYear,
 } from "./utils/teacherAffiliations";
 import {
   calendarFor,
@@ -534,6 +535,11 @@ export default function App() {
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const todayStr = useToday();
+  // 講師の所属で今年度「退職・非表示」の講師 (講習時間割作成へ読み取り専用で渡す)
+  const retiredTeacherNames = useMemo(
+    () => [...retiredNamesForYear(teacherAffiliations, fiscalYearOf(todayStr))],
+    [teacherAffiliations, todayStr]
+  );
   // 「今の時間割」(週計・全講師一覧・タイムテーブルの通常表示など、日付を
   // 持たない画面の時間割) は今日の日付から決める
   // (utils/timetable.filterSlotsCurrentOn)。以前はヘッダのセレクタで端末ごとに
@@ -1543,6 +1549,7 @@ export default function App() {
               partTimeStaff={partTimeStaff}
               subjects={subjects}
               teacherKana={teacherKana}
+              affiliations={teacherAffiliations}
               onSelectTeacher={selectTeacher}
               tab={minutesTab}
               onTabChange={setMinutesTab}
@@ -1894,6 +1901,7 @@ export default function App() {
               offsiteLessons={offsiteLessons}
               holidays={holidays}
               partTimeStaffNames={partTimeStaffNames}
+              retiredTeacherNames={retiredTeacherNames}
             />
           )}
           {view === VIEWS.REGULAR_BUILDER && !selected && (

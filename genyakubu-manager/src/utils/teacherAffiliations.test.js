@@ -4,6 +4,7 @@ import {
   DEFAULT_CATEGORY,
   LEAVE_CATEGORY,
   PART_TIME_CATEGORY,
+  RETIRED_CATEGORY,
   categoryMeta,
   changesFromPreviousYear,
   fiscalYearOf,
@@ -14,6 +15,7 @@ import {
   migrateTeacherAffiliations,
   resetAffiliation,
   resolveAffiliation,
+  retiredNamesForYear,
   setAffiliation,
   teacherNamesForYear,
 } from "./teacherAffiliations";
@@ -127,7 +129,7 @@ describe("一覧", () => {
   it("区分ごとに分け、空の区分も移動先として返す", () => {
     const groups = groupByAffiliation(["石原", "松川", "福江", "西岡"], idx, 2026, PT);
     expect(groups.map((g) => g.category.key)).toEqual(AFFILIATION_CATEGORIES.map((c) => c.key));
-    expect(groups.map((g) => g.names)).toEqual([["石原", "松川"], ["福江"], ["西岡"]]);
+    expect(groups.map((g) => g.names)).toEqual([["石原", "松川"], ["福江"], ["西岡"], []]);
     const empty = groupByAffiliation([], idx, 2026, PT);
     expect(empty).toHaveLength(AFFILIATION_CATEGORIES.length);
   });
@@ -164,5 +166,23 @@ describe("teacherNamesForYear", () => {
       ["半田", "堀上", "河野", "香川"].sort()
     );
     expect([...teacherNamesForYear(slots, timetables, 2025)]).toEqual(["旧講師"]);
+  });
+});
+
+describe("retiredNamesForYear", () => {
+  it("退職にした年度から後だけ退職。戻した年度からは退職ではない", () => {
+    let changes = setAffiliation([], ["高松", "福江"], 2026, RETIRED_CATEGORY, PT);
+    changes = setAffiliation(changes, ["石原"], 2026, LEAVE_CATEGORY, PT);
+    changes = setAffiliation(changes, ["福江"], 2028, PART_TIME_CATEGORY, PT);
+    expect([...retiredNamesForYear(changes, 2025)]).toEqual([]);
+    expect([...retiredNamesForYear(changes, 2026)].sort()).toEqual(["福江", "高松"].sort());
+    expect([...retiredNamesForYear(changes, 2027)].sort()).toEqual(["福江", "高松"].sort());
+    expect([...retiredNamesForYear(changes, 2028)]).toEqual(["高松"]);
+    expect([...retiredNamesForYear(changes, null)]).toEqual([]);
+  });
+
+  it("退職の区分は有給を記録しない", () => {
+    expect(categoryMeta(RETIRED_CATEGORY).tracksLeave).toBe(false);
+    expect(categoryMeta(RETIRED_CATEGORY).label).toBe("退職・非表示");
   });
 });
