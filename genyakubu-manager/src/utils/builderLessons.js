@@ -37,6 +37,11 @@ import {
 } from "../timetable-builder/utils/courseDates";
 import { computePresetMemoBackfill } from "../timetable-builder/utils/presetMemoBackfill";
 import {
+  isPublished,
+  publishStateForSessionDate,
+  publishStateForTab,
+} from "../timetable-builder/utils/publishState";
+import {
   formatHHmm,
   getPeriodTimeRange,
   getSessionTimeRange,
@@ -94,6 +99,8 @@ function periodShortLabel(label) {
 // - externalSessions は kind="external" として同じ配列に混ぜる (subj = 種別
 //   ラベル、grade/cls/tabName は空)。時刻の読めないものは Excel の講師別
 //   シートと同じく同日の末尾に沈める
+// - 作成中の時間割 (publishState = draft) は出さない。仮確定は tentative=true
+//   (月間のカードに「仮」の印)。決まりは timetable-builder/utils/publishState
 export function buildKoshuLessons(project, { todayYmd } = {}) {
   if (!project || !Array.isArray(project.tabs)) return [];
   const baseYmd = projectBaseYmd(project, todayYmd);
@@ -107,6 +114,9 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
 
   const lessons = [];
   project.tabs.forEach((tab, tabIndex) => {
+    // 作成中の時間割は出さない。仮確定は「仮」の印をつける (utils/publishState)
+    const state = publishStateForTab(project, tab);
+    if (!isPublished(state)) return;
     const cfg = effectiveConfigForTab(project, tab);
     // 回数連番 (①②… = そのクラスでその科目が何回目か)。builder の画面
     // (ScheduleCell) / 講師別 Excel / 配布用と同じ makeSubjectOrderMarker を
@@ -200,6 +210,7 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
         room: g.classes.some((c) => c.room) ? g.classes.map((c) => c.room || "?").join("/") : "",
         tabName: tab.name || "",
         projectName: project.name || "",
+        tentative: state === "tentative",
         _sortMin: g.period.sortMin,
         _sortPeriod: g.period.index,
         _sortTab: tabIndex,
@@ -215,7 +226,9 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
   const sessions = (Array.isArray(project.externalSessions)
     ? project.externalSessions
     : []
-  ).filter((s) => used.has(s?.date));
+  ).filter(
+    (s) => used.has(s?.date) && isPublished(publishStateForSessionDate(project, s.date))
+  );
   const { assignments } = computePresetMemoBackfill(
     sessions,
     project.externalSessionPresets || [],
@@ -253,6 +266,7 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
       room: "",
       tabName: "",
       projectName: project.name || "",
+      tentative: publishStateForSessionDate(project, s.date) === "tentative",
       _sortMin: range ? range.startMin : Number.POSITIVE_INFINITY,
       _sortPeriod: Number.POSITIVE_INFINITY,
       _sortTab: Number.POSITIVE_INFINITY,

@@ -20,13 +20,14 @@
 // 注意: constants.js は本ファイルの parseKey を import しているため、
 // ここから constants.js を import すると循環になる。import してよいのは
 // 無依存モジュール (generationParams / dateGenerate / dateLabelUnify /
-// availabilityShape / carriedTimetable) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
+// availabilityShape / carriedTimetable / publishState) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
 // availabilityShape の無依存モジュールのみ。
 import { clampGenerationParam } from './generationParams';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { unifyDateLabelWeekdays } from './dateLabelUnify';
 import { sanitizeAvailability } from './availabilityShape';
 import { normalizeCarriedTimetable } from './carriedTimetable';
+import { isPublishState } from './publishState';
 import type {
   CombinedGroup,
   EffectiveConfig,
@@ -632,6 +633,13 @@ export function migrateProject(project: any): Project {
     } else if (JSON.stringify(carried) !== JSON.stringify(result.previousTimetable)) {
       result = { ...result, previousTimetable: carried };
     }
+  }
+
+  // 月間の予定へ出すか (任意フィールド、utils/publishState)。知らない値は落とす
+  // (= 確定。未設定と同じく従来どおり月間に出す)
+  if (result.publishState !== undefined && !isPublishState(result.publishState)) {
+    const { publishState: _dropped, ...rest } = result;
+    result = rest;
   }
 
   // snapshots が未設定 / 不正な場合は空配列で初期化 (E1c で追加された後発フィールド)

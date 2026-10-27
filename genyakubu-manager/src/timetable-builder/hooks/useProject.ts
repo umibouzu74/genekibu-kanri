@@ -6,7 +6,7 @@ import { useSubjectActions } from './useSubjectActions';
 import { useTeacherActions } from './useTeacherActions';
 import { makeKey, migrateProject, effectiveConfigForTab } from '../utils/scheduleKey';
 import { cleanSchedule } from '../utils/constants';
-import type { CombinedGroup, DayStatus, GenerationParamKey, Project } from '../types';
+import type { CombinedGroup, DayStatus, GenerationParamKey, Project, PublishState } from '../types';
 
 // 講習時間割プロジェクトの一元状態管理フック。
 //
@@ -195,6 +195,11 @@ export function useProject(options: HistoryStackOptions) {
     dispatch({ type: 'project/updateName', payload: { name } });
   }, [dispatch]);
 
+  // 月間の予定へ出すか (作成中 / 仮確定 / 確定、utils/publishState)
+  const setPublishState = useCallback((state: PublishState) => {
+    dispatch({ type: 'project/setPublishState', payload: { state } });
+  }, [dispatch]);
+
   // --- 自動生成パラメータ (E2e) ---
   // { numPatterns?, maxDailyHours?, maxIterations? } の部分更新。
   const updateGenerationParams = useCallback((updates: Partial<Record<GenerationParamKey, unknown>>) => {
@@ -222,11 +227,15 @@ export function useProject(options: HistoryStackOptions) {
   // --- テンプレート適用 (E2d) ---
   // payload (保存済みプロジェクト) を migrate + cleanSchedule してから
   // project 全体を差し替える (Undo 可能)。JSON 読込と同じ apply 経路。
+  // 月間の予定へ出すか (publishState) は今の project のまま (テンプレートを当てた
+  // だけで作成中の時間割が月間に出たり、確定した時間割が消えたりしないように)
+  const currentPublishState = project.publishState;
   const applyTemplateFull = useCallback((payload: unknown) => {
     if (!payload) return;
-    const migrated = migrateProject(payload);
-    dispatch({ type: 'project/replace', payload: { project: cleanSchedule(migrated) } });
-  }, [dispatch]);
+    const { publishState: _templateState, ...migrated } = migrateProject(payload);
+    const next = currentPublishState ? { ...migrated, publishState: currentPublishState } : migrated;
+    dispatch({ type: 'project/replace', payload: { project: cleanSchedule(next) } });
+  }, [dispatch, currentPublishState]);
 
   // --- 合同グループ管理 ---
   const addCombinedGroup = useCallback((group: Omit<CombinedGroup, 'id'>) => {
@@ -298,6 +307,7 @@ export function useProject(options: HistoryStackOptions) {
     handleSaveJson,
     // メタデータ
     updateProjectName,
+    setPublishState,
     // 自動生成パラメータ
     updateGenerationParams,
     // スナップショット

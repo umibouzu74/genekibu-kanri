@@ -89,6 +89,17 @@ describe("MonthView 講習コマ", () => {
     expect(screen.getByText("講")).toBeInTheDocument();
   });
 
+  it("仮確定の講習は「仮」の印を出し、title にも書く (2026-10-27)", () => {
+    render(<MonthView {...baseProps} koshuLessons={[{ ...KOSHU_LESSON, tentative: true }]} />);
+    const mark = screen.getByText("仮");
+    expect(mark.closest(".month-print-card").getAttribute("title")).toContain("仮確定");
+  });
+
+  it("確定の講習には「仮」を出さない", () => {
+    render(<MonthView {...baseProps} koshuLessons={[{ ...KOSHU_LESSON, tentative: false }]} />);
+    expect(screen.queryByText("仮")).not.toBeInTheDocument();
+  });
+
   it("他講師の講習コマは表示しない", () => {
     render(
       <MonthView

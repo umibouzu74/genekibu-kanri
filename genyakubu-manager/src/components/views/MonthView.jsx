@@ -1123,17 +1123,19 @@ export function MonthView({
         // 回数連番 (①②… = そのクラスでその科目が何回目か)。
         // 講習時間割作成の画面・配布用 Excel と同じ番号。
         const subjText = `${lesson.subj}${lesson.countText || ""}`;
+        // 仮確定の時間割 (講習時間割作成の「🟡 仮確定」)。まだ変わるかもしれない
+        const tentativeNote = lesson.tentative ? "\n(仮確定: まだ変わることがあります)" : "";
         const title = external
           ? `[講習期間の外部授業] ${lesson.subj}${
               lesson.time ? ` (${lesson.time})` : ""
-            }\n講習時間割作成の「講師不在・NG」で登録されたコマ`
+            }\n講習時間割作成の「講師不在・NG」で登録されたコマ${tentativeNote}`
           : `[講習${
               lesson.projectName ? `: ${lesson.projectName}` : ""
             }] ${lesson.tabName} ${lesson.cls} ${subjText} (${
               lesson.periodLabel
             }${lesson.time ? ` ${lesson.time}` : ""})${
               lesson.room ? ` 教室 ${lesson.room}` : ""
-            }\n編集は「講習時間割作成」で行います`;
+            }${tentativeNote}\n編集は「講習時間割作成」で行います`;
         return (
           <div
             key={`koshu-${lesson.key}`}
@@ -1145,7 +1147,7 @@ export function MonthView({
               margin: "1px 0",
               borderRadius: 3,
               background: col.bg,
-              borderLeft: `2px solid ${col.color}`,
+              borderLeft: `2px ${lesson.tentative ? "dashed" : "solid"} ${col.color}`,
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -1165,6 +1167,22 @@ export function MonthView({
             >
               {external ? "外" : "講"}
             </span>
+            {/* 仮確定: 色だけに頼らず文字で出す (紙面・画像にも載る) */}
+            {lesson.tentative && (
+              <span
+                style={{
+                  border: `1px solid ${col.color}`,
+                  color: col.color,
+                  fontSize: 8,
+                  fontWeight: 800,
+                  padding: "0 2px",
+                  borderRadius: 2,
+                  marginRight: 2,
+                }}
+              >
+                仮
+              </span>
+            )}
             {!external && (
               <span
                 style={{

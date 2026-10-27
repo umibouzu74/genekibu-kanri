@@ -209,11 +209,23 @@ export interface GenerationParams {
 
 export type GenerationParamKey = keyof GenerationParams;
 
+/**
+ * 本体の月間の予定 (講師別の月間・授業時間の集計) へ出すか (2026-10-27)。
+ * draft = 作成中 (出さない) / tentative = 仮確定 (「仮」の印つきで出す) /
+ * final = 確定 (出す)。決まりは utils/publishState
+ */
+export type PublishState = 'draft' | 'tentative' | 'final';
+
 export interface Project {
   version: number;
   name: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * 月間の予定へ出すか (utils/publishState)。未設定 = 確定 (この項目ができる前の
+   * project は従来どおり月間に出す)。新しく作る季節は作成中から始める
+   */
+  publishState?: PublishState;
   teachers: Teacher[];
   activeTabId: number;
   /** v4: 全タブ共通の日付プール (各タブは activeDateIds で絞る) */

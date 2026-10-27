@@ -20,12 +20,14 @@
 // - carryTimetable: 作り直す前の時間割を控えとして残す (previousTimetable。
 //   「📋 前の講習の時間割を写す」で使う)。同じ季節を翌年用に作り直すときだけ。
 //   今の時間割が空 (作り直した直後にもう一度作り直した) なら前の控えを残す
+// - 月間の予定へ出すか (publishState) は作成中に戻す (utils/publishState)
 
 import { removeDatesFromPool } from '../hooks/projectReducer';
 import { stripAvailability } from './availabilityShape';
 import { cleanSchedule, CURRENT_PROJECT_VERSION } from './constants';
 import { migrateProject } from './scheduleKey';
 import { carryTimetable, countCarriedCells } from './timetableCopy';
+import { NEW_PROJECT_PUBLISH_STATE } from './publishState';
 import type { ExternalSessionPreset, Project } from '../types';
 
 export function buildFreshSeasonProject(
@@ -65,6 +67,8 @@ export function buildFreshSeasonProject(
     name,
     createdAt: stamp,
     updatedAt: stamp,
+    // 作り直した / 写した時間割は作成中から (仮確定・確定にするまで本体の月間に出さない)
+    publishState: NEW_PROJECT_PUBLISH_STATE,
     activeTabId: tabs[0]?.id ?? cleared.activeTabId,
     dates: [],
     tabs,

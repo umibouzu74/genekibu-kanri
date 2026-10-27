@@ -33,6 +33,7 @@ import {
 } from '../utils/availabilityShape';
 import { computePresetMemoBackfill } from '../utils/presetMemoBackfill';
 import { computePresetRenameSyncIds, presetSessionLabel } from '../utils/presetRenameSync';
+import { isPublishState, projectPublishState } from '../utils/publishState';
 import type {
   AvailabilityMark,
   CombinedGroup,
@@ -42,6 +43,7 @@ import type {
   GenerationParamKey,
   Project,
   ProjectState,
+  PublishState,
   Schedule,
   Teacher,
 } from '../types';
@@ -129,6 +131,7 @@ export type ProjectAction =
   | { type: 'combinedGroup/update'; payload: { id: number; updates: Partial<Omit<CombinedGroup, 'id'>> } }
   | { type: 'combinedGroup/remove'; payload: { id: number } }
   | { type: 'project/updateName'; payload: { name: string } }
+  | { type: 'project/setPublishState'; payload: { state: PublishState } }
   | { type: 'project/setGenerationParams'; payload: Partial<Record<GenerationParamKey, unknown>> }
   | { type: 'project/replace'; payload: { project: Project } };
 
@@ -1975,6 +1978,12 @@ function applyAction(project: Project, action: ProjectAction): Project {
       // F2d: 同名なら no-op (Header の blur 再 commit 対策)
       if (action.payload.name === project.name) return project;
       return { ...project, name: action.payload.name };
+    }
+    case 'project/setPublishState': {
+      // 月間の予定へ出すか (作成中 / 仮確定 / 確定)。Undo で戻せる (履歴に積む)
+      const { state } = action.payload;
+      if (!isPublishState(state) || projectPublishState(project) === state) return project;
+      return { ...project, publishState: state };
     }
     case 'project/setGenerationParams': {
       // 自動生成パラメータ (numPatterns / maxDailyHours / maxIterations) を

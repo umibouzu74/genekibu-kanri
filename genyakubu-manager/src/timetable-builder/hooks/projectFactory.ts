@@ -11,6 +11,7 @@ import {
 import { migrateProject } from '../utils/scheduleKey';
 import { validateProjectShape } from '../utils/projectSchema';
 import { GENERATION_PARAM_BOUNDS } from '../utils/generationParams';
+import { NEW_PROJECT_PUBLISH_STATE } from '../utils/publishState';
 import type { Entity, Project, Teacher } from '../types';
 import type { SeasonStorage } from '../utils/seasons';
 
@@ -74,6 +75,8 @@ export function createNewProject(
     name: "",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    // 新しく作る時間割は作成中から (人が仮確定・確定にするまで本体の月間に出さない)
+    publishState: NEW_PROJECT_PUBLISH_STATE,
     teachers: teachers || DEFAULT_INITIAL_TEACHERS,
     activeTabId: strippedTabs[0]?.id || 1,
     dates: srcDates,

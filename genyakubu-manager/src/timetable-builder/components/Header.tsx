@@ -3,6 +3,7 @@ import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { useDismissablePopover } from '../hooks/useDismissablePopover';
 import { measureLocalStorageBytes, formatBytes, STORAGE_LIMIT_BYTES, STORAGE_WARN_RATIO } from '../utils/storageHealth';
+import PublishControl from './PublishControl';
 
 // N1b: 保存ステータスバッジの状態別スタイル。以前は成功色 (緑) 固定で、
 // 「⚠️ 保存失敗」まで緑地に描画され失敗が成功に見えていた。
@@ -145,6 +146,8 @@ export default function Header() {
             {storageWarn ? '⚠ ' : ''}{formatBytes(storageBytes)}
           </span>
         )}
+        {/* 本体の月間の予定へ出すか (作成中 / 仮確定 / 確定) */}
+        <PublishControl />
       </div>
       <div className="flex flex-wrap justify-end gap-2">
         <button onClick={handleSaveJson} className="flex items-center gap-1 px-3 py-1.5 bg-builder-blue text-white rounded hover:bg-builder-blue-hover shadow text-sm font-bold" title="プロジェクトをJSONファイルとして保存">💾 プロジェクト保存</button>

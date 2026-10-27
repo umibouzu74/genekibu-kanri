@@ -8,6 +8,7 @@ import { loadTemplates } from '../utils/templates';
 import { validateProjectShape } from '../utils/projectSchema';
 import { mergeImportedTemplates, parseProjectFile } from '../utils/projectFile';
 import { loadInitialProject } from '../hooks/projectFactory';
+import { NEW_PROJECT_PUBLISH_STATE } from '../utils/publishState';
 import SeasonCopyDialog, { type SeasonCopyChoice } from './SeasonCopyDialog';
 import type { SeasonProjects } from './SeasonBar';
 import type { Project } from '../types';
@@ -77,7 +78,7 @@ export default function SeasonStartPanel({
     // この季節のキーはまだ無いので、初期値 (保存した初期値 → 無ければ既定) が返る
     const { project } = loadInitialProject(seasonStorage(season));
     onStart(
-      { ...project, name: projectName },
+      { ...project, name: projectName, publishState: NEW_PROJECT_PUBLISH_STATE },
       `初期値から「${projectName}」を作りました。日付は初期値のままなので、⚙️ 設定 > 基本設定 で作り直してください`,
     );
   };
@@ -94,8 +95,10 @@ export default function SeasonStartPanel({
         return;
       }
       const imported = mergeImportedTemplates(parsed.templates);
+      // 月間の予定へ出すか を持たない JSON (この項目ができる前に書き出したもの) は
+      // 作成中から (開いただけで本体の月間に出さない。出すときは仮確定・確定を押す)
       onStart(
-        parsed.project,
+        parsed.project.publishState ? parsed.project : { ...parsed.project, publishState: NEW_PROJECT_PUBLISH_STATE },
         `「${f.name}」を${def.label}として開きました` + (imported > 0 ? ` (テンプレート ${imported} 件を取り込みました)` : ''),
       );
     };

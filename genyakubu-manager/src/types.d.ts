@@ -453,6 +453,9 @@ export interface KoshuLesson {
   room: string; // 教室 ("401"。合同は "401/403"。講習時間割作成のクラスに教室が無ければ "")
   tabName: string;
   projectName: string;
+  // 講習時間割作成で「仮確定」にした時間割のコマ (月間のカードに「仮」)。
+  // 作成中の時間割のコマは KoshuLesson にならない (timetable-builder/utils/publishState)
+  tentative: boolean;
 }
 
 // ─── Class set (授業セット) ──────────────────────────────────────
