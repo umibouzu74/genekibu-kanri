@@ -271,6 +271,8 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
     const out = {};
     poolDates.forEach(d => {
       let count = 0;
+      // 外部授業だけの日は講習のコマが無い (NG マトリクスも出さない) ので数えない
+      if (isExternalOnlyDate(d)) { out[d.id] = 0; return; }
       project.teachers.forEach(t => {
         const autoEntries = autoNgByTeacher?.get(t.name);
         (periodsByDate.get(d.id) || poolPeriods).forEach(p => {

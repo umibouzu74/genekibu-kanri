@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import CourseEventNotice from './CourseEventNotice';
 import { ProjectContext } from '../contexts/projectContextValue';
 import { HostDataContext } from '../contexts/hostDataContext';
@@ -42,5 +42,38 @@ describe('CourseEventNotice', () => {
       { id: 2, name: '冬期講習 (最終日)', startDate: '2027-01-07', endDate: '2027-01-07', eventType: 'course', targetGrades: [] },
     ]);
     expect(screen.queryByRole('region')).toBeNull();
+  });
+});
+
+describe('CourseEventLinks (行事予定との対応)', () => {
+  it('結び付ける・対象外・提案をまとめて結び付ける', async () => {
+    const { default: CourseEventLinks } = await import('./CourseEventLinks');
+    const { UIContext } = await import('../contexts/uiContextValue');
+    const setCourseEventLink = vi.fn();
+    const linkCourseEvents = vi.fn();
+    const setCourseEventIgnored = vi.fn();
+    const p = {
+      ...project,
+      tabs: [...project.tabs, { id: 2, name: '中３直前 火木', config: { classes: [], subjectCounts: {} }, schedule: {} }],
+    };
+    render(
+      <HostDataContext.Provider value={{ offsiteLessons: [], holidays: [], partTimeStaffNames: [], retiredTeacherNames: [], specialEvents: [
+        { id: 1, name: '冬期講習', startDate: '2027-01-04', endDate: '2027-01-07', eventType: 'course', targetGrades: [] },
+        { id: 2, name: '直前ポイント 火木', startDate: '2027-01-12', endDate: '2027-03-04', eventType: 'course', targetGrades: ['中3'] },
+      ] }}>
+        <UIContext.Provider value={{ showToast: vi.fn() }}>
+          <ProjectContext.Provider value={{ project: p, setCourseEventLink, linkCourseEvents, setCourseEventIgnored }}>
+            <CourseEventLinks />
+          </ProjectContext.Provider>
+        </UIContext.Provider>
+      </HostDataContext.Provider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '名前から結び付ける (1 件)' }));
+    expect(linkCourseEvents).toHaveBeenCalledWith([{ tabId: 2, name: '直前ポイント 火木' }]);
+    const group = screen.getByRole('group', { name: '「冬期講習」と比べるタブ' });
+    fireEvent.click(within(group).getByRole('button', { name: '中３' }));
+    expect(setCourseEventLink).toHaveBeenCalledWith(1, '冬期講習', true);
+    fireEvent.click(screen.getByLabelText('「直前ポイント 火木」をこの講習の対象外にする'));
+    expect(setCourseEventIgnored).toHaveBeenCalledWith('直前ポイント 火木', true);
   });
 });

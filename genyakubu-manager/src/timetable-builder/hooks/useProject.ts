@@ -224,6 +224,17 @@ export function useProject(options: HistoryStackOptions) {
     dispatch({ type: 'frame/setPublishState', payload: { id, state } });
   }, [dispatch]);
 
+  // --- 本体の行事予定 (講習) との結び付け (utils/courseEventCheck) ---
+  const setCourseEventLink = useCallback((tabId: number, name: string, linked: boolean) => {
+    dispatch({ type: 'courseEvents/setLink', payload: { tabId, name, linked } });
+  }, [dispatch]);
+  const linkCourseEvents = useCallback((links: Array<{ tabId: number; name: string }>) => {
+    dispatch({ type: 'courseEvents/linkMany', payload: { links } });
+  }, [dispatch]);
+  const setCourseEventIgnored = useCallback((name: string, ignored: boolean) => {
+    dispatch({ type: 'courseEvents/setIgnored', payload: { name, ignored } });
+  }, [dispatch]);
+
   // --- 自動生成パラメータ (E2e) ---
   // { numPatterns?, maxDailyHours?, maxIterations? } の部分更新。
   const updateGenerationParams = useCallback((updates: Partial<Record<GenerationParamKey, unknown>>) => {
@@ -340,6 +351,10 @@ export function useProject(options: HistoryStackOptions) {
     setTabFrame,
     setFramePeriods,
     setFramePublishState,
+    // 本体の行事予定 (講習) との結び付け
+    setCourseEventLink,
+    linkCourseEvents,
+    setCourseEventIgnored,
     // 自動生成パラメータ
     updateGenerationParams,
     // スナップショット

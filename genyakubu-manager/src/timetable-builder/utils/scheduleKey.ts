@@ -718,6 +718,42 @@ export function migrateProject(project: any): Project {
   // 合同 / セッション) も付け替える。idempotent (詳細は dateLabelUnify.js)。
   result = unifyDateLabelWeekdays(result);
 
+  // 本体の行事予定 (講習) との結び付け (任意、utils/courseEventCheck): 文字列だけ・
+  // 重複なし・空なら持たない
+  {
+    const cleanNames = (v: unknown): string[] => {
+      if (!Array.isArray(v)) return [];
+      const out: string[] = [];
+      v.forEach(x => {
+        const t = typeof x === 'string' ? x.trim() : '';
+        if (t && !out.includes(t)) out.push(t);
+      });
+      return out;
+    };
+    const sameList = (a: unknown, b: string[]) => Array.isArray(a) && a.length === b.length && a.every((x, i) => x === b[i]);
+    if ('ignoredCourseEvents' in result) {
+      const names = cleanNames(result.ignoredCourseEvents);
+      if (names.length === 0) {
+        const { ignoredCourseEvents: _drop, ...rest } = result;
+        result = rest;
+      } else if (!sameList(result.ignoredCourseEvents, names)) {
+        result = { ...result, ignoredCourseEvents: names };
+      }
+    }
+    if (Array.isArray(result.tabs) && result.tabs.some((t: any) => t?.config && 'courseEventNames' in t.config)) {
+      let changed = false;
+      const tabs = result.tabs.map((t: any) => {
+        if (!t?.config || !('courseEventNames' in t.config)) return t;
+        const names = cleanNames(t.config.courseEventNames);
+        if (names.length > 0 && sameList(t.config.courseEventNames, names)) return t;
+        changed = true;
+        const { courseEventNames: _drop, ...config } = t.config;
+        return { ...t, config: names.length > 0 ? { ...config, courseEventNames: names } : config };
+      });
+      if (changed) result = { ...result, tabs };
+    }
+  }
+
   // 季節の中の枠 (任意、utils/frameShape): 形の崩れた枠・無い枠を指す frameId を落とし、
   // 枠に入ったタブの使う時限を枠の時限の中に収める
   result = normalizeProjectFrames(result);

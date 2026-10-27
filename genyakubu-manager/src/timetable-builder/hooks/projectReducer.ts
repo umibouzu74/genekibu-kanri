@@ -35,6 +35,7 @@ import { computePresetMemoBackfill } from '../utils/presetMemoBackfill';
 import { computePresetRenameSyncIds, presetSessionLabel } from '../utils/presetRenameSync';
 import { framePublishState, isPublishState, leastPublished, projectPublishState, publishStateForTab } from '../utils/publishState';
 import { computeCourseSplit, externalSessionContentKey, isExternalOnlyDate, normalizeSessionCourse } from '../utils/externalSessionShape';
+import { normalizeEventName } from '../utils/eventName';
 import type {
   AvailabilityMark,
   CombinedGroup,
@@ -143,6 +144,9 @@ export type ProjectAction =
   | { type: 'frame/setTab'; payload: { tabId: number; frameId: number | null } }
   | { type: 'frame/setPeriods'; payload: { id: number; value: string } }
   | { type: 'frame/setPublishState'; payload: { id: number; state: PublishState } }
+  | { type: 'courseEvents/setLink'; payload: { tabId: number; name: string; linked: boolean } }
+  | { type: 'courseEvents/linkMany'; payload: { links: Array<{ tabId: number; name: string }> } }
+  | { type: 'courseEvents/setIgnored'; payload: { name: string; ignored: boolean } }
   | { type: 'project/setGenerationParams'; payload: Partial<Record<GenerationParamKey, unknown>> }
   | { type: 'project/replace'; payload: { project: Project } };
 
@@ -2255,6 +2259,61 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const target = frames.find(f => f.id === id);
       if (!target || !isPublishState(state) || framePublishState(project, target) === state) return project;
       return { ...project, frames: frames.map(f => (f.id === id ? { ...f, publishState: state } : f)) };
+    }
+
+    // ─── 本体の行事予定 (講習) との結び付け (utils/courseEventCheck) ─────
+    // タブに行事予定の名前を結び付ける / 外す。名前は表記ゆれ (全角半角・空白) を
+    // 同じものとして扱う。対象外にした行事予定を結び付けたら対象外から外す
+    case 'courseEvents/setLink':
+    case 'courseEvents/linkMany': {
+      const links = action.type === 'courseEvents/setLink'
+        ? [{ tabId: action.payload.tabId, name: action.payload.name, linked: action.payload.linked }]
+        : action.payload.links.map(l => ({ ...l, linked: true }));
+      let tabs = project.tabs;
+      let ignored = project.ignoredCourseEvents || [];
+      for (const { tabId, name, linked } of links) {
+        const key = normalizeEventName(name);
+        const tab = tabs.find(t => t.id === tabId);
+        if (!key || !tab) continue;
+        const current = tab.config.courseEventNames || [];
+        const has = current.some(n => normalizeEventName(n) === key);
+        if (has === linked) continue;
+        const nextNames = linked ? [...current, String(name).trim()] : current.filter(n => normalizeEventName(n) !== key);
+        tabs = tabs.map(t => {
+          if (t.id !== tabId) return t;
+          const { courseEventNames: _old, ...config } = t.config;
+          return { ...t, config: nextNames.length > 0 ? { ...config, courseEventNames: nextNames } : config };
+        });
+        if (linked) ignored = ignored.filter(n => normalizeEventName(n) !== key);
+      }
+      if (tabs === project.tabs) return project;
+      const next: Project = { ...project, tabs };
+      if (ignored.length > 0) next.ignoredCourseEvents = ignored;
+      else delete next.ignoredCourseEvents;
+      return next;
+    }
+    // 行事予定を「この講習の対象外」にする / 戻す (対象外にしたらタブの結び付けも外す)
+    case 'courseEvents/setIgnored': {
+      const { name, ignored: value } = action.payload;
+      const key = normalizeEventName(name);
+      if (!key) return project;
+      const current = project.ignoredCourseEvents || [];
+      const has = current.some(n => normalizeEventName(n) === key);
+      if (has === value) return project;
+      const names = value ? [...current, String(name).trim()] : current.filter(n => normalizeEventName(n) !== key);
+      const tabs = value
+        ? project.tabs.map(t => {
+          const list = t.config.courseEventNames || [];
+          if (!list.some(n => normalizeEventName(n) === key)) return t;
+          const rest = list.filter(n => normalizeEventName(n) !== key);
+          const { courseEventNames: _old, ...config } = t.config;
+          return { ...t, config: rest.length > 0 ? { ...config, courseEventNames: rest } : config };
+        })
+        : project.tabs;
+      const next: Project = { ...project, tabs };
+      if (names.length > 0) next.ignoredCourseEvents = names;
+      else delete next.ignoredCourseEvents;
+      return next;
     }
 
     case 'project/setPublishState': {

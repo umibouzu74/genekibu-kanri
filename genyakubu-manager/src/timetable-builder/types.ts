@@ -106,6 +106,12 @@ export interface TabConfig {
   activePeriodIds?: number[] | null;
   /** このタブが入っている枠 (Project.frames の id、任意。2026-10-27) */
   frameId?: number;
+  /**
+   * このタブと比べる本体の行事予定 (種別「講習」) の名前 (任意、2026-10-27)。
+   * 結び付けたらその行事予定とだけ比べる (utils/courseEventCheck)。名前で持つのは、
+   * 行事予定を表で入れ直すと id が変わり、翌年も同じ名前で使えるため
+   */
+  courseEventNames?: string[];
   /** v3 以前の互換: migrate 前の外部 JSON にのみ現れる (v4 では project 側) */
   dates?: Entity[];
   /** v3 以前の互換 (同上) */
@@ -269,6 +275,8 @@ export interface Project {
   tabs: Tab[];
   /** 季節の中の枠 (任意。無ければ従来どおり 1 つの講習) */
   frames?: Frame[];
+  /** 「この講習の対象外」にした本体の行事予定 (講習) の名前 (utils/courseEventCheck) */
+  ignoredCourseEvents?: string[];
   subjects: string[];
   subjectColors: Record<string, string>;
   combinedGroups: CombinedGroup[];
