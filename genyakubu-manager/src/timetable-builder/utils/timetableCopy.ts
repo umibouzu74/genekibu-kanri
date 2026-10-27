@@ -8,7 +8,12 @@
 //   に残す) か、💾 プロジェクト保存で書き出した JSON。どちらも CarriedTimetable に
 //   そろえてから写す (carryTimetable)
 // - 日付は「N 日目 → N 日目」(タブの使う日のカレンダー順)。去年と今年で日付が
-//   違うので、ラベルでは合わせない。人が 1 日ずつ付け替えられる
+//   違うので、ラベルでは合わせない。人が 1 日ずつ付け替えられる。去年の方が日が多い
+//   (直前ポイント演習が去年 15 日・今年 14 日) ときは、去年の日を外すと残りを先頭から
+//   順に詰める (sequentialDateMapping)。曜日が違う対応は知らせる (火木のコースの
+//   1 日ずれ)
+// - 写したあとの科目ごとのコマ数をクラス別にコマ数の設定と比べる
+//   (subjectCountDiffsAfterCopy。パンフレットの 英9・数9・国8… と合わないクラス)
 // - 時限はラベルが同じものへ、無ければ「1限」のような短い名前、それも無ければ
 //   N 番目。クラスはラベルが同じもの (教室番号の付け外しは前方一致) へ
 // - 入れない講師 (バイト・退職・講師マスタにいない人) は講師を空にして科目だけ写す
@@ -17,6 +22,8 @@
 // 書き込みは schedule/importCells の 1 アクション (Undo 1 回で戻せる)。
 
 import { effectiveConfigForTab, makeKey } from './scheduleKey';
+import { parseDateLabel } from './courseDates';
+import { quotasForClass } from './subjectQuota';
 import type { CarriedCell, CarriedTab, CarriedTimetable, Entity, Project } from '../types';
 
 export { normalizeCarriedTimetable } from './carriedTimetable';
@@ -86,6 +93,42 @@ export function defaultDateMapping(sourceDates: string[], targetDates: Entity[])
 }
 
 /**
+ * 日付: 外す日 (写す元の添字) を飛ばして、残りを先頭から順に写す先の日へ。
+ * 去年 15 日 → 今年 14 日なら、去年の 1 日を外せば残りの 14 日がそろう
+ */
+export function sequentialDateMapping(
+  sourceCount: number,
+  targetDates: Entity[],
+  skipped: Iterable<number>,
+): Array<number | null> {
+  const skip = new Set(skipped);
+  let next = 0;
+  return Array.from({ length: sourceCount }, (_, i) => {
+    if (skip.has(i)) return null;
+    return targetDates[next++]?.id ?? null;
+  });
+}
+
+/** 対応させた日のうち曜日が違うもの (写す元の添字・ラベル → 写す先のラベル) */
+export function weekdayMismatches(
+  sourceDates: string[],
+  mapping: Array<number | null>,
+  targetDates: Entity[],
+): Array<{ index: number; from: string; to: string }> {
+  const byId = new Map(targetDates.map(d => [d.id, d.label] as const));
+  const out: Array<{ index: number; from: string; to: string }> = [];
+  sourceDates.forEach((from, i) => {
+    const id = mapping[i];
+    const to = id != null ? byId.get(id) : undefined;
+    if (!to) return;
+    const a = parseDateLabel(from)?.weekday;
+    const b = parseDateLabel(to)?.weekday;
+    if (a != null && b != null && a !== b) out.push({ index: i, from, to });
+  });
+  return out;
+}
+
+/**
  * ラベルの対応: 同じラベル → 短い名前 (時限) / 前方一致 (クラス) → (ordinal なら) N 番目。
  * 写す先のそれぞれは 1 回しか使わない (2 つの元が 1 つの先に重ならないように)
  */
@@ -138,6 +181,8 @@ export interface TabCopyMapping {
   sourceTabIndex: number | null;
   /** 写す元の日付の添字 → 写す先の日付 id (null = 写さない) */
   dates: Array<number | null>;
+  /** 外した写す元の日 (添字)。外すと残りを先頭から順に詰め直す (sequentialDateMapping) */
+  skippedDates?: number[];
   periods: Array<number | null>;
   classes: Array<number | null>;
 }
@@ -245,6 +290,58 @@ export function buildDefaultMappings(source: CarriedTimetable, project: Project)
     if (idx != null) taken.add(idx);
     return mappingForSourceTab(source, project, tab.id, idx);
   });
+}
+
+// ─── 写したあとのコマ数 ─────────────────────────────────────────
+
+export interface SubjectCountDiff {
+  tabId: number;
+  tabName: string;
+  className: string;
+  /** コマ数の設定と違う科目 (diff = 写したあとのコマ数 − 設定) */
+  items: Array<{ subject: string; count: number; quota: number; diff: number }>;
+}
+
+/**
+ * 写したあと (writes を当てた時間割) の、クラスごとの科目のコマ数とコマ数の設定
+ * (subjectCounts / クラス別の上書き) の差。対象は tabIds のタブだけ、差のある
+ * クラス・科目だけ。「3SS 数学 −1・理科 +1」
+ */
+export function subjectCountDiffsAfterCopy(
+  project: Project,
+  writes: CellWrite[],
+  tabIds: Iterable<number>,
+): SubjectCountDiff[] {
+  const targets = new Set(tabIds);
+  const writesByTab = new Map<number, Map<string, CellWrite>>();
+  writes.forEach(w => {
+    if (!writesByTab.has(w.tabId)) writesByTab.set(w.tabId, new Map());
+    writesByTab.get(w.tabId)!.set(w.key, w);
+  });
+  const out: SubjectCountDiff[] = [];
+  for (const tab of project.tabs || []) {
+    if (!targets.has(tab.id)) continue;
+    const cfg = effectiveConfigForTab(project, tab);
+    const tabWrites = writesByTab.get(tab.id) || new Map<string, CellWrite>();
+    for (const c of cfg.classes || []) {
+      const counts: Record<string, number> = {};
+      cfg.dates.forEach(d => cfg.periods.forEach(p => {
+        const key = makeKey(d.id, p.id, c.id);
+        const subject = tabWrites.get(key)?.subject ?? tab.schedule?.[key]?.subject;
+        if (subject) counts[subject] = (counts[subject] || 0) + 1;
+      }));
+      const quotas = quotasForClass(cfg, c.id);
+      const subjects = [...new Set([...Object.keys(quotas), ...Object.keys(counts)])];
+      const order = new Map((project.subjects || []).map((sub, i) => [sub, i] as const));
+      const items = subjects
+        .map(subject => ({ subject, count: counts[subject] || 0, quota: quotas[subject] || 0 }))
+        .filter(x => x.count !== x.quota)
+        .map(x => ({ ...x, diff: x.count - x.quota }))
+        .sort((a, b) => (order.get(a.subject) ?? 999) - (order.get(b.subject) ?? 999));
+      if (items.length > 0) out.push({ tabId: tab.id, tabName: tab.name, className: c.label, items });
+    }
+  }
+  return out;
 }
 
 /** 1 つの先のタブに、元のタブ idx を当てたときの既定の対応 */

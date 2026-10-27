@@ -75,6 +75,58 @@ describe('TimetableCopyDialog', () => {
       { tabId: 1, key: makeKey(2, 1, 2), subject: '理科', teacher: '' },
       { tabId: 1, key: makeKey(2, 2, 2), subject: '英語', teacher: '' },
     ]);
+    // コマ数の設定 (ここでは 0) と合わないクラスを出してから閉じる
+    expect(dialog).toHaveTextContent('コマ数の設定と合わないクラス');
+    expect(dialog).toHaveTextContent('中３ 3S: 英語 1/0 (+1)・数学 1/0 (+1)');
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('去年の方が日が多いときは去年の日を外して詰める。曜日の違う対応・写したあとのコマ数を出す (2026-10-27)', () => {
+    // 去年 3 日 (火・木・火) → 今年 2 日 (火・木)。数学のコマ数の設定は 2
+    const prev = {
+      name: '2025 冬期講習',
+      savedAt: '2026-10-27T00:00:00.000Z',
+      tabs: [{
+        name: '中３直前 火木',
+        dates: ['1/13(火)', '1/15(木)', '1/20(火)'],
+        periods: ['1限'],
+        classes: ['3SS'],
+        cells: [
+          { d: 0, p: 0, c: 0, subject: '数学', teacher: '堀上' },
+          { d: 1, p: 0, c: 0, subject: '理科', teacher: '堀上' },
+          { d: 2, p: 0, c: 0, subject: '数学', teacher: '堀上' },
+        ],
+      }],
+    };
+    const { importScheduleCells, onClose } = renderDialog({
+      project: {
+        previousTimetable: prev,
+        dates: [P(1, '1/12(火)'), P(2, '1/14(木)')],
+        periods: [P(1, '1限')],
+        tabs: [{ id: 1, name: '中３直前 火木', config: { classes: [P(1, '3SS')], subjectCounts: { 数学: 2, 理科: 0 } }, schedule: {} }],
+      },
+    });
+    const dialog = screen.getByRole('dialog', { name: '📋 前の講習の時間割を写す' });
+    expect(dialog).toHaveTextContent('去年 3 日 (外す 0 日) → 今年 2 日');
+    // 既定 (N 日目 → N 日目) だと 3 日目は写さず、数学が 1 つ足りない・理科が 1 つ多い
+    expect(dialog).toHaveTextContent('中３直前 火木 3SS: 数学 1/2 (−1)・理科 1/0 (+1)');
+    // 2 日目 (1/15 木) を外すと 3 日目 (1/20 火) → 1/14 (木) で曜日が違う
+    fireEvent.click(within(dialog).getByRole('button', { name: /^2日目 1\/15\(木\)/ }));
+    expect(within(dialog).getByRole('button', { name: /^3日目 1\/20\(火\) → 1\/14\(木\) \(曜日が違う\)/ })).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('曜日が違う対応があります');
+    expect(dialog).toHaveTextContent('どのクラスもコマ数の設定どおりです');
+    // 最後の 1 日を外すボタン
+    fireEvent.click(within(dialog).getByRole('button', { name: '最後の 1 日を外す' }));
+    expect(dialog).toHaveTextContent('去年 3 日 (外す 1 日) → 今年 2 日');
+    fireEvent.click(within(dialog).getByRole('button', { name: '写す (2 コマ)' }));
+    expect(importScheduleCells).toHaveBeenCalledWith([
+      { tabId: 1, key: makeKey(1, 1, 1), subject: '数学', teacher: '堀上' },
+      { tabId: 1, key: makeKey(2, 1, 1), subject: '理科', teacher: '堀上' },
+    ]);
+    expect(dialog).toHaveTextContent('中３直前 火木 3SS: 数学 1/2 (−1)・理科 1/0 (+1)');
+    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
     expect(onClose).toHaveBeenCalled();
   });
 

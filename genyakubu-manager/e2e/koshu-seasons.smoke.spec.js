@@ -98,6 +98,9 @@ test("翌年用に作り直し、日付を作ってから前の講習の時間�
   await expect(copy).toContainText("作り直す前の時間割「e2e 冬期講習」");
   await expect(copy.getByRole("status")).toContainText("1 コマを写します");
   await copy.getByRole("button", { name: "写す (1 コマ)" }).click();
+  // 写したあと、コマ数の設定 (英語 2) と合わないクラスを出してから閉じる
+  await expect(copy).toContainText("中3 3S: 英語 1/2 (−1)");
+  await copy.getByRole("button", { name: "閉じる" }).click();
 
   // 教室を入れる
   const room = settings.getByLabel("クラス「3S」の教室");

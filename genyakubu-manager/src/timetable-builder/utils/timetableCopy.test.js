@@ -7,8 +7,7 @@ import {
   defaultSourceTabIndex,
   normalizeCarriedTimetable,
   planTimetableCopy,
-  sourceTeacherCounts,
-} from './timetableCopy';
+  sourceTeacherCounts, sequentialDateMapping, subjectCountDiffsAfterCopy, weekdayMismatches } from './timetableCopy';
 import { makeKey, migrateProject } from './scheduleKey';
 import { buildFreshSeasonProject } from './seasonStart';
 
@@ -219,5 +218,59 @@ describe('作り直しと控え', () => {
     const once = buildFreshSeasonProject(lastWinter(), { name: '2026 冬期講習', carryTimetable: true });
     const spring = buildFreshSeasonProject(once, { name: '2027 春期講習' });
     expect(spring.previousTimetable).toBeUndefined();
+  });
+});
+
+describe('日数の違う講習を写す (2026-10-27)', () => {
+  const D = (id, label) => ({ id, label });
+  it('sequentialDateMapping: 外した日を飛ばして先頭から詰める (去年 4 日 → 今年 3 日)', () => {
+    const targets = [D(10, '1/12(火)'), D(11, '1/14(木)'), D(12, '1/19(火)')];
+    expect(sequentialDateMapping(4, targets, [])).toEqual([10, 11, 12, null]);
+    expect(sequentialDateMapping(4, targets, [1])).toEqual([10, null, 11, 12]);
+    expect(sequentialDateMapping(4, targets, [3])).toEqual([10, 11, 12, null]);
+  });
+
+  it('weekdayMismatches: 曜日の違う対応', () => {
+    const targets = [D(10, '1/12(火)'), D(11, '1/14(木)')];
+    expect(weekdayMismatches(['1/13(火)', '1/20(火)'], [10, 11], targets)).toEqual([{ index: 1, from: '1/20(火)', to: '1/14(木)' }]);
+    expect(weekdayMismatches(['1/13', '1/20(火)'], [10, null], targets)).toEqual([]);
+  });
+
+  it('subjectCountDiffsAfterCopy: 写したあとのクラス別の科目のコマ数とコマ数の設定 (クラス別の上書きも) の差', () => {
+    const project = {
+      dates: [D(1, '1/12(火)'), D(2, '1/14(木)')],
+      periods: [D(1, '1限'), D(2, '2限')],
+      subjects: ['英語', '数学', '理科'],
+      tabs: [{
+        id: 1,
+        name: '中３直前 火木',
+        config: {
+          classes: [D(1, '3SS'), D(2, '3S')],
+          subjectCounts: { 英語: 1, 数学: 2, 理科: 1 },
+          classSubjectCounts: { 2: { 数学: 1 } },
+        },
+        schedule: { 'd1-p1-c2': { subject: '英語' } },
+      }],
+    };
+    const writes = [
+      { tabId: 1, key: 'd1-p1-c1', subject: '数学', teacher: '' },
+      { tabId: 1, key: 'd1-p2-c1', subject: '英語', teacher: '' },
+      { tabId: 1, key: 'd2-p1-c1', subject: '英語', teacher: '' },
+      { tabId: 1, key: 'd1-p2-c2', subject: '数学', teacher: '' },
+      { tabId: 1, key: 'd2-p1-c2', subject: '理科', teacher: '' },
+    ];
+    expect(subjectCountDiffsAfterCopy(project, writes, [1])).toEqual([
+      {
+        tabId: 1,
+        tabName: '中３直前 火木',
+        className: '3SS',
+        items: [
+          { subject: '英語', count: 2, quota: 1, diff: 1 },
+          { subject: '数学', count: 1, quota: 2, diff: -1 },
+          { subject: '理科', count: 0, quota: 1, diff: -1 },
+        ],
+      },
+    ]);
+    expect(subjectCountDiffsAfterCopy(project, writes, [])).toEqual([]);
   });
 });
