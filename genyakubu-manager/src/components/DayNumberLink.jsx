@@ -11,7 +11,8 @@ import { fmtDateWeekday } from "../utils/dateHelpers";
 // (appShell.css の button 最小高) から `inline-activate` で外す。
 //
 // onAddLeave があれば 🌴 (その日の有給・半休を入れる。講師別月間で、その講師が
-// 現役部 常勤のときだけ) も同じ作りで並べる。
+// 現役部 常勤のときだけ) も同じ作りで並べる。onAddCardForget があれば 💳
+// (その日のカード忘れを記録する。講師別月間で、その講師がバイトのとき・管理者だけ)。
 //
 // 読み上げ名 / title は他の導線 (DashboardDateNav / DashDayRow) と同じ文言:
 //   「YYYY-MM-DD (曜) をダッシュボードで見る」「YYYY-MM-DD (曜) の欠勤組み換えを開く」
@@ -21,10 +22,11 @@ function dayNumberLabels(ds) {
     dashboard: `${day} をダッシュボードで見る`,
     absence: `${day} の欠勤組み換えを開く`,
     leave: `${day} の有給・半休を入れる`,
+    cardForget: `${day} のカード忘れを記録する`,
   };
 }
 
-export function DayNumberLink({ d, ds, onSelectDate, onJumpToAbsenceFlow, onAddLeave }) {
+export function DayNumberLink({ d, ds, onSelectDate, onJumpToAbsenceFlow, onAddLeave, onAddCardForget }) {
   const labels = dayNumberLabels(ds);
   return (
     <span
@@ -95,17 +97,38 @@ export function DayNumberLink({ d, ds, onSelectDate, onJumpToAbsenceFlow, onAddL
           🌴
         </button>
       )}
+      {onAddCardForget && (
+        <button
+          type="button"
+          className="no-print inline-activate day-number-absence"
+          onClick={() => onAddCardForget(ds)}
+          aria-label={labels.cardForget}
+          title={labels.cardForget}
+          style={{
+            background: "none",
+            border: "none",
+            padding: 0,
+            margin: 0,
+            fontSize: 10,
+            lineHeight: 1,
+            cursor: "pointer",
+          }}
+        >
+          💳
+        </button>
+      )}
     </span>
   );
 }
 
 // カレンダーのヘッダに出す凡例 (画面だけ)。渡された導線ぶんだけ書く。
 // 「🚑 が何か」は凡例が無いと判らない (毎日並ぶ絵文字なので)
-export function DayNumberLegend({ onSelectDate, onJumpToAbsenceFlow, onAddLeave, style }) {
+export function DayNumberLegend({ onSelectDate, onJumpToAbsenceFlow, onAddLeave, onAddCardForget, style }) {
   const parts = [];
   if (onSelectDate) parts.push("日付クリック = その日のダッシュボード");
   if (onJumpToAbsenceFlow) parts.push("🚑 = 欠勤組み換え");
   if (onAddLeave) parts.push("🌴 = 有給・半休");
+  if (onAddCardForget) parts.push("💳 = カード忘れ");
   if (parts.length === 0) return null;
   return (
     <span

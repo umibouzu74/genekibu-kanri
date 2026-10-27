@@ -91,6 +91,10 @@ export const LS = {
   // その月の表だけのもので、アプリのデータ (appData) には書き戻さない = この端末だけ。
   // 期間は新しい方から 12 か月ぶん (utils/partTimeAttendance.setAttendanceOverride)
   partTimeAttendanceOverrides: "genyakubu-part-time-attendance-overrides",
+  // バイトのカード忘れ (出退勤のカードを通し忘れた日。1 人 × 1 日)。責任者 (管理者) が
+  // 記録し、経理 (閲覧者) がバイト出勤表・講師の月間で見るので appData に置く。
+  // 給与の記録なのでデータの初期化では消さない (utils/cardForgets)
+  cardForgets: "genyakubu-card-forgets",
   // サイドバーで人が開いたカテゴリ (constants/menuCategories の key の配列)。
   // 明示的な開け閉めの保存で、利用統計ではない (A18 とは別物)
   sidebarOpenCategories: "genyakubu-sidebar-open-categories",

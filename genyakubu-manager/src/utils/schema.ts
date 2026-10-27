@@ -17,6 +17,7 @@
 
 import type {
   BiweeklyAnchor,
+  CardForget,
   ClassSet,
   ClassSetUnit,
   CohortCutoff,
@@ -51,7 +52,7 @@ import type {
 import { SPECIAL_EVENT_TYPE_BY_KEY } from "../constants/specialEvents";
 import { upgradeSpecialEventTypes } from "./specialEventTypes";
 
-export const CURRENT_SCHEMA_VERSION = 26;
+export const CURRENT_SCHEMA_VERSION = 27;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -393,6 +394,21 @@ export function isYobikoEvent(x: unknown): x is YobikoEvent {
   if (!isString(x.kind)) return false;
   if (x.memo !== undefined && !isString(x.memo)) return false;
   if (x.source !== undefined && !isString(x.source)) return false;
+  return true;
+}
+
+// バイトのカード忘れ (utils/cardForgets)。形だけを見る: 知らない種類 (後の版で
+// 足したもの)・読めない時刻は読み込みの migrateCardForgets が直すので、1 件の
+// ためにバックアップ全体を拒まない
+export function isCardForget(x: unknown): x is CardForget {
+  if (!isObject(x)) return false;
+  if (!isNumber(x.id)) return false;
+  if (!isString(x.name) || x.name.trim() === "") return false;
+  if (!isIsoDate(x.date)) return false;
+  if (x.missing !== undefined && !isString(x.missing)) return false;
+  for (const k of ["inTime", "outTime", "memo", "recordedAt"] as const) {
+    if (x[k] !== undefined && !isString(x[k])) return false;
+  }
   return true;
 }
 
@@ -775,6 +791,7 @@ export function validateExportBundle(
   for (const [key, check] of [
     ["yoteihyoMapping", isYoteihyoMappingEntry],
     ["yoteihyoConfirmed", isYoteihyoConfirmation],
+    ["cardForgets", isCardForget],
   ] as const) {
     const list = raw[key];
     if (list == null) continue;
@@ -1176,6 +1193,9 @@ export function migrateExportBundle(raw: unknown): unknown {
   //             既存データの変換は不要 (v12 / v18 と同じく「mock を理解する
   //             schema」の切れ目として版を上げる)。古い版の端末は mock を
   //             "other" に潰すので、リリース後は全端末で再読み込みしてもらう。
+
+  // v26 → v27: cardForgets (バイトのカード忘れ: 出退勤のカードを通し忘れた日) を
+  //             追加。既定値で埋めない (無ければ現状維持)。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;

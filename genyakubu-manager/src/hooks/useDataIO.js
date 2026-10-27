@@ -29,6 +29,7 @@ import { migrateTeacherAffiliations } from "../utils/teacherAffiliations";
 import { migrateStaffLeave } from "../utils/staffLeave";
 import { migrateCourseMapping } from "../utils/yoteihyo/courseMapping";
 import { migrateYoteihyoConfirmed } from "../utils/yoteihyo/confirmations";
+import { migrateCardForgets } from "../utils/cardForgets";
 import {
   DEFAULT_SPECIAL_EVENT_DISPLAY,
   normalizeSpecialEventDisplay,
@@ -66,6 +67,7 @@ export function useDataIO({
   staffLeave,
   yoteihyoCourseMapping,
   yoteihyoConfirmed,
+  cardForgets,
   saveSlots,
   saveHolidays,
   saveBiweeklyBase,
@@ -95,6 +97,7 @@ export function useDataIO({
   saveStaffLeave,
   saveYoteihyoCourseMapping,
   saveYoteihyoConfirmed,
+  saveCardForgets,
   lsKeys,
   setImporting,
   setShowDataMgr,
@@ -146,6 +149,8 @@ export function useDataIO({
           // 予定表チェックの講座の対応・確認済みの食い違い
           yoteihyoMapping: yoteihyoCourseMapping,
           yoteihyoConfirmed,
+          // バイトのカード忘れ (出退勤のカードを通し忘れた日)
+          cardForgets,
           // 表示する時間割は日付で決まるので、端末ごとの選択 (旧 activeTimetableId)
           // は持ち出さない。旧バックアップに入っていても読み込みでは無視する
         },
@@ -164,7 +169,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, specialEventDisplay, extraLessons, daySchedules, fuzokuPlan, offsiteLessons, yobikoEvents, handoverNotes, handoverEnabled, teacherAffiliations, staffLeave, yoteihyoCourseMapping, yoteihyoConfirmed, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, specialEventDisplay, extraLessons, daySchedules, fuzokuPlan, offsiteLessons, yobikoEvents, handoverNotes, handoverEnabled, teacherAffiliations, staffLeave, yoteihyoCourseMapping, yoteihyoConfirmed, cardForgets, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -282,6 +287,11 @@ export function useDataIO({
           if (Array.isArray(d.yoteihyoConfirmed) && saveYoteihyoConfirmed) {
             saveYoteihyoConfirmed(migrateYoteihyoConfirmed(d.yoteihyoConfirmed));
           }
+          // カード忘れも旧バックアップには無い (v27 より前) ので、欠けているときは
+          // 現状維持 — 空で上書きしない
+          if (Array.isArray(d.cardForgets) && saveCardForgets) {
+            saveCardForgets(migrateCardForgets(d.cardForgets));
+          }
           if (d.teacherSubjects && typeof d.teacherSubjects === "object" && !Array.isArray(d.teacherSubjects)) {
             saveTeacherSubjects(d.teacherSubjects);
           }
@@ -366,6 +376,7 @@ export function useDataIO({
       saveStaffLeave,
       saveYoteihyoCourseMapping,
       saveYoteihyoConfirmed,
+      saveCardForgets,
       handoverEnabled,
       setImporting,
       setShowDataMgr,
@@ -376,7 +387,7 @@ export function useDataIO({
     const ok = await confirm({
       title: "データの初期化",
       message:
-        "データを初期状態に戻しますか？\n現在のデータは失われます。\n(引継ぎメモ・有給・半休の記録は残ります)",
+        "データを初期状態に戻しますか？\n現在のデータは失われます。\n(引継ぎメモ・有給・半休・カード忘れの記録は残ります)",
       okLabel: "初期化",
       tone: "danger",
     });
@@ -384,8 +395,13 @@ export function useDataIO({
     // 引継ぎメモ・有給・半休は消さない。初期化は時間割まわりのやり直しのための
     // 操作で、何年も書き溜めた引継ぎや休暇の記録を巻き添えにしない
     // (消すなら画面から 1 件ずつ)。バイト出勤表の金額入りのパスワード (管理者が
-    // 決めた設定) も残す
-    const keep = new Set([lsKeys.handoverNotes, lsKeys.staffLeave, lsKeys.partTimeAttendanceSettings]);
+    // 決めた設定) と、バイトのカード忘れ (給与の締めで経理が見る記録) も残す
+    const keep = new Set([
+      lsKeys.handoverNotes,
+      lsKeys.staffLeave,
+      lsKeys.partTimeAttendanceSettings,
+      lsKeys.cardForgets,
+    ]);
     Object.values(lsKeys)
       .filter((k) => !keep.has(k))
       .forEach((k) => localStorage.removeItem(k));

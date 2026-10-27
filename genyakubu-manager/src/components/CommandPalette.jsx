@@ -54,6 +54,8 @@ export function CommandPalette({
   onOpenTestPrep,
   // 月間予定のまとめて印刷・画像 (閲覧者にも渡す。印刷は書き込みではない)
   onOpenMonthBatch,
+  // バイトのカード忘れを記録する (管理者のときだけ渡す)
+  onOpenCardForget,
   // 日付ジャンプ: onSelectDate(dateStr) でその日のダッシュボード、
   // onJumpToAbsenceFlow(dateStr) でその日の欠勤組み換え (管理者のときだけ渡す)
   onSelectDate,
@@ -567,6 +569,21 @@ export function CommandPalette({
         },
       });
     }
+    // 「カード忘れ」「打刻」「タイムカード」のどれで探しても出す
+    if (
+      onOpenCardForget &&
+      (matchLabel("カード忘れを記録 (出退勤のカード)") || matchLabel("打刻") || matchLabel("タイムカード"))
+    ) {
+      hits.push({
+        type: "view",
+        label: "カード忘れを記録",
+        detail: "バイトが出退勤のカードを通し忘れた日を残す (バイト出勤表・月間に印)",
+        action: () => {
+          onOpenCardForget();
+          onClose();
+        },
+      });
+    }
     if (onOpenDayReschedule && matchLabel("日まるごと振替")) {
       hits.push({
         type: "view",
@@ -608,6 +625,7 @@ export function CommandPalette({
     onOpenMultiDayAbsence,
     onOpenTestPrep,
     onOpenMonthBatch,
+    onOpenCardForget,
     onClose,
     views,
     canUseAdminData,

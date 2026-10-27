@@ -281,6 +281,32 @@ describe("buildPartTimeAttendanceSheet", () => {
     ]);
     expect(sheet.rows[2].days).toBe(4);
   });
+
+  it("カード忘れはセルと一覧に載せるだけで、出勤日数は変えない", () => {
+    const cardForgets = [
+      { id: 1, name: "川井", date: "2026-10-03", missing: "both", inTime: "13:50" },
+      { id: 2, name: "杉原", date: "2026-10-02", missing: "out" },
+      // バイト一覧にいない人も一覧には出す (黙って隠さない)
+      { id: 3, name: "堀上", date: "2026-10-02", missing: "in" },
+      // 期間の外は載せない
+      { id: 4, name: "川井", date: "2026-10-10", missing: "in" },
+      { id: 5, name: "奥村", date: "2026-10-02", missing: "in" },
+    ];
+    const plain = buildPartTimeAttendanceSheet({ rows, staff, dates: DATES });
+    const sheet = buildPartTimeAttendanceSheet({ rows, staff, dates: DATES, cardForgets });
+    expect(sheet.totalDays).toBe(plain.totalDays);
+    const [okumura, kawai] = sheet.rows;
+    expect(kawai.cells[1].cardForget).toMatchObject({ id: 1, inTime: "13:50" });
+    expect(kawai.cells[0].cardForget).toBeNull();
+    expect(okumura.cells[0].cardForget).toMatchObject({ id: 5 });
+    // 日付 → 表の行の順 (奥村・川井・杉原)、表にいない人は後ろ
+    expect(sheet.cardForgets.map((r) => [r.date, r.name, r.inSheet, r.units])).toEqual([
+      ["2026-10-02", "奥村", true, 0],
+      ["2026-10-02", "杉原", true, 0],
+      ["2026-10-02", "堀上", false, null],
+      ["2026-10-03", "川井", true, 2],
+    ]);
+  });
 });
 
 // computeTeachingMinutes の結果からそのまま作れること (授業を拾い直さない)

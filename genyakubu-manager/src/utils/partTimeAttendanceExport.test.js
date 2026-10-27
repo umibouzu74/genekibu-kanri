@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import ExcelJS from "exceljs";
 import {
+  ARGB_CARD_FORGET_FILL,
   ATTENDANCE_SHEET_TITLE,
   FIRST_STAFF_ROW,
   buildPartTimeAttendanceFile,
@@ -181,6 +182,65 @@ describe("金額なし (単価を渡さない)", () => {
     const texts = [];
     ws.eachRow((row) => row.eachCell((c) => texts.push(String(c.value))));
     expect(texts.join(" ")).not.toMatch(/単価|金額/);
+  });
+});
+
+describe("カード忘れ (打刻なし)", () => {
+  const rows = new Map([
+    ["福武", { entries: [{ date: "2026-10-10", time: "14:00-15:00", kind: "own", label: "a" }] }],
+  ]);
+  const cardForgets = [
+    { id: 1, name: "福武", date: "2026-10-10", missing: "both", inTime: "13:45", outTime: "15:10", memo: "責任者確認" },
+    { id: 2, name: "奥村", date: "2026-10-03", missing: "out" },
+  ];
+  const sheet = buildPartTimeAttendanceSheet({
+    rows,
+    staff: [{ name: "福武" }, { name: "奥村" }],
+    dates,
+    cardForgets,
+  });
+  const { columns, lastCol } = layoutAttendanceColumns(dates);
+  const colOf = (date) => columns.find((c) => c.date === date).col;
+
+  it("記録のある日のセルは塗りとメモ (数・式はそのまま)", async () => {
+    const wb = buildPartTimeAttendanceWorkbook({ sheet, startDate: dates[0], endDate: dates.at(-1) });
+    // 書き出して読み直してもメモと塗りが残る
+    const back = new ExcelJS.Workbook();
+    await back.xlsx.load(await wb.xlsx.writeBuffer());
+    const ws = back.getWorksheet("バイト出勤表");
+    const cell = ws.getCell(FIRST_STAFF_ROW, colOf("2026-10-10"));
+    expect(cell.value).toBe(1);
+    expect(cell.fill.fgColor.argb).toBe(ARGB_CARD_FORGET_FILL);
+    expect(JSON.stringify(cell.note)).toContain("カード忘れ: 出勤・退勤の打刻なし (出勤 13:45 / 退勤 15:10)。責任者確認");
+    // 授業の無い日の記録も印を付ける (空欄のまま)
+    const empty = ws.getCell(FIRST_STAFF_ROW + 1, colOf("2026-10-03"));
+    expect(empty.value).toBeNull();
+    expect(empty.fill.fgColor.argb).toBe(ARGB_CARD_FORGET_FILL);
+    expect(ws.getCell(FIRST_STAFF_ROW, lastCol + 1).value.result).toBe(1);
+  });
+
+  it("合計の下に一覧 (出勤 0 の日は注意を添える)", () => {
+    const ws = buildPartTimeAttendanceWorkbook({ sheet, startDate: dates[0], endDate: dates.at(-1) }).getWorksheet(
+      "バイト出勤表"
+    );
+    const total = FIRST_STAFF_ROW + 2;
+    expect(ws.getCell(total, 1).value).toBe("合計");
+    expect(ws.getCell(total + 1, 1).value).toBeNull();
+    expect(ws.getCell(total + 2, 1).value).toMatch(/^カード忘れ \(打刻なし\) の記録 2 件/);
+    expect(ws.getCell(total + 3, 1).value).toBe("10/3 (土)　奥村 先生　退勤だけの打刻なし　※ 出勤表ではこの日の出勤 0");
+    expect(ws.getCell(total + 4, 1).value).toBe(
+      "10/10 (土)　福武 先生　出勤・退勤の打刻なし (出勤 13:45 / 退勤 15:10)。責任者確認"
+    );
+    // 一覧の行は表の幅いっぱいに結合 (印刷で切れない)
+    expect(ws.getCell(total + 3, lastCol + 1).isMerged).toBe(true);
+  });
+
+  it("記録の無い期間も「ありません」と書く", () => {
+    const plain = buildPartTimeAttendanceSheet({ rows, staff: [{ name: "福武" }], dates });
+    const ws = buildPartTimeAttendanceWorkbook({ sheet: plain, startDate: dates[0], endDate: dates.at(-1) }).getWorksheet(
+      "バイト出勤表"
+    );
+    expect(ws.getCell(FIRST_STAFF_ROW + 3, 1).value).toBe("カード忘れ (打刻なし) の記録: この期間はありません");
   });
 });
 

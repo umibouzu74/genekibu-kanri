@@ -691,6 +691,53 @@ describe("MonthView の有給・半休", () => {
   });
 });
 
+// バイトのカード忘れ (2026-10-27)。印は誰にでも出す (経理が見る) が画面だけ
+// (no-print: 月間は画像にしてバイトへ送るので本人の勤怠の記録を広げない)。
+// 記録するのは管理者で、今日までの日付の横の 💳 から
+describe("MonthView のカード忘れ", () => {
+  const cardForgets = [
+    { id: 1, name: "堀上", date: "2026-07-10", missing: "both", inTime: "16:50", memo: "責任者確認" },
+    { id: 2, name: "福江", date: "2026-07-11", missing: "in" },
+  ];
+  afterEach(() => vi.useRealTimers());
+
+  it("記録のある日に 💳 の印を出す (閲覧者も見える・no-print・本人の分だけ)", () => {
+    render(<MonthView {...baseProps} cardForgets={cardForgets} />);
+    const chips = screen.getAllByText("💳カード忘れ");
+    expect(chips).toHaveLength(1);
+    expect(chips[0].className).toMatch(/no-print/);
+    expect(chips[0].getAttribute("title")).toContain("出勤・退勤の打刻なし (出勤 16:50)。責任者確認");
+    // 閲覧者 (onEditCardForget なし) には記録するボタンを出さない
+    expect(screen.queryByRole("button", { name: /のカード忘れを記録する/ })).toBeNull();
+  });
+
+  it("管理者は今日までの予定のある日の 💳 から記録し、印から直す", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 6, 15, 12, 0));
+    const onEdit = vi.fn();
+    const slots = ["月", "木", "金"].map((day, i) => ({
+      id: i + 1,
+      day,
+      time: "19:00-20:00",
+      grade: "中2",
+      cls: "A",
+      subj: "数学",
+      room: "",
+      note: "",
+      teacher: "堀上",
+    }));
+    render(<MonthView {...baseProps} slots={slots} cardForgets={cardForgets} onEditCardForget={onEdit} />);
+    fireEvent.click(screen.getByRole("button", { name: "2026-07-13 (月) のカード忘れを記録する" }));
+    expect(onEdit).toHaveBeenLastCalledWith("2026-07-13");
+    // 予定の無い日・先の日・記録のある日には出さない
+    expect(screen.queryByRole("button", { name: "2026-07-14 (火) のカード忘れを記録する" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "2026-07-16 (木) のカード忘れを記録する" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "2026-07-10 (金) のカード忘れを記録する" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^カード忘れ: 出勤・退勤の打刻なし/ }));
+    expect(onEdit).toHaveBeenLastCalledWith("2026-07-10");
+  });
+});
+
 // 特別イベント: 講師の月間予定に出す種別 (全員共通の設定) で絞り、期間が長い
 // もの (8 日以上) は日のセルではなく月の上部の帯に 1 回だけ出す
 describe("MonthView 特別イベントの種別と長い期間の帯", () => {

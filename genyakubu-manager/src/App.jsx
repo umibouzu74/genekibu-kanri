@@ -197,6 +197,11 @@ const ShortcutsHelp = lazy(() =>
 const BatchPrintDialog = lazy(() =>
   import("./components/BatchPrintDialog").then((m) => ({ default: m.BatchPrintDialog }))
 );
+// バイトのカード忘れを記録するダイアログ (その日の授業を授業時間の集計と同じ
+// 拾い方で出すので、集計のモジュールごと開いたときだけ読む)
+const CardForgetDialog = lazy(() =>
+  import("./components/CardForgetDialog").then((m) => ({ default: m.CardForgetDialog }))
+);
 
 function ViewFallback() {
   return (
@@ -316,6 +321,8 @@ export default function App() {
     saveYoteihyoCourseMapping,
     yoteihyoConfirmed,
     saveYoteihyoConfirmed,
+    cardForgets,
+    saveCardForgets,
     eventVisibility,
     saveEventVisibility,
   } = appData;
@@ -345,6 +352,11 @@ export default function App() {
     [teacherAffiliations]
   );
   const partTimeNameSet = useMemo(() => new Set(partTimeStaffNames), [partTimeStaffNames]);
+  // カード忘れを記録するダイアログで選ぶバイト (よみ順)
+  const cardForgetStaffNames = useMemo(
+    () => sortTeacherNames(partTimeStaffNames, teacherKana),
+    [partTimeStaffNames, teacherKana]
+  );
   const isLeaveTracked = useCallback(
     (name, date) =>
       categoryMeta(
@@ -468,6 +480,9 @@ export default function App() {
   const [leaveQuick, setLeaveQuick] = useState(null);
   // 有給・半休の画面を「入れる欄を開いた状態」で開く要求 ({name?, date?, token})
   const [leaveFocus, setLeaveFocus] = useState(null);
+  // バイトのカード忘れを記録するダイアログ。null = 閉じている / {name?, date?} = 開く
+  // (サイドバー・メインメニュー・Cmd+K・講師の月間の 💳・バイト出勤表から。管理者だけ)
+  const [cardForgetTarget, setCardForgetTarget] = useState(null);
   // テスト対策の振替・追加授業ダイアログ。null = 閉じている / { mode } = 開く
   // (mode: "reschedule" | "extra"。追加授業管理から開くと追加授業から始める)
   const [testPrep, setTestPrep] = useState(null);
@@ -819,6 +834,45 @@ export default function App() {
     [selectView]
   );
 
+  // バイトのカード忘れを記録するダイアログを開く (画面は移らない)。target
+  // ({name?, date?}) でその人・その日から始める。書き込みは管理者だけ
+  const openCardForget = useCallback((target = {}) => {
+    setCardForgetTarget({ ...(target || {}) });
+  }, []);
+  // ダイアログがその日の授業を拾うためのデータ (授業時間の集計と同じ材料)
+  const cardForgetLessonData = useMemo(
+    () => ({
+      slots,
+      subs,
+      adjustments,
+      daySchedules,
+      timetables,
+      displayCutoff,
+      holidays,
+      examPeriods,
+      specialEvents,
+      biweeklyAnchors,
+      extraLessons,
+      koshuLessons,
+      examPrepSchedules,
+    }),
+    [
+      slots,
+      subs,
+      adjustments,
+      daySchedules,
+      timetables,
+      displayCutoff,
+      holidays,
+      examPeriods,
+      specialEvents,
+      biweeklyAnchors,
+      extraLessons,
+      koshuLessons,
+      examPrepSchedules,
+    ]
+  );
+
   // 時間割管理を開いて、そのセクション (constants/timetableSections) へ飛ぶ
   // (サイドバーの子項目 / メインメニュー / Cmd+K)
   const openTimetableSection = useCallback(
@@ -1147,13 +1201,14 @@ export default function App() {
           else if (item.modal === "multiDayAbsence") setMultiDayAbsence({});
           else if (item.modal === "testPrep") setTestPrep({});
           else if (item.modal === "monthBatch") openMonthBatch();
+          else if (item.modal === "cardForget") openCardForget();
           else if (item.modal === "data") setShowDataMgr(true);
           break;
         default:
           break;
       }
     },
-    [selectView, openMonthBatch, openTimetableSection, setMinutesTab]
+    [selectView, openMonthBatch, openTimetableSection, setMinutesTab, openCardForget]
   );
 
   // 月間 (講師選択中) の ← / → / t = 前の月 / 次の月 / 今月。まとめて印刷の
@@ -1213,6 +1268,10 @@ export default function App() {
         }}
         onOpenMonthBatch={() => {
           openMonthBatch();
+          setSidebarOpen(false);
+        }}
+        onOpenCardForget={() => {
+          openCardForget();
           setSidebarOpen(false);
         }}
         onSelectEventSection={(kind) => {
@@ -1557,6 +1616,8 @@ export default function App() {
               // 金額入りの Excel のパスワードを決められるのは管理者 (Firebase 未設定の
               // 端末ではその端末の人 = canUseAdminData)
               onSaveAttendanceSettings={handoverEnabled ? saveAttendanceSettings : undefined}
+              cardForgets={cardForgets}
+              onEditCardForget={isAdmin ? openCardForget : undefined}
             />
           )}
           {view === VIEWS.MASTER && !selected && (
@@ -2113,6 +2174,12 @@ export default function App() {
                   ? (date) => setLeaveQuick({ name: selected, date })
                   : undefined
               }
+              cardForgets={cardForgets}
+              onEditCardForget={
+                isAdmin && partTimeNameSet.has(selected)
+                  ? (date) => openCardForget({ name: selected, date })
+                  : undefined
+              }
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}
@@ -2400,6 +2467,14 @@ export default function App() {
               setCmdPaletteOpen(false);
               openMonthBatch();
             }}
+            onOpenCardForget={
+              isAdmin
+                ? () => {
+                    setCmdPaletteOpen(false);
+                    openCardForget();
+                  }
+                : undefined
+            }
             onSelectDate={(date) => {
               openDashboardAt(date);
               setCmdPaletteOpen(false);
@@ -2448,6 +2523,20 @@ export default function App() {
           <ShortcutsHelp
             open={shortcutsHelpOpen}
             onClose={() => setShortcutsHelpOpen(false)}
+          />
+        </Suspense>
+      )}
+
+      {/* バイトのカード忘れの記録 — lazy-loaded。書けるのは管理者だけ */}
+      {cardForgetTarget && isAdmin && (
+        <Suspense fallback={null}>
+          <CardForgetDialog
+            records={cardForgets}
+            onSave={saveCardForgets}
+            staffNames={cardForgetStaffNames}
+            initial={cardForgetTarget}
+            lessonData={cardForgetLessonData}
+            onClose={() => setCardForgetTarget(null)}
           />
         </Suspense>
       )}

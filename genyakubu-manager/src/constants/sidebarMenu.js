@@ -59,6 +59,17 @@ export const SIDEBAR_MENU = [
     adminOnly: true,
     category: C.TODAY,
   },
+  // バイトが出退勤のカードを通し忘れた日を残す (経理がバイト出勤表・月間で見る)。
+  // その場で書くものなので今日の対応に置く。書き込みなので管理者だけ
+  {
+    key: "card-forget",
+    icon: "💳",
+    label: "カード忘れの記録",
+    action: "modal",
+    modal: "cardForget",
+    adminOnly: true,
+    category: C.TODAY,
+  },
   { key: VIEWS.SUBS, icon: "🔄", label: "授業管理", badge: true, category: C.TODAY },
   { key: VIEWS.CONFIRMED_SUBS, icon: "✅", label: "代行確定一覧", category: C.TODAY },
 
