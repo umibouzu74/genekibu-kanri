@@ -172,6 +172,10 @@ export function useProject(options: HistoryStackOptions) {
   const handleRemoveUnusedDatesFromPool = useCallback(() => {
     dispatch({ type: 'dates/removeUnusedFromPool' });
   }, [dispatch]);
+  // 外部授業だけの日を足す (どのタブにも出さない日。他学年セッションの登録・月間用)
+  const handleAddExternalOnlyDates = useCallback((labels: string[]) => {
+    dispatch({ type: 'dates/addExternalOnly', payload: { labels } });
+  }, [dispatch]);
   // L4g: 使う日 / 使う時限の選択を他の全タブへコピー
   const handleCopyTabDatesToOthers = useCallback((sourceTabId: number) => {
     dispatch({ type: 'tabDates/copyActiveToOthers', payload: { sourceTabId } });
@@ -286,6 +290,7 @@ export function useProject(options: HistoryStackOptions) {
     handleSetAllTabDates,
     handleRemoveDateFromPool,
     handleRemoveUnusedDatesFromPool,
+    handleAddExternalOnlyDates,
     handleCopyTabDatesToOthers,
     handleCopyTabPeriodsToOthers,
     // タブ別『使う時限』(E-3)

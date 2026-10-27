@@ -21,7 +21,7 @@ import { getPeriodTimeRange, getSessionTimeRange } from './timeRange';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { computePresetMemoBackfill } from './presetMemoBackfill';
 import { classLabelWithRoom } from './classRoom';
-import { usedDateLabels } from './courseDates';
+import { sessionDateLabels, usedDateLabels } from './courseDates';
 import { normalizeSessionCourse, sessionKindLabel } from './externalSessionShape';
 
 // ─── 共通スタイル定義 (exceljs 形式) ──────────────────────────────
@@ -630,10 +630,11 @@ export function buildTeacherRows(project: Project, teacherName: string): Teacher
   // 学年(タブ) 列に出す種別ラベル: メモ (プリセット適用時はプリセット名) を
   // 優先し、メモ未設定でも時刻がプリセットに一致するならその名前を**表示に
   // だけ**使う (プロジェクトのデータは書き換えない)。どちらも無ければ '外部'。
-  // 載せるのは「どれかのタブが授業に使う日」の予定だけ (日付プールに残った
-  // 前の季節の日付の予備校が、冬期の講師別シートの先頭に並ばないように)。
-  const used = usedDateLabels(project);
-  const sessions = (project.externalSessions || []).filter(s => used.has(s.date));
+  // 載せるのは「どれかのタブが授業に使う日」と「外部授業だけの日」の予定だけ
+  // (日付プールに残った前の季節の日付の予備校が、冬期の講師別シートの先頭に
+  // 並ばないように)。
+  const sessionDates = sessionDateLabels(project);
+  const sessions = (project.externalSessions || []).filter(s => sessionDates.has(s.date));
   const { assignments } = computePresetMemoBackfill(
     sessions,
     project.externalSessionPresets || [],

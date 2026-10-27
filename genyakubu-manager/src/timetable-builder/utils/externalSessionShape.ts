@@ -6,12 +6,20 @@
 // (presetRenameSync = メモがプリセットの名前と一致することが前提) が効かなかった。
 //
 // 表示 (本体の月間の「外」カード・講師別 Excel) は「メモ + 講座名」。
+// 日付プールの「外部授業だけの日」(DateEntity.externalOnly) の判定もここに置く。
 // 同じ内容の判定 (重複登録を飛ばす) は contentKey の 1 か所 (reducer・登録画面・
 // 表の一括登録・他校舎の取り込みが共有する)。
 //
 // 無依存 (型だけ) なので scheduleKey.migrateProject から使える。
 
-import type { ExternalSession, ExternalSessionPreset } from '../types';
+import type { DateEntity, Entity, ExternalSession, ExternalSessionPreset } from '../types';
+
+// ─── 外部授業だけの日 (日付プールの印、2026-10-27) ───────────────────
+
+/** 外部授業だけの日か (どのタブの時間割にも出さない日) */
+export function isExternalOnlyDate(d: Entity | DateEntity | null | undefined): boolean {
+  return (d as DateEntity | null | undefined)?.externalOnly === true;
+}
 
 type SessionLike = Pick<ExternalSession, 'date' | 'teacherName'> &
   Partial<Pick<ExternalSession, 'label' | 'memo' | 'course' | 'startTime' | 'endTime'>>;

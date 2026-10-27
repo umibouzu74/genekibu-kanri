@@ -34,7 +34,7 @@ import {
   projectBaseYmd,
   resolveDateLabelYmd,
   resolveDateLabelsYmd,
-  usedDateLabels,
+  sessionDateLabels,
 } from "../timetable-builder/utils/courseDates";
 import { computePresetMemoBackfill } from "../timetable-builder/utils/presetMemoBackfill";
 import { sessionDisplayLabel } from "../timetable-builder/utils/externalSessionShape";
@@ -107,10 +107,10 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
   if (!project || !Array.isArray(project.tabs)) return [];
   const baseYmd = projectBaseYmd(project, todayYmd);
   if (!baseYmd) return [];
-  // 講習で使う日付 (どれかのタブが授業に使う日) の年は季節ごとにまとめて決める
-  // (ラベルごとに決めると、講習の半年後の編集で季節が 2 つの年に割れる)
-  const used = usedDateLabels(project);
-  const ymdByLabel = resolveDateLabelsYmd(used, baseYmd);
+  // 講習で使う日付 (どれかのタブが授業に使う日 + 外部授業だけの日) の年は季節ごとに
+  // まとめて決める (ラベルごとに決めると、講習の半年後の編集で季節が 2 つの年に割れる)
+  const sessionDates = sessionDateLabels(project);
+  const ymdByLabel = resolveDateLabelsYmd(sessionDates, baseYmd);
   const ymdOf = (label) =>
     ymdByLabel.has(label) ? ymdByLabel.get(label) : resolveDateLabelYmd(label, baseYmd);
 
@@ -222,14 +222,15 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
 
   // 外部授業 (予備校・高校等の他学年セッション)。種別ラベルは講師別 Excel
   // (excelExport) と同じ規則で解決する。載せるのは「どれかのタブが授業に使う
-  // 日」のものだけ — 日付プールには前の季節の日付が残りうるので、そこに登録した
-  // 予定まで拾うと、冬期の project を開いている間に前の夏の予備校が翌年 7 月の
-  // 予定として月間カレンダーに出ていた。講師別 Excel も同じ絞り込み。
+  // 日」と「外部授業だけの日」(日付プールの印) のものだけ — 日付プールには前の
+  // 季節の日付が残りうるので、そこに登録した予定まで拾うと、冬期の project を開いて
+  // いる間に前の夏の予備校が翌年 7 月の予定として月間カレンダーに出ていた。講師別
+  // Excel も同じ絞り込み (courseDates.sessionDateLabels)。
   const sessions = (Array.isArray(project.externalSessions)
     ? project.externalSessions
     : []
   ).filter(
-    (s) => used.has(s?.date) && isPublished(publishStateForSessionDate(project, s.date))
+    (s) => sessionDates.has(s?.date) && isPublished(publishStateForSessionDate(project, s.date))
   );
   const { assignments } = computePresetMemoBackfill(
     sessions,

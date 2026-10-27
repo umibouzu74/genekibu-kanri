@@ -146,7 +146,10 @@ export default function SessionCsvImport() {
                 <div>講師マスタに無い名前 (登録しません): <span className="text-builder-red">{parsed.unknownTeachers.join('、')}</span></div>
               )}
               {parsed.unknownDates.length > 0 && (
-                <div>日付プールに無い日付 (登録しません): <span className="text-builder-red">{parsed.unknownDates.join('、')}</span></div>
+                <div>
+                  日付プールに無い日付 (登録しません): <span className="text-builder-red">{parsed.unknownDates.join('、')}</span>
+                  <span className="text-builder-ink-muted"> — 中学の講習が無い日なら、基本設定の「🏫 外部授業だけの日」で足してから貼り直してください</span>
+                </div>
               )}
               {parsed.untimedCount > 0 && (
                 <div className="text-builder-orange">時刻の無い行が {parsed.untimedCount} 行あります (登録はしますが、自動NG にはなりません)</div>

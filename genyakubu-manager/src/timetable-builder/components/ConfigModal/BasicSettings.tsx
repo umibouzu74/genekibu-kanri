@@ -3,6 +3,7 @@ import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
 import { expandExcludeInput, generateDateLabels, sortPoolDatesByCalendar, WEEKDAY_LABELS, ymdToLabel } from '../../utils/dateGenerate';
 import DraftLineInput from './DraftLineInput';
+import { isExternalOnlyDate } from '../../utils/externalSessionShape';
 
 // カンマ区切りリスト編集用の textarea。編集中は draft をローカルに持ち、
 // フォーカスを外した時にだけ onCommit で確定する。
@@ -52,6 +53,7 @@ export default function BasicSettings() {
     handleSetAllTabDates,
     handleRemoveDateFromPool,
     handleRemoveUnusedDatesFromPool,
+    handleAddExternalOnlyDates,
     handleCopyTabDatesToOthers,
     handleCopyTabPeriodsToOthers,
     handleToggleTabPeriod,
@@ -63,7 +65,14 @@ export default function BasicSettings() {
 
   // v4(Y): project.dates は全タブ共通の『日付プール』。activeTab.config.activeDateIds
   // で「この学年が使う日」を選ぶ (未指定=全日)。NG はプール全日に設定できる。
-  const poolDates = useMemo(() => project.dates || [], [project.dates]);
+  // 外部授業だけの日 (DateEntity.externalOnly) はどのタブにも出さないので、使う日の
+  // 一覧・件数には入れず、下の「外部授業だけの日」に分けて出す
+  const allPoolDates = useMemo(() => project.dates || [], [project.dates]);
+  const poolDates = useMemo(() => allPoolDates.filter(d => !isExternalOnlyDate(d)), [allPoolDates]);
+  const externalOnlyDates = useMemo(
+    () => sortPoolDatesByCalendar(allPoolDates.filter(d => isExternalOnlyDate(d))),
+    [allPoolDates],
+  );
   const activeDateIds = activeTab.config.activeDateIds; // undefined = 全日
   const isActive = (id) => !activeDateIds || activeDateIds.includes(id);
   const activeCount = poolDates.filter(d => isActive(d.id)).length;
@@ -96,6 +105,7 @@ export default function BasicSettings() {
   // 赤字が点滅し、読み上げも毎打鍵になる)。欄を離れたら出す
   const [genExcludeEditing, setGenExcludeEditing] = useState(false);
   const [manualDate, setManualDate] = useState('');
+  const [externalOnlyDate, setExternalOnlyDate] = useState('');
   // 全タブまとめて表示 (行=プールの日付・列=各タブ) トグル
   const [showAllTabs, setShowAllTabs] = useState(false);
   // 時限版の同トグル (日付とは独立)
@@ -163,6 +173,30 @@ export default function BasicSettings() {
     showToast(`「${label}」を「${activeTab.name}」に追加しました`, 'success', 2000);
   };
 
+  // 外部授業だけの日を足す。タブが使っている日 (講習の日) はそのまま知らせる
+  const addExternalOnly = () => {
+    const label = ymdToLabel(externalOnlyDate);
+    if (!label) {
+      showToast('日付を選択してください', 'error', 2000);
+      return;
+    }
+    if (externalOnlyDates.some(d => d.label === label)) {
+      showToast(`「${label}」はもう外部授業だけの日です`, 'warning', 2500);
+      return;
+    }
+    const lessonTabs = project.tabs.filter(t => {
+      const d = poolDates.find(x => x.label === label);
+      return d && (!t.config.activeDateIds || t.config.activeDateIds.includes(d.id));
+    });
+    if (lessonTabs.length > 0) {
+      showToast(`「${label}」は「${lessonTabs.map(t => t.name).join('・')}」の講習の日です (そのまま他学年セッションを登録できます)`, 'warning', 4000);
+      return;
+    }
+    handleAddExternalOnlyDates([label]);
+    setExternalOnlyDate('');
+    showToast(`「${label}」を外部授業だけの日にしました。📅 講師不在・NG で他学年セッションを登録できます`, 'success', 3500);
+  };
+
   const removeFromPool = async (d) => {
     const ok = await showConfirm(
       `「${d.label}」を日付プールから完全に削除します。\n全タブ・講師不在/NG から消え、この日付に入っているコマも削除されます。\nよろしいですか?`,
@@ -176,6 +210,7 @@ export default function BasicSettings() {
 
   // L4b: どのタブも使っていない日 (プールのゴミ)。activeDateIds 未指定の
   // タブは「全日使う」なので、1 つでもあれば未使用日は存在しない。
+  // 外部授業だけの日は人が残すと決めた日なので含めない (poolDates に入っていない)
   const unusedPoolDates = useMemo(() => {
     if ((project.tabs || []).some(t => !t.config.activeDateIds)) return [];
     return poolDates.filter(d => project.tabs.every(t => !t.config.activeDateIds.includes(d.id)));
@@ -436,6 +471,37 @@ export default function BasicSettings() {
           <button type="button" onClick={addManual} disabled={!manualDate} className="px-3 py-1 border border-builder-border bg-builder-surface text-builder-ink rounded text-xs font-bold disabled:opacity-50 hover:bg-builder-bg">追加</button>
         </div>
       </div>
+
+      {/* ── 外部授業だけの日 (2026-10-27) ── どのタブの時間割にも出さず、他学年セッション
+          (高校・予備校の講習) の登録・本体の月間・講師別 Excel の対象にだけする日 */}
+      <section aria-labelledby="builder-external-only-title" className="border border-builder-border rounded p-3 bg-builder-surface space-y-2">
+        <div id="builder-external-only-title" className="font-bold text-builder-ink text-sm">
+          🏫 外部授業だけの日
+          <span className="ml-2 text-xs font-normal text-builder-ink-muted">{externalOnlyDates.length} 日</span>
+        </div>
+        <p className="text-[11px] text-builder-ink-muted">
+          中学の講習は無いが、高校・予備校の講習 (他学年セッション) がある日 (12/24 の高3 Ⅰ期の初日など)。
+          どのタブの時間割にも行は出ず、📅 講師不在・NG でその日の他学年セッションを登録でき、本体の講師の月間の予定と講師別 Excel に出ます。
+          前の季節から残った日とは別の印なので、使っていない日をまとめて消すときにも消えません。
+        </p>
+        {externalOnlyDates.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {externalOnlyDates.map(d => (
+              <span key={d.id} className="inline-flex items-center gap-1 px-2 py-1 border border-builder-border rounded text-xs bg-builder-surface-alt text-builder-ink">
+                {d.label}
+                <button type="button" onClick={() => removeFromPool(d)} title="プールから完全削除 (この日の他学年セッションも消えます)" aria-label={`${d.label} をプールから削除`} className="text-builder-red hover:text-builder-red-hover font-bold leading-none">×</button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex items-end gap-2 text-xs">
+          <label className="flex flex-col gap-0.5">
+            <span className="text-builder-ink-muted">外部授業だけの日を足す</span>
+            <input type="date" value={externalOnlyDate} onChange={(e) => setExternalOnlyDate(e.target.value)} className={inputCls} aria-label="外部授業だけの日として足す日付" />
+          </label>
+          <button type="button" onClick={addExternalOnly} disabled={!externalOnlyDate} className="px-3 py-1 border border-builder-border bg-builder-surface text-builder-ink rounded text-xs font-bold disabled:opacity-50 hover:bg-builder-bg">足す</button>
+        </div>
+      </section>
 
       {/* ── 時限 ── */}
       <div className="border border-builder-blue/40 rounded p-3 bg-builder-info-soft/30 space-y-3">

@@ -34,7 +34,7 @@ import {
 import { computePresetMemoBackfill } from '../utils/presetMemoBackfill';
 import { computePresetRenameSyncIds, presetSessionLabel } from '../utils/presetRenameSync';
 import { isPublishState, projectPublishState } from '../utils/publishState';
-import { computeCourseSplit, externalSessionContentKey, normalizeSessionCourse } from '../utils/externalSessionShape';
+import { computeCourseSplit, externalSessionContentKey, isExternalOnlyDate, normalizeSessionCourse } from '../utils/externalSessionShape';
 import type {
   AvailabilityMark,
   CombinedGroup,
@@ -77,6 +77,7 @@ export type ProjectAction =
   | { type: 'tabDates/setAllActive'; payload: { tabId?: number; active: boolean } }
   | { type: 'dates/removeFromPool'; payload: { dateId: number } }
   | { type: 'dates/removeUnusedFromPool' }
+  | { type: 'dates/addExternalOnly'; payload: { labels: string[] } }
   | { type: 'tabDates/copyActiveToOthers'; payload: { sourceTabId: number } }
   | { type: 'tabPeriods/copyActiveToOthers'; payload: { sourceTabId: number } }
   | { type: 'tabPeriods/toggle'; payload: { tabId?: number; periodId: number } }
@@ -711,7 +712,13 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const pool = project.dates || [];
       const poolByLabel = new Map(pool.map(d => [d.label, d] as const));
       let nextIdNum = nextId(pool);
-      const newPool = [...pool];
+      // 外部授業だけの日をタブが使い始めたら印を外す (時間割に出る日になる)
+      const usedLabels = new Set(cleanLabels);
+      const newPool = pool.map(d => {
+        if (!isExternalOnlyDate(d) || !usedLabels.has(d.label)) return d;
+        const { externalOnly: _flag, ...rest } = d;
+        return rest;
+      });
       const activeIds = [];
       cleanLabels.forEach(label => {
         let ent = poolByLabel.get(label);
@@ -738,14 +745,24 @@ function applyAction(project: Project, action: ProjectAction): Project {
       if (!target) return project;
       const pool = project.dates || [];
       if (!pool.some(d => d.id === dateId)) return project;
-      const current = target.config.activeDateIds ?? pool.map(d => d.id);
+      // 全日使う (null) タブの「今使っている日」に外部授業だけの日は入らない
+      const current = target.config.activeDateIds ?? pool.filter(d => !isExternalOnlyDate(d)).map(d => d.id);
       const set = new Set(current);
+      const turningOn = !set.has(dateId);
       if (set.has(dateId)) set.delete(dateId); else set.add(dateId);
       const activeIds = pool.map(d => d.id).filter(id => set.has(id));
       const newTabs = project.tabs.map(t =>
         t.id === target.id ? { ...t, config: { ...t.config, activeDateIds: activeIds } } : t
       );
-      return { ...project, tabs: newTabs };
+      // 外部授業だけの日をタブで使うことにしたら印を外す (時間割に出る日になる)
+      const dates = turningOn && pool.some(d => d.id === dateId && isExternalOnlyDate(d))
+        ? pool.map(d => {
+          if (d.id !== dateId) return d;
+          const { externalOnly: _flag, ...rest } = d;
+          return rest;
+        })
+        : pool;
+      return { ...project, tabs: newTabs, ...(dates !== pool ? { dates } : {}) };
     }
 
     // 全選択 (active=true → null = 全日) / 全解除 (active=false → []).
@@ -772,14 +789,47 @@ function applyAction(project: Project, action: ProjectAction): Project {
     // 「増える一方」(tabDates/setByLabels は追加のみ) なので、生成をやり直す
     // たびに溜まるゴミ日付の掃除経路。activeDateIds 未指定のタブは「全日
     // 使う」の意味なので、その場合は何も削除しない。
+    // 外部授業だけの日 (印の付いた日) は人が残すと決めた日なので消さない。
     case 'dates/removeUnusedFromPool': {
       const pool = project.dates || [];
       if (project.tabs.some(t => !t.config.activeDateIds)) return project;
       const unused = pool
-        .filter(d => project.tabs.every(t => !t.config.activeDateIds.includes(d.id)))
+        .filter(d => !isExternalOnlyDate(d) && project.tabs.every(t => !t.config.activeDateIds.includes(d.id)))
         .map(d => d.id);
       if (unused.length === 0) return project;
       return removeDatesFromPool(project, unused);
+    }
+
+    // 外部授業だけの日を足す (2026-10-27)。どのタブの時間割にも出さず、他学年セッション
+    // の登録・本体の月間・講師別 Excel の対象にだけする日 (12/24 の高3 Ⅰ期の初日など)。
+    // プールに無い日は印を付けて足す。プールにあってどのタブも使っていない日は印を
+    // 付ける (前の季節の残りと区別する)。タブが使っている日は講習の日なので触らない
+    case 'dates/addExternalOnly': {
+      const labels = [...new Set((action.payload.labels || []).map(l => String(l).trim()).filter(Boolean))];
+      if (labels.length === 0) return project;
+      const pool = project.dates || [];
+      const usedIds = new Set<number>();
+      let allDays = false;
+      project.tabs.forEach(t => {
+        if (!t.config.activeDateIds) allDays = true;
+        else t.config.activeDateIds.forEach(id => usedIds.add(id));
+      });
+      const byLabel = new Map(pool.map(d => [d.label, d] as const));
+      let nextIdNum = nextId(pool);
+      let changed = false;
+      const newPool = pool.map(d => {
+        if (!labels.includes(d.label) || isExternalOnlyDate(d)) return d;
+        // 全日使うタブがあると、印の無い日はどれも講習の日
+        if (allDays || usedIds.has(d.id)) return d;
+        changed = true;
+        return { ...d, externalOnly: true };
+      });
+      labels.forEach(label => {
+        if (byLabel.has(label)) return;
+        newPool.push({ id: nextIdNum++, label, externalOnly: true });
+        changed = true;
+      });
+      return changed ? { ...project, dates: newPool } : project;
     }
 
     // periods 版 tabDates/toggle・tabDates/setAllActive (E-3)。プールの追加/削除は

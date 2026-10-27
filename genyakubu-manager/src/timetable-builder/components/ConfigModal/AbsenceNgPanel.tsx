@@ -17,7 +17,7 @@ import SessionCsvImport from './SessionCsvImport';
 import OffsiteImport from './OffsiteImport';
 import DraftNumberInput from './DraftNumberInput';
 import DraftLineInput from './DraftLineInput';
-import { computeCourseSplit, externalSessionContentKey, sessionDisplayLabel } from '../../utils/externalSessionShape';
+import { computeCourseSplit, externalSessionContentKey, isExternalOnlyDate, sessionDisplayLabel } from '../../utils/externalSessionShape';
 
 // 時刻 <input type="time"> のスピナー刻み (秒)。講習の時刻は 5 分単位が前提
 // なので 1 分刻み (= 既定 60) だと『分を合わせづらい』。300 = 5 分にして
@@ -608,7 +608,8 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
         重複時限が自動でNG扱いになります。<br />
         <strong>手動NG</strong> は時限指定で直接登録します (時刻不要)。<br />
         どちらも下の「📋 プリセット」「📅 日付ごとの設定」セクションで一覧・編集できます。<br />
-        バイト等の「出られない時間」は <strong>🙋 出勤可能調査</strong> で、調査票の出力から回答の入力までまとめて扱えます (× が自動で NG になり、下のマトリクスに「調」で出ます)。
+        バイト等の「出られない時間」は <strong>🙋 出勤可能調査</strong> で、調査票の出力から回答の入力までまとめて扱えます (× が自動で NG になり、下のマトリクスに「調」で出ます)。<br />
+        中学の講習が無い日の他学年セッション (12/24 の高3 Ⅰ期の初日など) は、⚙ 基本設定 の <strong>🏫 外部授業だけの日</strong> でその日を足してから登録します (本体の月間の予定・講師別 Excel に出ます)。
       </div>
 
       {/* NG に当たっている割当 (全タブ)。あるときだけ出す */}
@@ -1155,6 +1156,9 @@ function DateSection({
         <span>
           <span className="mr-1">{expanded ? '▼' : '▶'}</span>
           {date.label}
+          {isExternalOnlyDate(date) && (
+            <span className="ml-2 text-[11px] font-normal text-builder-ink-muted">🏫 外部授業だけの日</span>
+          )}
         </span>
         <span className="flex items-center gap-2 text-xs font-normal">
           {sessions.length > 0 && (
@@ -1225,7 +1229,12 @@ function DateSection({
             )}
           </div>
 
-          {/* NG マトリクス (講師×時限) */}
+          {/* NG マトリクス (講師×時限)。外部授業だけの日は講習のコマが無いので出さない */}
+          {isExternalOnlyDate(date) ? (
+            <div className="px-3 py-2 text-[11px] text-builder-ink-muted">
+              外部授業だけの日なので講習のコマはありません (NG の設定は要りません)。
+            </div>
+          ) : (
           <div className="px-3 py-2">
             <div className="text-xs font-bold text-builder-ink-muted mb-1">
               🚫 NG マトリクス — クリックで切替 (NG=赤 / 自=他学年セッションの自動NG / 調=出勤可能調査の × / 空=OK)
@@ -1327,6 +1336,7 @@ function DateSection({
               </table>
             </div>
           </div>
+          )}
         </div>
       )}
     </div>

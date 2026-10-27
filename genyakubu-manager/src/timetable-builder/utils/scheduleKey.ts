@@ -28,7 +28,7 @@ import { unifyDateLabelWeekdays } from './dateLabelUnify';
 import { sanitizeAvailability } from './availabilityShape';
 import { normalizeCarriedTimetable } from './carriedTimetable';
 import { isPublishState } from './publishState';
-import { normalizeSessionCourse } from './externalSessionShape';
+import { isExternalOnlyDate, normalizeSessionCourse } from './externalSessionShape';
 import type {
   CombinedGroup,
   EffectiveConfig,
@@ -82,14 +82,17 @@ export function nextId(entities: Entity[] | undefined): number {
 // 返すと時間割の行順・科目の回数連番 (第N回) が日付順にならない (F5j と同根)。
 // M/D として解釈できないラベルは末尾 (安定順)。既に日付順のときは入力の参照を
 // そのまま返す (既存の identity 前提の memo / no-op 判定を保つ)。
+// 外部授業だけの日 (DateEntity.externalOnly) はどのタブにも出さない (全日使うタブでも)。
 export function activeDatesForTab(poolDates: Entity[] | undefined, tab: Tab | undefined): Entity[] {
   const ids = tab?.config?.activeDateIds;
+  const all = poolDates || [];
+  const pool = all.some(isExternalOnlyDate) ? all.filter(d => !isExternalOnlyDate(d)) : all;
   let subset: Entity[];
   if (!ids) {
-    subset = poolDates || [];
+    subset = pool;
   } else {
     const set = new Set(ids);
-    subset = (poolDates || []).filter(d => set.has(d.id));
+    subset = pool.filter(d => set.has(d.id));
   }
   const sorted = sortPoolDatesByCalendar(subset);
   return sorted.every((d, i) => d === subset[i]) ? subset : sorted;
@@ -712,6 +715,24 @@ export function migrateProject(project: any): Project {
   // して共存しているプールはマージし、参照 (schedule / NG / externalCounts /
   // 合同 / セッション) も付け替える。idempotent (詳細は dateLabelUnify.js)。
   result = unifyDateLabelWeekdays(result);
+
+  // 外部授業だけの日の印 (任意): true 以外は落とす。タブが使う日になっていれば外す
+  // (時間割に出る日は外部授業だけの日ではない。tabDates の操作も同じく外す)
+  if (Array.isArray(result.dates) && result.dates.some((d: any) => d && 'externalOnly' in d)) {
+    const usedIds = new Set<number>();
+    (result.tabs || []).forEach((t: any) => {
+      (Array.isArray(t?.config?.activeDateIds) ? t.config.activeDateIds : []).forEach((id: number) => usedIds.add(id));
+    });
+    let changed = false;
+    const dates = result.dates.map((d: any) => {
+      if (!d || !('externalOnly' in d)) return d;
+      if (d.externalOnly === true && !usedIds.has(d.id)) return d;
+      changed = true;
+      const { externalOnly: _flag, ...rest } = d;
+      return rest;
+    });
+    if (changed) result = { ...result, dates };
+  }
 
   return result;
 }

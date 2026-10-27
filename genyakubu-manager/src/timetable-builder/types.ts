@@ -19,6 +19,16 @@ export interface Entity {
 }
 
 /**
+ * 日付プールの日 (2026-10-27)。externalOnly = 外部授業だけの日: どのタブの時間割にも
+ * 行を出さず、他学年セッション (高校・予備校の講習) の登録・本体の月間・講師別 Excel の
+ * 対象にだけする (12/24 の高3 Ⅰ期の初日のように、中学の講習が無い日)。前の季節から
+ * 残った日 (どのタブも使わない日) と区別するための印。タブがその日を使い始めたら外す
+ */
+export interface DateEntity extends Entity {
+  externalOnly?: boolean;
+}
+
+/**
  * 出勤可能調査の回答 1 マス分。ok = ○ (出られる) / maybe = △ (相談・できれば
  * 避けたい) / ng = × (出られない)。未記入はキーが無いことで表す。
  */
@@ -234,8 +244,8 @@ export interface Project {
   publishState?: PublishState;
   teachers: Teacher[];
   activeTabId: number;
-  /** v4: 全タブ共通の日付プール (各タブは activeDateIds で絞る) */
-  dates: Entity[];
+  /** v4: 全タブ共通の日付プール (各タブは activeDateIds で絞る。外部授業だけの日はどのタブにも出ない) */
+  dates: DateEntity[];
   /** v4: 全タブ共通の時限プール (各タブは activePeriodIds で絞る) */
   periods: Entity[];
   tabs: Tab[];

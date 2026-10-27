@@ -356,3 +356,28 @@ describe('BasicSettings — クラスと教室', () => {
     expect(handleSetClassRoom).not.toHaveBeenCalled();
   });
 });
+
+describe('BasicSettings — 外部授業だけの日 (2026-10-27)', () => {
+  it('使う日の一覧には出さず、別の欄に並べる。日付を選んで足せる', () => {
+    const handleAddExternalOnlyDates = vi.fn();
+    const project = makeProject({
+      dates: [...makeProject().dates, { id: 4, label: '7/23(木)', externalOnly: true }],
+    });
+    renderSettings({ project, overrides: { handleAddExternalOnlyDates } });
+    expect(screen.queryByRole('checkbox', { name: '7/23(木) をこのタブで使う' })).not.toBeInTheDocument();
+    const section = screen.getByRole('region', { name: /外部授業だけの日/ });
+    expect(section).toHaveTextContent('7/23(木)');
+    fireEvent.change(screen.getByLabelText('外部授業だけの日として足す日付'), { target: { value: '2026-07-22' } });
+    fireEvent.click(screen.getByRole('button', { name: '足す' }));
+    expect(handleAddExternalOnlyDates).toHaveBeenCalledWith(['7/22(水)']);
+  });
+
+  it('タブが使っている日 (講習の日) は足さずに知らせる', () => {
+    const handleAddExternalOnlyDates = vi.fn();
+    const { uiValue } = renderSettings({ overrides: { handleAddExternalOnlyDates } });
+    fireEvent.change(screen.getByLabelText('外部授業だけの日として足す日付'), { target: { value: '2026-07-24' } });
+    fireEvent.click(screen.getByRole('button', { name: '足す' }));
+    expect(handleAddExternalOnlyDates).not.toHaveBeenCalled();
+    expect(uiValue.showToast).toHaveBeenCalledWith(expect.stringContaining('講習の日です'), 'warning', 4000);
+  });
+});
