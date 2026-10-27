@@ -1891,7 +1891,8 @@ export default function App() {
           )}
           {view === VIEWS.BUILDER && !selected && (
             // 他校舎の授業を講習の「講師不在」へ取り込む・出勤可能調査をバイトで
-            // 絞るための読み取り専用データ
+            // 絞る・退職した講師を出さない・行事予定 (講習) と日程を比べるための
+            // 読み取り専用データ
             <BuilderApp
               // 季節ごとの project (春期 / 夏期 / 冬期)。季節の切替バーの名前・期間と、
               // 未作成の季節の始め方 (他の季節から写す) に使う
@@ -1902,6 +1903,7 @@ export default function App() {
               holidays={holidays}
               partTimeStaffNames={partTimeStaffNames}
               retiredTeacherNames={retiredTeacherNames}
+              specialEvents={specialEvents}
             />
           )}
           {view === VIEWS.REGULAR_BUILDER && !selected && (
