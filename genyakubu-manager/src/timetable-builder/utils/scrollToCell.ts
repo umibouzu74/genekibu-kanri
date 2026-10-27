@@ -14,3 +14,11 @@ export function scrollToCellByKey(key: string | null | undefined): boolean {
   el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   return true;
 }
+
+// タブを切り替えた直後など、セルがまだ描かれていないときのスクロール。
+// 描かれるまで少し待って試す (数回で諦める)。
+export function scrollToCellWhenReady(key: string | null | undefined, tries = 10, delayMs = 50): void {
+  if (!key) return;
+  if (scrollToCellByKey(key) || tries <= 0) return;
+  setTimeout(() => scrollToCellWhenReady(key, tries - 1, delayMs), delayMs);
+}

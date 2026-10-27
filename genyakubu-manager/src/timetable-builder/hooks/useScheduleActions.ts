@@ -72,5 +72,8 @@ export function useScheduleActions(dispatch: Dispatch<ProjectAction>, currentSch
     // K4a: 別タブの割当を現在のタブへ複製 (クラスは label 一致 > index)
     copyScheduleFromTab: (sourceTabId: number) =>
       dispatch({ type: 'schedule/copyFromTab', payload: { sourceTabId } }),
+    // 前の講習の時間割を写す (utils/timetableCopy.planTimetableCopy の writes)
+    importScheduleCells: (writes: Array<{ tabId: number; key: string; subject: string; teacher: string }>) =>
+      dispatch({ type: 'schedule/importCells', payload: { writes } }),
   }), [dispatch, currentSchedule]);
 }

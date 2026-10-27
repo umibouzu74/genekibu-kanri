@@ -6,6 +6,8 @@ import { INFEASIBILITY_KINDS } from '../utils/fixSuggestions';
 import { useDismissablePopover } from '../hooks/useDismissablePopover';
 import { useUndoRedoFeedback } from '../hooks/useUndoRedoFeedback';
 import SnapshotMenu from './SnapshotMenu';
+import NgViolationList from './NgViolationList';
+import { useJumpToCell } from '../hooks/useJumpToCell';
 import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
@@ -113,6 +115,7 @@ export default function Toolbar({
 
   // 該当セルへのスクロールは SnapshotMenu の差分ジャンプと共有 (N2g)
   const scrollToKey = scrollToCellByKey;
+  const jumpToCell = useJumpToCell();
 
   // popover に表示すべき violation 種別 (count > 0 のみ)
   const popoverRows = [];
@@ -124,7 +127,12 @@ export default function Toolbar({
       firstKey: violations.teacherConflict.firstKey,
     });
   }
-  if (violations.teacherNgAssigned?.count > 0) {
+  // NG に当たっている割当は 1 件ずつ理由つきで並べる (下の一覧)。一覧の無い
+  // (部分 mock の) analysis では従来の件数の行に戻す
+  const ngList = analysis.ngViolationList;
+  const ngItemsHere = (ngList || []).filter(it => it.tabId === project?.activeTabId);
+  const ngItemsOther = (ngList || []).filter(it => it.tabId !== project?.activeTabId);
+  if (violations.teacherNgAssigned?.count > 0 && !ngList) {
     popoverRows.push({
       kind: 'teacherNgAssigned',
       label: 'NG設定違反 (後付けNG)',
@@ -154,8 +162,10 @@ export default function Toolbar({
   const teacherOverTotalItems = violations.teacherOverTotal?.items || [];
   // informational (quotaCellMismatch) はバッジの件数に数えない
   const countedInfeasItems = infeasItems.filter(it => !it.informational);
+  // NG 違反は一覧で出すときも popoverRows に入らないので別に足す (セルの数)
+  const ngCountInList = ngList ? (violations.teacherNgAssigned?.count || 0) : 0;
   const totalViolationCount =
-    popoverRows.reduce((s, r) => s + r.count, 0) + teacherOverItems.length +
+    popoverRows.reduce((s, r) => s + r.count, 0) + ngCountInList + teacherOverItems.length +
     teacherOverTotalItems.length + countedInfeasItems.length;
   // 種別が teacherConflict 1 つだけ (subjectDup / subjectOver / teacherOverDaily /
   // カウント対象の infeasItems が全て 0) の場合は popover を開かず即スクロール
@@ -208,7 +218,7 @@ export default function Toolbar({
                 aria-label="違反の内訳"
                 // right-0: バッジは進捗バーの右端にあるので、左揃えだと内訳の大半が
                 // 画面の外にはみ出していた (横スクロールも出ていた)
-                className="absolute z-50 top-full right-0 mt-1 w-72 max-h-96 overflow-y-auto bg-builder-surface border border-builder-border rounded shadow-lg p-3 text-builder-ink"
+                className="absolute z-50 top-full right-0 mt-1 w-80 max-h-96 overflow-y-auto bg-builder-surface border border-builder-border rounded shadow-lg p-3 text-builder-ink"
               >
                 <div className="text-xs font-bold text-builder-ink-muted mb-2">違反の内訳</div>
                 <ul className="space-y-1.5 text-xs">
@@ -226,6 +236,25 @@ export default function Toolbar({
                       )}
                     </li>
                   ))}
+                  {ngList && violations.teacherNgAssigned?.count > 0 && (
+                    <li className="pt-1.5 mt-1.5 border-t border-builder-border first:pt-0 first:mt-0 first:border-t-0">
+                      <div className="font-bold mb-1">
+                        NG に当たっている割当 ({ngItemsHere.length}件)
+                      </div>
+                      <div className="pl-2">
+                        <NgViolationList
+                          items={[...ngItemsHere, ...ngItemsOther]}
+                          activeTabId={project?.activeTabId ?? null}
+                          onJump={(it) => { jumpToCell(it.tabId, it.key); setPopoverOpen(false); }}
+                        />
+                        {ngItemsOther.length > 0 && (
+                          <div className="mt-1 text-[11px] text-builder-ink-muted">
+                            ほかのタブの {ngItemsOther.length} 件も含みます (タブ名つき)
+                          </div>
+                        )}
+                      </div>
+                    </li>
+                  )}
                   {teacherOverItems.length > 0 && (
                     <li className="pt-1.5 mt-1.5 border-t border-builder-border">
                       <div className="font-bold mb-1">講師日上限超 ({teacherOverItems.length}件)</div>

@@ -139,3 +139,18 @@ describe('ScheduleTable — 日付ステータスチェック', () => {
     expect(setDayStatus).toHaveBeenCalledWith(1, null);
   });
 });
+
+describe('ScheduleTable — クラスの教室', () => {
+  it('クラスの見出しに教室を添える', () => {
+    const ctx = makeCtx();
+    ctx.currentConfig = { ...ctx.currentConfig, classes: [{ id: 1, label: '３S', room: '401' }] };
+    render(
+      <ProjectContext.Provider value={ctx}>
+        <UIContext.Provider value={{ showToast: vi.fn(), showConfirm: vi.fn(), showInput: vi.fn() }}>
+          <ScheduleTable isCompact={false} onContextMenu={vi.fn()} />
+        </UIContext.Provider>
+      </ProjectContext.Provider>,
+    );
+    expect(screen.getByRole('columnheader', { name: '３S401' })).toBeInTheDocument();
+  });
+});

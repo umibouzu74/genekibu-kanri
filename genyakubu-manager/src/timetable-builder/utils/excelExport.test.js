@@ -146,6 +146,14 @@ describe('buildScheduleWorkbook', () => {
     expect(ws.getCell(2, 4).value).toBe('３A');
   });
 
+  it('クラスに教室があれば見出しに「３S (401)」と添える', () => {
+    const project = makeProject();
+    project.tabs[0].config.classes = [{ id: 1, label: '３S', room: '401' }, { id: 2, label: '３A' }];
+    const ws = buildScheduleWorkbook(project).getWorksheet('メイン');
+    expect(ws.getCell(2, 3).value).toBe('３S (401)');
+    expect(ws.getCell(2, 4).value).toBe('３A');
+  });
+
   it('データ行のセルに subject + teacher(中学X:計Y) の改行表記が入る', () => {
     const wb = buildScheduleWorkbook(makeProject());
     const ws = wb.getWorksheet('メイン');
@@ -335,6 +343,13 @@ describe('buildTeacherWorkbook', () => {
     expect(ws.rowCount).toBe(3);
     expect(ws.getCell(2, 1).value).toBe('堀上');
     expect(ws.getCell(2, 5).value).toBe('英語');
+  });
+
+  it('講師別のクラスの欄にも教室を添える (どの教室へ行くか分かるように)', () => {
+    const project = makeProject();
+    project.tabs[0].config.classes = [{ id: 1, label: '３S', room: '401' }, { id: 2, label: '３A' }];
+    const ws = buildTeacherWorkbook(project).getWorksheet('全講師リスト');
+    expect(ws.getCell(2, 4).value).toBe('３S (401)');
   });
 
   it('タブ列の見出しは個人シート・全講師リストとも「学年(タブ)」に統一 (N5d)', () => {

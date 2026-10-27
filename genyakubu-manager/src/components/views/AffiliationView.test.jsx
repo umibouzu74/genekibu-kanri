@@ -116,6 +116,16 @@ describe("AffiliationView", () => {
     expect(within(section("現役部 常勤")).getByRole("button", { name: /^新任/ })).toBeInTheDocument();
   });
 
+  it("時間割にいない人を退職・非表示にすると、その年度だけ並び、次の年度からは並ばない", () => {
+    renderView();
+    fireEvent.change(screen.getByLabelText("加える講師名"), { target: { value: "高松" } });
+    fireEvent.change(screen.getByLabelText("加える区分"), { target: { value: "retired" } });
+    fireEvent.click(screen.getByRole("button", { name: "加える" }));
+    expect(within(section("退職・非表示")).getByRole("button", { name: /^高松/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /2027年度 ▶/ }));
+    expect(screen.queryByRole("button", { name: /^高松/ })).toBeNull();
+  });
+
   it("閲覧者は見るだけ (選べない・加えられない)", () => {
     renderView({ isAdmin: false, initial: [{ name: "堀上", fromYear: 2026, category: "genyaku-fulltime" }] });
     expect(within(section("現役部 常勤")).getByText("堀上")).toBeInTheDocument();

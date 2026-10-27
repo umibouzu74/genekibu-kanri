@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, fireEvent } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, within } from '@testing-library/react';
 import ConfigModal from './index';
 import { ProjectContext } from '../../contexts/projectContextValue';
 import { UIContext } from '../../contexts/uiContextValue';
@@ -192,22 +192,86 @@ describe('ConfigModal の季節 (リセット・次の年度用に作り直す)'
     expect(uiValue.showConfirm.mock.calls[0][0]).toContain('ほかの季節 (春期講習・冬期講習) の時間割はそのまま');
   });
 
-  it('作り直すと、設定を残して日付・時間割・NG を空にした project を履歴に積む', async () => {
+  it('作り直すと、設定を残して日付・時間割・NG を空にした project を履歴に積み、今の時間割を控えに残す', async () => {
     const { projectValue, uiValue } = renderSeasonModal();
     fireEvent.click(screen.getByRole('button', { name: /次の夏期講習用に作り直す/ }));
-    await vi.waitFor(() => expect(projectValue.pushHistory).toHaveBeenCalledTimes(1));
+    const dialog = screen.getByRole('dialog', { name: '次の夏期講習用に作り直す' });
+    expect(dialog).toHaveTextContent('今の時間割 (1 コマ) は控えとして残ります');
+    fireEvent.change(within(dialog).getByLabelText('作り直した後のプロジェクト名'), { target: { value: '2027 夏期講習' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '作り直す' }));
+    expect(projectValue.pushHistory).toHaveBeenCalledTimes(1);
     const next = projectValue.pushHistory.mock.calls[0][0];
     expect(next.name).toBe('2027 夏期講習');
     expect(next.dates).toEqual([]);
     expect(next.tabs[0].schedule).toEqual({});
     expect(next.teachers[0]).toMatchObject({ name: '堀上', ngSlots: [] });
+    expect(next.previousTimetable).toMatchObject({
+      name: '2026 夏期講習',
+      tabs: [{ name: '中3', dates: ['7/29(水)'], periods: ['1限'], classes: ['3S'], cells: [{ d: 0, p: 0, c: 0, subject: '英語', teacher: '堀上' }] }],
+    });
     expect(uiValue.showToast).toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: '次の夏期講習用に作り直す' })).toBeNull();
   });
 
-  it('確認で取り消せば何もしない', async () => {
-    const { projectValue, uiValue } = renderSeasonModal({ confirm: false });
+  it('キャンセルすれば何もしない', () => {
+    const { projectValue } = renderSeasonModal();
     fireEvent.click(screen.getByRole('button', { name: /次の夏期講習用に作り直す/ }));
-    await vi.waitFor(() => expect(uiValue.showConfirm).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole('button', { name: 'キャンセル' }));
     expect(projectValue.pushHistory).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: '次の夏期講習用に作り直す' })).toBeNull();
+  });
+
+  it('プリセットの時刻を直して写し、外したプリセット・退職の講師は写さない', async () => {
+    const { HostDataContext } = await import('../../contexts/hostDataContext');
+    const project = {
+      ...summerProject,
+      teachers: [...summerProject.teachers, { name: '高松', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] }],
+      externalSessionPresets: [
+        { id: 1, name: '予備校１限', startTime: '10:25', endTime: '11:35', startDateLabel: '7/29(水)', teachers: ['堀上', '高松'] },
+        { id: 2, name: '高校', startTime: '16:40', endTime: '21:30' },
+      ],
+    };
+    const projectValue = { project, handleResetAll: vi.fn(), updateProjectName: vi.fn(), pushHistory: vi.fn() };
+    render(
+      <HostDataContext.Provider value={{ offsiteLessons: [], holidays: [], partTimeStaffNames: [], retiredTeacherNames: ['高松'] }}>
+        <ProjectContext.Provider value={projectValue}>
+          <UIContext.Provider value={{ showConfirm: vi.fn(), showInput: vi.fn(), showToast: vi.fn() }}>
+            <ConfigModal onClose={vi.fn()} season="winter" />
+          </UIContext.Provider>
+        </ProjectContext.Provider>
+      </HostDataContext.Provider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /次の冬期講習用に作り直す/ }));
+    const dialog = screen.getByRole('dialog', { name: '次の冬期講習用に作り直す' });
+    fireEvent.change(within(dialog).getByLabelText('予備校１限 の開始時刻'), { target: { value: '09:00' } });
+    fireEvent.change(within(dialog).getByLabelText('予備校１限 の終了時刻'), { target: { value: '10:10' } });
+    fireEvent.click(within(dialog).getByLabelText('高校 を写す'));
+    expect(within(dialog).getByLabelText('高松 を写さない')).toBeChecked();
+    fireEvent.click(within(dialog).getByRole('button', { name: '作り直す' }));
+    const next = projectValue.pushHistory.mock.calls[0][0];
+    expect(next.externalSessionPresets).toEqual([
+      { id: 1, name: '予備校１限', startTime: '09:00', endTime: '10:10', teachers: ['堀上'] },
+    ]);
+    expect(next.teachers.map(t => t.name)).toEqual(['堀上']);
+  });
+
+  it('プリセットの時刻が前後逆なら作り直せない', () => {
+    const project = {
+      ...summerProject,
+      externalSessionPresets: [{ id: 1, name: '予備校', startTime: '10:25', endTime: '11:35' }],
+    };
+    const projectValue = { project, handleResetAll: vi.fn(), updateProjectName: vi.fn(), pushHistory: vi.fn() };
+    render(
+      <ProjectContext.Provider value={projectValue}>
+        <UIContext.Provider value={{ showConfirm: vi.fn(), showInput: vi.fn(), showToast: vi.fn() }}>
+          <ConfigModal onClose={vi.fn()} season="winter" />
+        </UIContext.Provider>
+      </ProjectContext.Provider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /次の冬期講習用に作り直す/ }));
+    const dialog = screen.getByRole('dialog', { name: '次の冬期講習用に作り直す' });
+    fireEvent.change(within(dialog).getByLabelText('予備校 の開始時刻'), { target: { value: '12:00' } });
+    expect(within(dialog).getByText(/開始は終了より前に/)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: '作り直す' })).toBeDisabled();
   });
 });

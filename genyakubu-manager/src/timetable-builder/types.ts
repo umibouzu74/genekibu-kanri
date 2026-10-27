@@ -64,9 +64,18 @@ export interface ScheduleEntry {
 /** キーは makeKey(dateId, periodId, classId) = `d{n}-p{n}-c{n}` */
 export type Schedule = Record<string, ScheduleEntry>;
 
+/**
+ * クラス (tab-local)。room は教室 (任意、2026-10-27)。年ごとに教室が変わっても
+ * クラス名 (ラベル参照のキー) を変えずに済むよう、教室は別に持つ。表示・Excel・
+ * 本体の講師の月間 (「講」のカード) に添える (utils/classRoom)
+ */
+export interface ClassEntity extends Entity {
+  room?: string;
+}
+
 export interface TabConfig {
   /** クラスは tab-local (タブ間で同 id が別クラスを指し得る) */
-  classes: Entity[];
+  classes: ClassEntity[];
   /** 科目 → このタブでのコマ数上限 (1 クラスあたり) */
   subjectCounts: Record<string, number>;
   /**
@@ -157,6 +166,37 @@ export interface TabSnapshot {
   schedule: Schedule;
 }
 
+/**
+ * 作り直す前の時間割の控え (2026-10-27)。「🔄 次の◯期講習用に作り直す」が残し、
+ * 「📋 前の講習の時間割を写す」で使う。日付は新しい季節で作り直すので、ラベル
+ * ではなく「N 日目」で写す (cells の d / p / c は dates / periods / classes の添字)。
+ */
+export interface CarriedTimetable {
+  /** 元の project 名 (「2026 冬期講習」) */
+  name: string;
+  /** 控えを作った日時 (ISO) */
+  savedAt: string;
+  tabs: CarriedTab[];
+}
+
+export interface CarriedTab {
+  name: string;
+  /** このタブが使っていた日 (カレンダー順のラベル) */
+  dates: string[];
+  /** このタブが使っていた時限 (プール順のラベル) */
+  periods: string[];
+  classes: string[];
+  cells: CarriedCell[];
+}
+
+export interface CarriedCell {
+  d: number;
+  p: number;
+  c: number;
+  subject?: string;
+  teacher?: string;
+}
+
 /** 自動生成パラメータ (E2e)。project に optional で保存、未設定はデフォルト */
 export interface GenerationParams {
   numPatterns: number;
@@ -189,6 +229,8 @@ export interface Project {
   externalSessions: ExternalSession[];
   externalSessionPresets: ExternalSessionPreset[];
   snapshots: TabSnapshot[];
+  /** 作り直す前の時間割の控え (任意。utils/timetableCopy) */
+  previousTimetable?: CarriedTimetable;
   /** 自動生成パラメータの保存値 (optional、resolveGenerationParams で解決) */
   numPatterns?: number;
   maxDailyHours?: number;

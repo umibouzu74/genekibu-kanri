@@ -93,6 +93,21 @@ describe("バイト出勤表", () => {
     expect(screen.getByRole("rowheader", { name: /^川井/ }).textContent).toContain("（土T3.P）");
   });
 
+  it("退職・非表示のバイトは期間内に授業が無ければ行に出さない (授業があれば出す)", () => {
+    renderView({
+      tab: MINUTES_TAB.ATTENDANCE,
+      affiliations: [
+        { name: "杉原", fromYear: 2026, category: "retired" },
+        { name: "奥村", fromYear: 2026, category: "retired" },
+      ],
+    });
+    const names = screen
+      .getAllByRole("rowheader")
+      .map((h) => h.textContent.replace(/（.*）$/, ""))
+      .filter((t) => t !== "合計");
+    expect(names).toEqual(["奥村", "川井"]);
+  });
+
   it("管理者でなくても (権限を渡さなくても) 表・Excel ボタンが使える", () => {
     renderView({ tab: MINUTES_TAB.ATTENDANCE });
     const btn = screen.getByRole("button", { name: "⬇ バイト出勤表 (Excel)" });

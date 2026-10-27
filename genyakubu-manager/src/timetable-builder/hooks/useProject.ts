@@ -129,6 +129,11 @@ export function useProject(options: HistoryStackOptions) {
     dispatch({ type: 'config/setList', payload: { key, value } });
   }, [dispatch]);
 
+  // クラスの教室 (tabId 省略時はアクティブタブ)。空でクリア
+  const handleSetClassRoom = useCallback((classId: number, room: string, tabId?: number) => {
+    dispatch({ type: 'config/setClassRoom', payload: { classId, room, tabId } });
+  }, [dispatch]);
+
   // tabId 省略時はアクティブタブを更新 (従来挙動)。タブ別に編集する画面は
   // 対象タブの id を明示で渡す。
   const handleSubjectCountChange = useCallback((subject: string, value: unknown, tabId?: number) => {
@@ -262,6 +267,7 @@ export function useProject(options: HistoryStackOptions) {
     setDayStatus,
     // タブ別 config
     handleListConfigChange,
+    handleSetClassRoom,
     handleSubjectCountChange,
     handleClassSubjectCountChange,
     setClassSubjectCountsMode,

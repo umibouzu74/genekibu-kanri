@@ -178,6 +178,25 @@ describe("buildKoshuLessons", () => {
     expect(lessons[0].cls).toBe("３S/３A");
   });
 
+  it("クラスに教室があれば room に添える (合同はクラス順の '/' 連結、無いクラスは ?)", () => {
+    const project = baseProject();
+    project.tabs[0].config.classes = [
+      { id: 1, label: "３S", room: "401" },
+      { id: 2, label: "３A" },
+    ];
+    project.tabs[0].schedule = {
+      "d1-p1-c1": { subject: "社会", teacher: "井上" },
+      "d1-p1-c2": { subject: "社会", teacher: "井上" },
+      "d1-p2-c1": { subject: "英語", teacher: "堀上" },
+      "d1-p2-c2": { subject: "数学", teacher: "半田" },
+    };
+    const lessons = buildKoshuLessons(project);
+    const of = (t) => lessons.find((l) => l.teacher === t).room;
+    expect(of("井上")).toBe("401/?");
+    expect(of("堀上")).toBe("401");
+    expect(of("半田")).toBe("");
+  });
+
   it("同じ時限でも科目・講師が違えば別コマのまま", () => {
     const project = baseProject();
     project.tabs[0].schedule = {

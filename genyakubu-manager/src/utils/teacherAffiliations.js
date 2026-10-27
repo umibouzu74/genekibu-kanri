@@ -53,6 +53,19 @@ export const AFFILIATION_CATEGORIES = Object.freeze([
     desc: "既定 (分けていない講師はここ)",
     tone: { bg: "#f3f3f5", fg: "#555", border: "#d6d6dc" },
   }),
+  // 退職した講師 (2026-10-27)。この年度から講習時間割作成 (講師の一覧・季節を
+  // 写すとき・出勤可能調査)・授業時間の集計の講師ボタン・バイト出勤表・
+  // サイドバーの講師一覧に出さない。授業の記録 (時間割のコマ・期間内の授業) が
+  // 残っている人は、その画面では出す (黙って給与や予定から消さない)
+  Object.freeze({
+    key: "retired",
+    label: "退職・非表示",
+    dept: "",
+    employment: "",
+    tracksLeave: false,
+    desc: "講習時間割作成・授業時間の集計・出勤可能調査に出さない",
+    tone: { bg: "#f6eeee", fg: "#8a4a4a", border: "#dfc4c4" },
+  }),
 ]);
 
 export const DEFAULT_CATEGORY = "yobiko";
@@ -60,6 +73,8 @@ export const DEFAULT_CATEGORY = "yobiko";
 export const PART_TIME_CATEGORY = "genyaku-parttime";
 /** 有給・半休を記録する区分 */
 export const LEAVE_CATEGORY = "genyaku-fulltime";
+/** 退職した講師 (一覧に出さない) */
+export const RETIRED_CATEGORY = "retired";
 
 const CATEGORY_BY_KEY = new Map(AFFILIATION_CATEGORIES.map((c) => [c.key, c]));
 
@@ -304,4 +319,21 @@ export function teacherNamesForYear(slots, timetables, year) {
     if (partner) names.add(partner);
   }
   return names;
+}
+
+// ─── 退職した講師 ───────────────────────────────────────────────────
+
+/**
+ * その年度に「退職・非表示」の講師。登録 (変更) のある人だけを見る
+ * (登録の無い人は退職ではない)
+ * @returns {Set<string>}
+ */
+export function retiredNamesForYear(changes, year) {
+  const out = new Set();
+  if (!Number.isInteger(year)) return out;
+  const index = indexAffiliationChanges(changes);
+  for (const name of index.keys()) {
+    if (resolveAffiliation(index, name, year).category === RETIRED_CATEGORY) out.add(name);
+  }
+  return out;
 }

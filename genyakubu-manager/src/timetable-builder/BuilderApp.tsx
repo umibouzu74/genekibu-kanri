@@ -10,6 +10,7 @@ import Header from './components/Header';
 import TabBar from './components/TabBar';
 import Toolbar from './components/Toolbar';
 import ScheduleTable from './components/ScheduleTable';
+import CourseEventNotice from './components/CourseEventNotice';
 import SummaryPanel from './components/SummaryPanel';
 import ContextMenu from './components/ContextMenu';
 import ConfigModal from './components/ConfigModal';
@@ -563,6 +564,9 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
           </div>
         )}
 
+        {/* 本体の行事予定 (講習) とタブの使う日の食い違い (あるときだけ) */}
+        <CourseEventNotice />
+
         <ScheduleTable
           isCompact={isCompact}
           onContextMenu={handleContextMenu}
@@ -681,13 +685,16 @@ function SeasonWorkspace({
     const localFallback = entry?.localFallback ?? null;
     if (entry?.status === 'missing') {
       return (
-        <SeasonStartPanel
-          season={season}
-          seasonProjects={seasonProjects}
-          onStart={handleStart}
-          localFallback={localFallback}
-          onStartFromLocal={() => setFallback(localFallback)}
-        />
+        // 始め方の確認 (SeasonCopyDialog) が本体で退職・非表示の講師を見る
+        <HostDataContext.Provider value={hostData}>
+          <SeasonStartPanel
+            season={season}
+            seasonProjects={seasonProjects}
+            onStart={handleStart}
+            localFallback={localFallback}
+            onStartFromLocal={() => setFallback(localFallback)}
+          />
+        </HostDataContext.Provider>
       );
     }
     // 読み上げの領域 (role="status") は文だけ。ボタンを入れると、出たときにボタンの
@@ -750,6 +757,8 @@ export default function BuilderApp({
   offsiteLessons = EMPTY_HOST_LIST,
   holidays = EMPTY_HOST_LIST,
   partTimeStaffNames = EMPTY_HOST_NAMES,
+  retiredTeacherNames = EMPTY_HOST_NAMES,
+  specialEvents = EMPTY_HOST_LIST,
 }: Partial<HostData> & {
   season?: KoshuSeason;
   onSeasonChange?: (season: KoshuSeason) => void;
@@ -759,8 +768,8 @@ export default function BuilderApp({
   const season = seasonProp ?? ownSeason;
   const changeSeason = onSeasonChange ?? setOwnSeason;
   const hostData = useMemo(
-    () => ({ offsiteLessons, holidays, partTimeStaffNames }),
-    [offsiteLessons, holidays, partTimeStaffNames],
+    () => ({ offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents }),
+    [offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents],
   );
   // 季節ごとに作り直すのは作業領域だけ (key)。UIProvider も中に入れて作り直すので、
   // 開いたままの確認ダイアログが、季節を切り替えた後に前の季節の操作 (リセット・

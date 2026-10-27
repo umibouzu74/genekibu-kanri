@@ -20,7 +20,8 @@ export interface ProjectTemplate {
 // 回答もその季節の日付に対するものなので外す (stripAvailability)。
 export function buildTemplatePayload(project: Project | null | undefined): Omit<Project, 'snapshots'> {
   // snapshots は除外 (rest に含めない)。_snapshots は意図的に未使用。
-  const { snapshots: _snapshots, ...rest } = project || {};
+  // 作り直す前の時間割の控え (previousTimetable) も季節のものなので載せない
+  const { snapshots: _snapshots, previousTimetable: _previous, ...rest } = project || {};
   const payload = JSON.parse(JSON.stringify(rest));
   if (Array.isArray(payload.teachers)) payload.teachers = stripAvailability(payload.teachers);
   return payload;

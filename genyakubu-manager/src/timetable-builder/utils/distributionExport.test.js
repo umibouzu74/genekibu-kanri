@@ -207,9 +207,24 @@ describe('buildDistributionWorkbook — ヘッダ行', () => {
     expect(['附中', 'S', '附中', 'S', 'A']).toEqual(
       [0, 1, 2, 3, 4].map(off => ws.getCell(MULTI.cls, L.cls + off).master.value),
     );
-    // 教室行はモデルに情報が無いので空欄 (手書き用の枠だけ)
+    // 教室を入れていないクラスの教室行は空欄 (手書き用の枠だけ)
     expect(ws.getCell(MULTI.room, L.label).value).toBe('教　室');
     expect(ws.getCell(MULTI.room, L.cls).value).toBeNull();
+  });
+
+  it('クラスに教室を入れてあれば教室の行にその番号を出す (無いクラスは空欄)', () => {
+    const base = makeProject();
+    base.tabs[2].config.classes = [
+      { id: 1, label: 'SS', room: '501' },
+      { id: 2, label: 'S', room: '401' },
+      { id: 3, label: 'S' },
+    ];
+    const ws = buildDistributionWorkbook(base).getWorksheet('中3時間割');
+    expect(ws.getCell(SINGLE.room, L.cls).value).toBe('501');
+    expect(ws.getCell(SINGLE.room, L.cls + 1).value).toBe('401');
+    expect(ws.getCell(SINGLE.room, L.cls + 2).value).toBeNull();
+    // 右段にも同じ
+    expect(ws.getCell(SINGLE.room, R3.cls).value).toBe('501');
   });
 
   it('単一タブのシートは 学年 行なし (クラス行がヘッダ先頭)', () => {

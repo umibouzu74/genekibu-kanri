@@ -12,6 +12,7 @@ export function useTeacherActions(dispatch: Dispatch<ProjectAction>) {
     importTeachers: (teachers: Array<{ name: string; subjects?: string[] }>, mode?: 'append' | 'replace') =>
       dispatch({ type: 'teacher/import', payload: { teachers, mode } }),
     removeTeacher: (idx: number) => dispatch({ type: 'teacher/remove', payload: { idx } }),
+    removeTeachersByName: (names: string[]) => dispatch({ type: 'teacher/removeByNames', payload: { names } }),
     renameTeacher: (idx: number, newName: string) =>
       dispatch({ type: 'teacher/rename', payload: { idx, newName } }),
     toggleTeacherSubject: (idx: number, subject: string) =>

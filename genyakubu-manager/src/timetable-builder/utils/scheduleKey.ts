@@ -20,12 +20,13 @@
 // 注意: constants.js は本ファイルの parseKey を import しているため、
 // ここから constants.js を import すると循環になる。import してよいのは
 // 無依存モジュール (generationParams / dateGenerate / dateLabelUnify /
-// availabilityShape) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
+// availabilityShape / carriedTimetable) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
 // availabilityShape の無依存モジュールのみ。
 import { clampGenerationParam } from './generationParams';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { unifyDateLabelWeekdays } from './dateLabelUnify';
 import { sanitizeAvailability } from './availabilityShape';
+import { normalizeCarriedTimetable } from './carriedTimetable';
 import type {
   CombinedGroup,
   EffectiveConfig,
@@ -573,6 +574,32 @@ export function migrateProject(project: any): Project {
     }
   }
 
+  // クラスの教室 (任意): 文字列でない / 空白だけの room は落とす (表示で
+  // "[object Object]" や空の括弧を出さない)
+  {
+    let tabsChanged = false;
+    const normalizedTabs = result.tabs.map((tab: any) => {
+      const classes = tab?.config?.classes;
+      if (!Array.isArray(classes) || !classes.some((c: any) => c && 'room' in c)) return tab;
+      let changed = false;
+      const next = classes.map((c: any) => {
+        if (!c || !('room' in c)) return c;
+        const room = typeof c.room === 'string' ? c.room.trim() : '';
+        if (room && room === c.room) return c;
+        changed = true;
+        if (!room) {
+          const { room: _room, ...rest } = c;
+          return rest;
+        }
+        return { ...c, room };
+      });
+      if (!changed) return tab;
+      tabsChanged = true;
+      return { ...tab, config: { ...tab.config, classes: next } };
+    });
+    if (tabsChanged) result = { ...result, tabs: normalizedTabs };
+  }
+
   // 自動生成パラメータ (numPatterns 等) が保存値として範囲外の場合は clamp
   // する (F5d)。UI は resolveGenerationParams で clamp 表示する一方、solver は
   // 保存値をそのまま読むため、ここで正規化しないと「表示は 1・実動作は 0 で
@@ -592,6 +619,18 @@ export function migrateProject(project: any): Project {
     }
     if (paramsChanged) {
       result = { ...result, ...clampedParams };
+    }
+  }
+
+  // 作り直す前の時間割の控え (任意フィールド)。形の崩れたものは落とす
+  // (写す画面が添字で引くので、範囲外の添字やラベルの欠けを残さない)
+  if (result.previousTimetable !== undefined) {
+    const carried = normalizeCarriedTimetable(result.previousTimetable);
+    if (!carried) {
+      const { previousTimetable: _dropped, ...rest } = result;
+      result = rest;
+    } else if (JSON.stringify(carried) !== JSON.stringify(result.previousTimetable)) {
+      result = { ...result, previousTimetable: carried };
     }
   }
 

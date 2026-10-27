@@ -10,6 +10,10 @@ import { sortPoolDatesByCalendar } from '../../utils/dateGenerate';
 import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
 import { periodShortLabel, periodTimeText } from '../../utils/availability';
 import NgCsvImport from './NgCsvImport';
+import NgViolationList from '../NgViolationList';
+import { useJumpToCell } from '../../hooks/useJumpToCell';
+import type { NgViolationItem } from '../../utils/ngViolations';
+import SessionCsvImport from './SessionCsvImport';
 import OffsiteImport from './OffsiteImport';
 import DraftNumberInput from './DraftNumberInput';
 
@@ -32,7 +36,8 @@ const TIME_STEP_SEC = 300;
 //      - その日の他学年セッション一覧 (× で削除)
 //      - その日の NG マトリクス (講師×時限、教科グループ付き、自動NG は『自』)
 //   5. クイック数値入力グリッド (折りたたみ、最下部)
-export default function AbsenceNgPanel() {
+// onCloseModal: ⚙ 設定を閉じる (NG に当たっている割当の「→」でセルへ飛ぶとき)
+export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => void } = {}) {
   const {
     project,
     handleExternalCountChange,
@@ -50,6 +55,13 @@ export default function AbsenceNgPanel() {
   } = useProjectContext();
   const { showConfirm, showToast } = useUI();
   const autoNgByTeacher = analysis?.autoNgByTeacher;
+  // NG に当たっている割当 (全タブ)。他学年セッション・NG を入れた結果をここで見る
+  const ngViolationList: NgViolationItem[] = analysis?.ngViolationList || [];
+  const jumpToCell = useJumpToCell();
+  const handleJumpToViolation = (item: NgViolationItem) => {
+    onCloseModal?.();
+    jumpToCell(item.tabId, item.key);
+  };
 
   // v4(Y): NG / 他学年セッションは全タブ共通。日付軸は currentConfig (タブの使う日)
   // ではなく『プール全日』(project.dates) を使う。これにより、現タブが使わない日
@@ -227,7 +239,7 @@ export default function AbsenceNgPanel() {
   }, [poolDates, poolPeriods, project.teachers, autoNgByTeacher]);
 
   // 期間内の date ラベル配列
-  const dateLabelsInRange = useMemo(() => {
+  const rangeDateLabels = useMemo(() => {
     const sIdx = poolDates.findIndex(d => d.id === formStartDateId);
     const eIdx = poolDates.findIndex(d => d.id === formEndDateId);
     if (sIdx < 0 || eIdx < 0) return [];
@@ -235,6 +247,25 @@ export default function AbsenceNgPanel() {
     const hi = Math.max(sIdx, eIdx);
     return poolDates.slice(lo, hi + 1).map(d => d.label);
   }, [poolDates, formStartDateId, formEndDateId]);
+  // 期間の中で外した日 (2026-10-27)。理科基礎のように期の一部の日だけ担当する
+  // 講師は、プリセットで期間を入れてから担当しない日を外す。期間を変えたら戻す
+  // (前の期間で外した日が、別の期間で黙って抜けないように)
+  const [excludedDates, setExcludedDates] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    setExcludedDates(prev => (prev.size === 0 ? prev : new Set()));
+  }, [formStartDateId, formEndDateId]);
+  const toggleExcludedDate = (label: string) => {
+    setExcludedDates(prev => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label); else next.add(label);
+      return next;
+    });
+  };
+  // 登録の対象になる日 (期間 − 外した日)。以降の登録・件数はすべてこれを使う
+  const dateLabelsInRange = useMemo(
+    () => rangeDateLabels.filter(l => !excludedDates.has(l)),
+    [rangeDateLabels, excludedDates],
+  );
 
   // ── 講師 / 時限 選択の派生 ───────────────
   // allMode のとき: 現在の project.teachers をそのまま反映 (動的解決)
@@ -564,11 +595,29 @@ export default function AbsenceNgPanel() {
         バイト等の「出られない時間」は <strong>🙋 出勤可能調査</strong> で、調査票の出力から回答の入力までまとめて扱えます (× が自動で NG になり、下のマトリクスに「調」で出ます)。
       </div>
 
+      {/* NG に当たっている割当 (全タブ)。あるときだけ出す */}
+      {ngViolationList.length > 0 && (
+        <section
+          aria-label="NG に当たっている割当"
+          className="border border-builder-danger-border bg-builder-danger-soft rounded p-3 mb-4 text-xs text-builder-ink"
+        >
+          <div className="font-bold text-builder-red mb-1">
+            ⚠ NG に当たっている割当 {ngViolationList.length} 件
+          </div>
+          <div className="text-[11px] text-builder-ink-muted mb-2">
+            講師不在・NG を入れる前から入っていた割当です。「→」でそのセルへ移ります (設定を閉じます)。
+            担当を替えるか、NG のほうが違っていれば下の一覧から消してください。
+          </div>
+          <NgViolationList items={ngViolationList} onJump={handleJumpToViolation} initialLimit={8} />
+        </section>
+      )}
+
       {/* 本体の「他校舎の授業」から講師不在を取り込む (予定があるときだけ出る) */}
       <OffsiteImport />
 
-      {/* NG 日時の CSV 一括登録 (E2a) */}
-      <div className="mb-4">
+      {/* 表での一括登録: 他学年セッション (時刻つき) と NG 日時 (時限指定, E2a) */}
+      <div className="mb-4 space-y-2">
+        <SessionCsvImport />
         <NgCsvImport />
       </div>
 
@@ -745,6 +794,38 @@ export default function AbsenceNgPanel() {
             </select>
           </div>
         </div>
+        {/* 期間の中の日 (2 日以上のとき)。押すとその日を外す / 戻す */}
+        {rangeDateLabels.length > 1 && (
+          <div className="flex flex-col gap-1 text-xs mb-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-builder-ink-muted">
+                期間の中の日 — 押すと外します (登録 {dateLabelsInRange.length} / {rangeDateLabels.length} 日)
+              </span>
+              {excludedDates.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setExcludedDates(new Set())}
+                  className="text-xs px-2 py-0.5 border border-builder-ink-ghost rounded bg-builder-surface hover:bg-builder-bg text-builder-ink"
+                >全部の日に戻す</button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1" role="group" aria-label="期間の中で登録する日">
+              {rangeDateLabels.map(label => {
+                const on = !excludedDates.has(label);
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => toggleExcludedDate(label)}
+                    aria-pressed={on}
+                    aria-label={`${label} を登録する`}
+                    className={`px-2 py-0.5 border rounded ${on ? 'bg-builder-info-soft border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border-builder-ink-ghost text-builder-ink-muted line-through'}`}
+                  >{label}</button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* mode 別: 時刻 OR 時限 */}
         {mode === 'external' ? (

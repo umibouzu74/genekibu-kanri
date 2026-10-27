@@ -39,6 +39,37 @@ function DraftListTextarea({ value, onCommit }) {
   );
 }
 
+// 1 行の入力欄 (教室・クラス名)。DraftListTextarea と同じく、確定は欄を離れた
+// とき / Enter (IME の確定の Enter は除く)。Esc で編集を取り消す
+function DraftLineInput({ value, onCommit, ariaLabel, placeholder = '', className }) {
+  const [draft, setDraft] = useState(null);
+  const commit = () => {
+    if (draft != null && draft !== value) onCommit(draft);
+    setDraft(null);
+  };
+  return (
+    <input
+      type="text"
+      aria-label={ariaLabel}
+      placeholder={placeholder}
+      className={className}
+      value={draft ?? value}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && !e.nativeEvent?.isComposing) {
+          e.preventDefault();
+          commit();
+        } else if (e.key === 'Escape') {
+          if (e.nativeEvent?.isComposing) return;
+          e.stopPropagation();
+          setDraft(null);
+        }
+      }}
+    />
+  );
+}
+
 export default function BasicSettings() {
   const {
     project,
@@ -55,6 +86,8 @@ export default function BasicSettings() {
     handleCopyTabPeriodsToOthers,
     handleToggleTabPeriod,
     handleSetAllTabPeriods,
+    handleSetClassRoom,
+    handleRenameHeader,
   } = useProjectContext();
   const { showConfirm, showToast } = useUI();
 
@@ -536,6 +569,62 @@ export default function BasicSettings() {
         />
         <span className="block text-[11px] text-builder-ink-muted">欄の外をクリックすると確定します (Esc で取り消し)</span>
       </label>
+
+      {/* ── クラスと教室 (2026-10-27) ── 教室はクラス名と別に持つ。年ごとに教室が
+          変わってもクラス名 (合同・担当不可/優先クラスが名前で指す) を変えずに済む */}
+      {currentConfig.classes.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-xs font-bold text-builder-ink-muted">🏫 クラスと教室 (「{activeTab.name}」)</div>
+          <p className="text-[11px] text-builder-ink-muted">
+            教室は時間割の見出し・Excel (講師別・配布用の教室の行)・講師の月間予定に出ます。
+            クラス名に教室番号を入れている (3S401 など) ときは、ここでクラス名を直して教室を分けられます
+            (ここでの改名は入っているコマ・合同・担当不可/優先クラスを引き継ぎます)。
+          </p>
+          <table className="text-xs border-collapse">
+            <thead>
+              <tr className="text-builder-ink-muted">
+                <th className="text-left font-normal pr-2">クラス名</th>
+                <th className="text-left font-normal">教室</th>
+              </tr>
+            </thead>
+            <tbody>
+              {currentConfig.classes.map(c => (
+                <tr key={c.id}>
+                  <td className="pr-2 py-0.5">
+                    <DraftLineInput
+                      value={c.label}
+                      ariaLabel={`クラス「${c.label}」の名前`}
+                      className={`${inputCls} w-28`}
+                      onCommit={(v) => {
+                        const next = String(v).trim();
+                        if (!next || next === c.label) return;
+                        if (next.includes(',')) {
+                          showToast('クラス名にカンマは使えません', 'error', 3000);
+                          return;
+                        }
+                        if (currentConfig.classes.some(x => x.id !== c.id && x.label === next)) {
+                          showToast(`「${next}」はこのタブにもうあります`, 'error', 3000);
+                          return;
+                        }
+                        handleRenameHeader('class', c.label, next);
+                      }}
+                    />
+                  </td>
+                  <td className="py-0.5">
+                    <DraftLineInput
+                      value={c.room || ''}
+                      ariaLabel={`クラス「${c.label}」の教室`}
+                      placeholder="例: 401"
+                      className={`${inputCls} w-24`}
+                      onCommit={(v) => handleSetClassRoom(c.id, v)}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="pt-2">
         <button onClick={handleSaveDefaultClick} className="w-full py-2 bg-builder-ink text-white font-bold rounded hover:bg-builder-primary-hover shadow-sm text-sm">

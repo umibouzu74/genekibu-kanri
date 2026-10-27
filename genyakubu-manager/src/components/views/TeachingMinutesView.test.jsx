@@ -147,6 +147,28 @@ describe("TeachingMinutesView", () => {
     expect(rowCells("新人")[0]).toBe("—");
   });
 
+  it("退職・非表示の講師は、期間内に授業が無ければ講師ボタンに出さない (授業があれば出す)", () => {
+    const affiliations = [
+      { name: "辞めた人", fromYear: 2026, category: "retired" },
+      { name: "河野", fromYear: 2026, category: "retired" },
+    ];
+    render(
+      <TeachingMinutesView
+        slots={slots}
+        partTimeStaff={[{ name: "辞めた人" }, { name: "新人" }]}
+        affiliations={affiliations}
+      />
+    );
+    setPeriod("2026-09-07", "2026-09-13");
+    expect(screen.queryByRole("button", { name: /辞めた人/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "新人 (期間内の授業なし)" })).toBeTruthy();
+    // 河野は退職でも期間内に授業があるので出す (給与から黙って消さない)
+    expect(screen.getByRole("button", { name: "河野", pressed: false })).toBeTruthy();
+    // 退職にする前の年度の期間なら出す
+    setPeriod("2025-09-01", "2025-09-07");
+    expect(screen.getByRole("button", { name: "辞めた人 (期間内の授業なし)" })).toBeTruthy();
+  });
+
   it("紙面のタイトルは集計の期間 (data-print-title)。操作部は紙面に出さない", () => {
     const { container } = render(<TeachingMinutesView slots={slots} />);
     setPeriod("2026-09-07", "2026-09-13");

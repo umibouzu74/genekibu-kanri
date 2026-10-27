@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
+import { useHostData } from '../../contexts/hostDataContext';
 import { parseTeachersCsv, decodeCsvBytes } from '../../utils/csvImport';
 import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
 import { readParentTeachers } from '../../utils/parentTeachers';
@@ -65,12 +66,14 @@ export default function TeacherManager() {
     addTeacher,
     importTeachers,
     removeTeacher,
+    removeTeachersByName,
     renameTeacher,
     toggleTeacherSubject,
     setTeacherLimit,
     addSubjects,
   } = useProjectContext();
   const { showConfirm, showInput, showToast } = useUI();
+  const { retiredTeacherNames } = useHostData();
   const [csvPanelOpen, setCsvPanelOpen] = useState(false);
   // N4f: 講師名の絞り込み。講師が数十名規模になると目的の行まで
   // スクロール必須だった。明示入力のフィルタのみ (A18 非該当)。
@@ -155,6 +158,34 @@ export default function TeacherManager() {
     [project.teachers],
   );
 
+  // 本体の講師の所属で「退職・非表示」になっている講師 (この講師マスタにいる人)。
+  // 季節を写したときに前の季節から持ち越した人など。割当のコマ数も添える
+  const retiredInMaster = useMemo(() => {
+    const retired = new Set(retiredTeacherNames || []);
+    return project.teachers
+      .filter(t => retired.has(t.name))
+      .map(t => ({
+        name: t.name,
+        cells: project.tabs.reduce(
+          (n, tab) => n + Object.values(tab.schedule || {}).filter(e => e?.teacher === t.name).length,
+          0,
+        ),
+      }));
+  }, [retiredTeacherNames, project.teachers, project.tabs]);
+  const handleRemoveRetired = async () => {
+    const names = retiredInMaster.map(r => r.name);
+    const cells = retiredInMaster.reduce((n, r) => n + r.cells, 0);
+    const ok = await showConfirm(
+      `本体で退職・非表示になっている ${names.join('・')} を講師マスタから外しますか？` +
+        (cells > 0 ? `\n割当の入っている ${cells} コマは講師なし (科目は残ります) になります。` : '') +
+        `\n他学年セッションも消えます。Undo で戻せます。`,
+      { title: '退職した講師を外す', danger: true, confirmLabel: '外す' },
+    );
+    if (!ok) return;
+    removeTeachersByName(names);
+    showToast(`${names.join('・')} を講師マスタから外しました`, 'success', 4000);
+  };
+
   const handleCsvImport = async (mode) => {
     if (!csvParsed || csvParsed.rows.length === 0) return;
     if (mode === 'replace') {
@@ -189,7 +220,9 @@ export default function TeacherManager() {
   // teacher/import (append) に流すので、同名講師は担当科目のみ更新され
   // NG・優先クラス・上限などは維持される (Undo 1 ステップ)。
   const handleImportFromParent = async () => {
-    const parents = readParentTeachers();
+    // 本体で退職・非表示になっている講師は取り込まない
+    const retired = new Set(retiredTeacherNames || []);
+    const parents = readParentTeachers().filter(p => !retired.has(p.name));
     if (parents.length === 0) {
       showToast('親アプリの講師データが見つかりませんでした', 'error', 4000);
       return;
@@ -244,6 +277,19 @@ export default function TeacherManager() {
           <button onClick={handleAddClick} className="text-xs whitespace-nowrap bg-builder-green text-white px-2 py-1 rounded shadow hover:bg-builder-green-hover">+ 追加</button>
         </div>
       </div>
+      {retiredInMaster.length > 0 && (
+        <div role="status" className="border border-builder-warning-border bg-builder-warning-soft rounded p-2 text-xs text-builder-ink space-y-1">
+          <div>
+            本体の「講師の所属」で<strong>退職・非表示</strong>になっている講師がいます:{' '}
+            {retiredInMaster.map(r => (r.cells > 0 ? `${r.name} (割当 ${r.cells} コマ)` : r.name)).join('、')}
+          </div>
+          <button
+            type="button"
+            onClick={handleRemoveRetired}
+            className="px-2 py-0.5 border border-builder-warning-border rounded bg-builder-surface text-builder-ink font-bold hover:bg-builder-surface-alt"
+          >講師マスタから外す</button>
+        </div>
+      )}
       {csvPanelOpen && (
         <div className="border border-builder-border rounded bg-builder-surface-alt p-3 space-y-2">
           <div className="flex items-center justify-between gap-2">
