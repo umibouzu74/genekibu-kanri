@@ -138,7 +138,13 @@ export interface ExternalSession {
   teacherName: string;
   /** reducer 経由では常に '' が入るが、外部 JSON は欠落し得る (migrate は補完しない) */
   label?: string;
+  /** 種別 (プリセットの名前「Ⅰ期 予備校３限」など)。プリセットの改名で同期する */
   memo?: string;
+  /**
+   * 講座名 (「高3 共通テスト理科基礎(物理基礎)」、任意)。表示は「メモ + 講座名」
+   * (utils/externalSessionShape)。空なら持たない
+   */
+  course?: string;
   /** "HH:mm"。あれば自動NG派生 (utils/autoNg) の対象 */
   startTime?: string;
   /** startTime がある場合のみ保持 (orphan endTime は作らない) */

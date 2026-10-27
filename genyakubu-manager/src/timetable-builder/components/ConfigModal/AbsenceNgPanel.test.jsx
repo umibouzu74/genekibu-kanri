@@ -226,7 +226,7 @@ describe('AbsenceNgPanel — プリセット適用は全置換 (F5l)', () => {
 describe('AbsenceNgPanel — プリセット適用のメモ既定値 (プリセット名)', () => {
   const applySelect = () =>
     screen.getByLabelText('プリセットを選んで時刻・期間・メモをフォームに展開');
-  const memoInput = () => screen.getByPlaceholderText('予備校 / 高2 英語 等');
+  const memoInput = () => screen.getByLabelText(/^メモ \(任意/);
 
   it('メモ未設定のプリセットはプリセット名がメモに入る (予備校/高校を判別可能に)', () => {
     renderPanel({ presets: [{ id: 2, name: '予備校（早朝）', startTime: '08:00' }] });
@@ -384,8 +384,10 @@ describe('AbsenceNgPanel — 他学年セッションの一括登録 (E3e)', () 
     fireEvent.change(screen.getByLabelText('終了日'), { target: { value: '2' } });
     fireEvent.change(screen.getByLabelText('開始時刻'), { target: { value: '10:00' } });
     fireEvent.change(screen.getByLabelText('終了時刻'), { target: { value: '11:00' } });
-    const memoInput = screen.getByPlaceholderText('予備校 / 高2 英語 等');
+    const memoInput = screen.getByLabelText(/^メモ \(任意/);
     fireEvent.change(memoInput, { target: { value: '予備校' } });
+    const courseInput = screen.getByLabelText(/^講座名 \(任意/);
+    fireEvent.change(courseInput, { target: { value: '高3 英語 ' } });
 
     fireEvent.click(screen.getByText('他学年セッションとして追加'));
     expect(addExternalSessions).toHaveBeenCalledTimes(1);
@@ -393,7 +395,7 @@ describe('AbsenceNgPanel — 他学年セッションの一括登録 (E3e)', () 
     expect(items).toHaveLength(4); // 2 講師 × 2 日
     expect(items).toContainEqual({
       date: '7/24(金)', teacherName: '堀上', label: '10:00-11:00',
-      memo: '予備校', startTime: '10:00', endTime: '11:00',
+      memo: '予備校', course: '高3 英語', startTime: '10:00', endTime: '11:00',
     });
     expect(items).toContainEqual(
       expect.objectContaining({ date: '7/25(土)', teacherName: '山田' }),
@@ -402,6 +404,7 @@ describe('AbsenceNgPanel — 他学年セッションの一括登録 (E3e)', () 
     expect(screen.getByLabelText('開始時刻')).toHaveValue('');
     expect(screen.getByLabelText('終了時刻')).toHaveValue('');
     expect(memoInput).toHaveValue('');
+    expect(courseInput).toHaveValue('');
     expect(screen.getByLabelText('堀上 を対象に含める')).toBeChecked();
   });
 
@@ -439,7 +442,7 @@ describe('AbsenceNgPanel — 他学年セッションの一括登録 (E3e)', () 
     checkTeacher('堀上');
     fireEvent.click(screen.getByText('他学年セッションとして追加'));
     expect(addExternalSessions).toHaveBeenCalledWith([
-      { date: '7/24(金)', teacherName: '堀上', label: '', memo: '', startTime: undefined, endTime: undefined },
+      { date: '7/24(金)', teacherName: '堀上', label: '', memo: '', course: '', startTime: undefined, endTime: undefined },
     ]);
   });
 });
@@ -511,12 +514,12 @@ describe('AbsenceNgPanel — まとめてNG / OK解除 (E3e)', () => {
   it('NG モードに切り替えると external 用の時刻・メモがクリアされる (stale submit 防止)', () => {
     const { container } = renderPanel({ overrides: { project: makeFullProject() } });
     fireEvent.change(screen.getByLabelText('開始時刻'), { target: { value: '10:00' } });
-    fireEvent.change(screen.getByPlaceholderText('予備校 / 高2 英語 等'), { target: { value: 'メモ' } });
+    fireEvent.change(screen.getByLabelText(/^メモ \(任意/), { target: { value: 'メモ' } });
     switchToNgMode(container);
     // external に戻ると時刻・メモは空
     fireEvent.click(container.querySelector('input[name="absence-ng-mode"][value="external"]'));
     expect(screen.getByLabelText('開始時刻')).toHaveValue('');
-    expect(screen.getByPlaceholderText('予備校 / 高2 英語 等')).toHaveValue('');
+    expect(screen.getByLabelText(/^メモ \(任意/)).toHaveValue('');
   });
 });
 
@@ -669,7 +672,7 @@ describe('AbsenceNgPanel — 一括解除', () => {
     ],
     subjects: ['英語'],
     externalSessions: [
-      { id: 1, date: '7/20(月)', teacherName: '堀上', label: '', memo: '', startTime: '10:00', endTime: '11:00' },
+      { id: 1, date: '7/20(月)', teacherName: '堀上', label: '', memo: '', course: '', startTime: '10:00', endTime: '11:00' },
     ],
     externalSessionPresets: [],
     externalCounts: {},
@@ -755,9 +758,9 @@ describe('AbsenceNgPanel — プリセット改名の登録済みセッション
     teachers: [{ name: '堀上', subjects: ['英語'] }],
     subjects: ['英語'],
     externalSessions: [
-      { id: 1, date: '7/24(金)', teacherName: '堀上', label: '', memo: '予備校1限', startTime: '09:00', endTime: '10:10' },
-      { id: 2, date: '7/25(土)', teacherName: '堀上', label: '', memo: '予備校1限', startTime: '09:00', endTime: '10:10' },
-      { id: 3, date: '7/24(金)', teacherName: '堀上', label: '', memo: '予備校1限', startTime: '10:20', endTime: '11:30' },
+      { id: 1, date: '7/24(金)', teacherName: '堀上', label: '', memo: '予備校1限', course: '', startTime: '09:00', endTime: '10:10' },
+      { id: 2, date: '7/25(土)', teacherName: '堀上', label: '', memo: '予備校1限', course: '', startTime: '09:00', endTime: '10:10' },
+      { id: 3, date: '7/24(金)', teacherName: '堀上', label: '', memo: '予備校1限', course: '', startTime: '10:20', endTime: '11:30' },
     ],
     externalSessionPresets: [
       { id: 1, name: '予備校1限', startTime: '09:00', endTime: '10:10' },
@@ -861,5 +864,47 @@ describe('AbsenceNgPanel — NG に当たっている割当', () => {
   it('当たっている割当が無ければ欄を出さない', () => {
     renderPanel({ overrides: { project: makeFullProject() } });
     expect(screen.queryByRole('region', { name: 'NG に当たっている割当' })).toBeNull();
+  });
+});
+
+describe('AbsenceNgPanel — 講座名 (2026-10-27)', () => {
+  const projectWith = (sessions, presets = []) => ({
+    teachers: [{ name: '滝澤', subjects: ['理科'], ngSlots: [] }],
+    subjects: ['理科'],
+    dates: [{ id: 1, label: '12/26(土)' }],
+    periods: [{ id: 1, label: '1限 (13:00~14:20)' }],
+    externalSessions: sessions,
+    externalSessionPresets: presets,
+    externalCounts: {},
+  });
+
+  it('日付ごとの一覧で講座名を直せる (欄を離れたら確定)', () => {
+    const updateExternalSession = vi.fn();
+    renderPanel({
+      overrides: {
+        project: projectWith([{ id: 7, date: '12/26(土)', teacherName: '滝澤', label: '', memo: 'Ⅰ期 予備校３限', startTime: '12:25', endTime: '13:35' }]),
+        updateExternalSession,
+      },
+    });
+    const input = screen.getByLabelText('12/26(土) 滝澤 の講座名');
+    fireEvent.change(input, { target: { value: '物理基礎' } });
+    fireEvent.blur(input);
+    expect(updateExternalSession).toHaveBeenCalledWith(7, { course: '物理基礎' });
+  });
+
+  it('メモに「プリセットの名前 + 講座名」が入っていれば分けるボタンを出す', () => {
+    const splitSessionCourses = vi.fn();
+    const { uiValue } = renderPanel({
+      overrides: {
+        project: projectWith(
+          [{ id: 7, date: '12/26(土)', teacherName: '滝澤', label: '', memo: 'Ⅰ期 予備校３限 物理基礎', startTime: '12:25', endTime: '13:35' }],
+          [{ id: 1, name: 'Ⅰ期 予備校３限', startTime: '12:25', endTime: '13:35' }],
+        ),
+        splitSessionCourses,
+      },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'メモと講座名に分ける (1件)' }));
+    expect(splitSessionCourses).toHaveBeenCalled();
+    expect(uiValue.showToast).toHaveBeenCalledWith(expect.stringContaining('1 件'), 'success', 4000);
   });
 });

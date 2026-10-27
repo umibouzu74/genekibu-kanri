@@ -82,7 +82,7 @@ describe('parseSessionCsv', () => {
     const r = parseSessionCsv('teacher\tdate\tstart\tend\tmemo\n井上\t12/28\t9:00\t16:10\t高3', {
       teacherNames: TEACHERS, poolDates: POOL,
     });
-    expect(r.rows).toEqual([{ line: 2, teacherName: '井上', date: '12/28(月)', startTime: '09:00', endTime: '16:10', memo: '高3' }]);
+    expect(r.rows).toEqual([{ line: 2, teacherName: '井上', date: '12/28(月)', startTime: '09:00', endTime: '16:10', memo: '高3', course: '' }]);
   });
 
   it('「時刻」の列 1 つでも、開始の欄の範囲でもよい', () => {
@@ -121,7 +121,7 @@ describe('parseSessionCsv', () => {
 
   it('時刻の無い行は登録するが数を返す', () => {
     const r = parseSessionCsv('講師,日付,メモ\n半田,12/25,予備校', { teacherNames: TEACHERS, poolDates: POOL });
-    expect(r.rows).toEqual([{ line: 2, teacherName: '半田', date: '12/25(金)', memo: '予備校' }]);
+    expect(r.rows).toEqual([{ line: 2, teacherName: '半田', date: '12/25(金)', memo: '予備校', course: '' }]);
     expect(r.untimedCount).toBe(1);
   });
 
@@ -135,7 +135,7 @@ describe('parseSessionCsv', () => {
 describe('buildSessionCsvTemplate', () => {
   it('今の講師・日付で雛形を作り、そのまま読める', () => {
     const text = buildSessionCsvTemplate(['未定', ...TEACHERS], POOL.map(d => d.label));
-    expect(text.split('\n')[0]).toBe('講師,日付,開始,終了,メモ');
+    expect(text.split('\n')[0]).toBe('講師,日付,開始,終了,メモ,講座名');
     const r = parseSessionCsv(text, { teacherNames: TEACHERS, poolDates: POOL });
     expect(r.errors).toEqual([]);
     expect(r.rows.length).toBe(5);

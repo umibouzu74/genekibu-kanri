@@ -540,3 +540,16 @@ describe("buildKoshuLessons: 作成中 / 仮確定 / 確定 (2026-10-27)", () =>
     expect(lessons.map((l) => l.season)).toEqual(["summer", "summer"]);
   });
 });
+
+describe("buildKoshuLessons: 外部授業の講座名 (2026-10-27)", () => {
+  it("「外」カードの科目は「メモ + 講座名」", () => {
+    const project = baseProject({
+      externalSessions: [
+        { id: 1, date: "7/24(金)", teacherName: "滝澤", label: "", memo: "Ⅰ期 予備校３限", course: "共通テスト理科基礎(物理基礎)", startTime: "12:25", endTime: "13:35" },
+      ],
+    });
+    project.tabs[0].schedule = { "d1-p1-c1": { subject: "英語", teacher: "堀上" } };
+    const ext = buildKoshuLessons(project).find((l) => l.kind === "external");
+    expect(ext.subj).toBe("Ⅰ期 予備校３限 共通テスト理科基礎(物理基礎)");
+  });
+});

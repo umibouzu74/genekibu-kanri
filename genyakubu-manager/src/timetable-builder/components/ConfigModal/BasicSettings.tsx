@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
 import { expandExcludeInput, generateDateLabels, sortPoolDatesByCalendar, WEEKDAY_LABELS, ymdToLabel } from '../../utils/dateGenerate';
+import DraftLineInput from './DraftLineInput';
 
 // カンマ区切りリスト編集用の textarea。編集中は draft をローカルに持ち、
 // フォーカスを外した時にだけ onCommit で確定する。
@@ -31,37 +32,6 @@ function DraftListTextarea({ value, onCommit }) {
           if (e.nativeEvent?.isComposing) return;
           // 編集の取り消し。stopPropagation しないと ConfigModal の
           // focus trap まで届いてモーダルごと閉じてしまう。
-          e.stopPropagation();
-          setDraft(null);
-        }
-      }}
-    />
-  );
-}
-
-// 1 行の入力欄 (教室・クラス名)。DraftListTextarea と同じく、確定は欄を離れた
-// とき / Enter (IME の確定の Enter は除く)。Esc で編集を取り消す
-function DraftLineInput({ value, onCommit, ariaLabel, placeholder = '', className }) {
-  const [draft, setDraft] = useState(null);
-  const commit = () => {
-    if (draft != null && draft !== value) onCommit(draft);
-    setDraft(null);
-  };
-  return (
-    <input
-      type="text"
-      aria-label={ariaLabel}
-      placeholder={placeholder}
-      className={className}
-      value={draft ?? value}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && !e.nativeEvent?.isComposing) {
-          e.preventDefault();
-          commit();
-        } else if (e.key === 'Escape') {
-          if (e.nativeEvent?.isComposing) return;
           e.stopPropagation();
           setDraft(null);
         }

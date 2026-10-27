@@ -22,6 +22,7 @@ import { sortPoolDatesByCalendar } from './dateGenerate';
 import { computePresetMemoBackfill } from './presetMemoBackfill';
 import { classLabelWithRoom } from './classRoom';
 import { usedDateLabels } from './courseDates';
+import { normalizeSessionCourse, sessionKindLabel } from './externalSessionShape';
 
 // ─── 共通スタイル定義 (exceljs 形式) ──────────────────────────────
 
@@ -570,8 +571,8 @@ export interface TeacherRow {
    * [日付, 時限(または時刻), クラス, 科目, 学年(タブ), 備考]。
    * 科目には回数連番 (①②…、そのクラスで何回目の授業か = 画面表示と同じ
    * 番号) が付く (Q1)。
-   * 外部授業の行は 科目=空欄、学年(タブ)=種別 (メモ＝プリセット名。メモ未設定
-   * でも時刻がプリセットに一致すればその名前、どちらも無ければ '外部')。
+   * 外部授業の行は 科目=講座名 (無ければ空欄)、学年(タブ)=種別 (メモ＝プリセット名。
+   * メモ未設定でも時刻がプリセットに一致すればその名前、どちらも無ければ '外部')。
    */
   cells: string[];
   /** 科目カラー適用用 (外部授業は undefined) */
@@ -645,11 +646,11 @@ export function buildTeacherRows(project: Project, teacherName: string): Teacher
     const timeText = s.startTime
       ? (s.endTime ? `${s.startTime}〜${s.endTime}` : `${s.startTime}〜`)
       : (s.label || '-');
-    const kind = s.memo || presetMemoBySessionId.get(s.id) || '外部';
+    const kind = sessionKindLabel(s, presetMemoBySessionId.get(s.id));
     rows.push({
-      // 科目欄は空欄 (講習の科目ではないため)。予備校 / 高校の判別は
-      // 学年(タブ) 列の種別ラベルで行う。
-      cells: [s.date, timeText, '-', '', kind, ''],
+      // 科目欄は講座名 (講習の科目ではないので色は付けない。講座名が無ければ空欄)。
+      // 予備校 / 高校の判別は学年(タブ) 列の種別ラベル (メモ = プリセットの名前)
+      cells: [s.date, timeText, '-', normalizeSessionCourse(s.course), kind, ''],
       isExternal: true,
       dateIdx: dateIdx(s.date),
       sortMin: getSessionTimeRange(s)?.startMin ?? Number.POSITIVE_INFINITY,

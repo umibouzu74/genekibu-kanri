@@ -35,7 +35,7 @@ const type = (text) =>
 describe('SessionCsvImport', () => {
   it('貼り付けた表を講師 × 日付に展開して登録する (ラベルは手入力の登録と同じ形)', () => {
     const { addExternalSessions } = renderPanel();
-    type('講師,日付,開始,終了,メモ\n半田・滝澤,12/25・26,9:00,10:10,予備校１限');
+    type('講師,日付,開始,終了,メモ,講座名\n半田・滝澤,12/25・26,9:00,10:10,予備校１限,高3 英語');
     expect(screen.getByText('4 件')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /他学年セッションを追加/ }));
     expect(addExternalSessions).toHaveBeenCalledTimes(1);
@@ -43,7 +43,7 @@ describe('SessionCsvImport', () => {
     expect(items).toHaveLength(4);
     expect(items[0]).toEqual({
       date: '12/25(金)', teacherName: '半田', label: '09:00-10:10', memo: '予備校１限',
-      startTime: '09:00', endTime: '10:10',
+      course: '高3 英語', startTime: '09:00', endTime: '10:10',
     });
   });
 

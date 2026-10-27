@@ -44,13 +44,19 @@ export function useTeacherActions(dispatch: Dispatch<ProjectAction>) {
         type: 'teacher/addExternalSession',
         payload: { date, teacherName, label, memo, startTime, endTime },
       }),
-    addExternalSessions: (items: Array<{ date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string }>) =>
+    addExternalSessions: (items: Array<{ date: string; teacherName: string; label?: string; memo?: string; course?: string; startTime?: string; endTime?: string }>) =>
       dispatch({ type: 'teacher/addExternalSessions', payload: { items } }),
     removeExternalSession: (id: number) =>
       dispatch({ type: 'teacher/removeExternalSession', payload: { id } }),
+    // 登録済みセッションのメモ・講座名を直す
+    updateExternalSession: (id: number, updates: { memo?: string; course?: string }) =>
+      dispatch({ type: 'teacher/updateExternalSession', payload: { id, updates } }),
     // メモ未設定のセッションに時刻一致プリセットの名前を一括適用 (後付け)
     applyPresetMemosToSessions: () =>
       dispatch({ type: 'teacher/applyPresetMemos' }),
+    // メモに入れていた「プリセットの名前 + 講座名」を、メモと講座名に分ける
+    splitSessionCourses: () =>
+      dispatch({ type: 'teacher/splitSessionCourses' }),
     // 他学年セッション登録プリセット (時刻 / 期間 / メモ の頻出パターン)
     addExternalSessionPreset: (preset: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string; teachers?: string[] }) =>
       dispatch({ type: 'preset/add', payload: preset }),

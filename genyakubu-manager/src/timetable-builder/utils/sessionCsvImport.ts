@@ -4,14 +4,14 @@
 // 時刻つきのセッションは入れられなかった。
 //
 // 形式 (1 行目は見出し。列の順は自由):
-//   講師,日付,開始,終了,メモ
-//   半田,12/25・26・28,9:00,10:10,予備校１限
-//   滝澤・武下,12/25〜12/28,12:25,13:35,予備校３限 理科基礎
+//   講師,日付,開始,終了,メモ,講座名
+//   半田,12/25・26・28,9:00,10:10,予備校１限,高3 英語
+//   滝澤・武下,12/25〜12/28,12:25,13:35,予備校３限,共通テスト理科基礎
 //
 // - 区切りはカンマ。見出しにタブがあればタブ区切り (Excel からの貼り付け)
 // - 見出しの名前: 講師 (name / teacher / 先生)・日付 (date)・開始 (start)・
-//   終了 (end)・メモ (memo / 備考 / 種別)。開始と終了の代わりに「時刻」列
-//   ("9:00-16:10") でもよい
+//   終了 (end)・メモ (memo / 備考 / 種別)・講座名 (講座 / course、任意)。
+//   開始と終了の代わりに「時刻」列 ("9:00-16:10") でもよい
 // - 講師は「・」「、」「/」で区切れば 1 行で何人でも (1 人 1 件で登録する)
 // - 日付は「12/25」「12/25(金)」「2026-12-25」「12月25日」。「・」「、」で
 //   何日でも並べられ、月を省いた「12/25・26・28」も読む。「12/25〜12/28」は
@@ -38,6 +38,8 @@ export interface SessionCsvRow {
   startTime?: string;
   endTime?: string;
   memo: string;
+  /** 講座名 (空なら '') */
+  course: string;
 }
 
 export interface SessionCsvResult {
@@ -51,13 +53,14 @@ export interface SessionCsvResult {
   untimedCount: number;
 }
 
-const HEADER_ALIASES: Record<'teacher' | 'date' | 'start' | 'end' | 'time' | 'memo', string[]> = {
+const HEADER_ALIASES: Record<'teacher' | 'date' | 'start' | 'end' | 'time' | 'memo' | 'course', string[]> = {
   teacher: ['講師', '講師名', '先生', '担当', 'name', 'teacher'],
   date: ['日付', '日', '日程', 'date', 'dates'],
   start: ['開始', '開始時刻', '始', 'start', 'starttime'],
   end: ['終了', '終了時刻', '終', 'end', 'endtime'],
   time: ['時刻', '時間', '時間帯', 'time'],
   memo: ['メモ', '備考', '種別', '内容', 'memo', 'note'],
+  course: ['講座名', '講座', '授業名', 'course'],
 };
 
 function normalizeHeader(h: string): string {
@@ -207,6 +210,7 @@ export function parseSessionCsv(
   const endCol = col('end');
   const timeCol = col('time');
   const memoCol = col('memo');
+  const courseCol = col('course');
   if (teacherCol < 0 || dateCol < 0) {
     return empty('見出しに「講師」と「日付」の列が見つかりません (例: 講師,日付,開始,終了,メモ)', headerIdx + 1);
   }
@@ -251,11 +255,12 @@ export function parseSessionCsv(
       continue;
     }
     const memo = cell(memoCol);
+    const course = cell(courseCol);
     if (!startTime) untimedCount++;
     for (const name of teachers) {
       if (unknownHere.includes(name)) continue;
       for (const date of labels) {
-        const key = JSON.stringify([date, name, memo, startTime || '', endTime || '']);
+        const key = JSON.stringify([date, name, memo, course, startTime || '', endTime || '']);
         if (seen.has(key)) continue;
         seen.add(key);
         rows.push({
@@ -265,6 +270,7 @@ export function parseSessionCsv(
           ...(startTime ? { startTime } : {}),
           ...(startTime && endTime ? { endTime } : {}),
           memo,
+          course,
         });
       }
     }
@@ -289,8 +295,8 @@ export function buildSessionCsvTemplate(teacherNames: string[], dateLabels: stri
   const d1 = md(dateLabels[0]) || '12/25';
   const d2 = md(dateLabels[1]) || d1;
   return [
-    '講師,日付,開始,終了,メモ',
-    `${name},${d1},9:00,10:10,予備校１限`,
-    `${name}・${second},${d1}・${d2},12:25,13:35,予備校３限`,
+    '講師,日付,開始,終了,メモ,講座名',
+    `${name},${d1},9:00,10:10,予備校１限,高3 英語`,
+    `${name}・${second},${d1}・${d2},12:25,13:35,予備校３限,共通テスト理科基礎`,
   ].join('\n');
 }

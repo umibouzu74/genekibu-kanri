@@ -18,7 +18,8 @@
 // 講師別 Excel (excelExport のグレー行) と同様に個人スケジュールへ載せる。
 // 種別ラベルも Excel と同じ規則: メモ (プリセット適用時はプリセット名) を
 // 優先し、メモ未設定でも時刻がプリセットに一致すればその名前を表示にだけ
-// 使う (computePresetMemoBackfill)。どちらも無ければ「外部」。
+// 使う (computePresetMemoBackfill)。どちらも無ければ「外部」。講座名があれば
+// その後ろに並べる (「Ⅰ期 予備校３限 高3 共通テスト理科基礎」、externalSessionShape)。
 
 import { newerSchemaVersion } from "../timetable-builder/utils/projectSync";
 import { validateProjectShape } from "../timetable-builder/utils/projectSchema";
@@ -36,6 +37,7 @@ import {
   usedDateLabels,
 } from "../timetable-builder/utils/courseDates";
 import { computePresetMemoBackfill } from "../timetable-builder/utils/presetMemoBackfill";
+import { sessionDisplayLabel } from "../timetable-builder/utils/externalSessionShape";
 import {
   isPublished,
   publishStateForSessionDate,
@@ -259,7 +261,8 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
       // (Excel の timeText フォールバックと同じ)
       periodLabel: s.label || "",
       teacher,
-      subj: s.memo || presetMemoBySessionId.get(s.id) || "外部",
+      // 種別 (メモ → 時刻の合うプリセットの名前 → 「外部」) + 講座名
+      subj: sessionDisplayLabel(s, presetMemoBySessionId.get(s.id)),
       countText: "",
       grade: "",
       cls: "",

@@ -34,6 +34,7 @@ import {
 import { computePresetMemoBackfill } from '../utils/presetMemoBackfill';
 import { computePresetRenameSyncIds, presetSessionLabel } from '../utils/presetRenameSync';
 import { isPublishState, projectPublishState } from '../utils/publishState';
+import { computeCourseSplit, externalSessionContentKey, normalizeSessionCourse } from '../utils/externalSessionShape';
 import type {
   AvailabilityMark,
   CombinedGroup,
@@ -101,10 +102,12 @@ export type ProjectAction =
   | { type: 'teacher/setAvailabilityMemo'; payload: { name: string; memo: string } }
   | { type: 'teacher/toggleClassPriority'; payload: { idx: number; className: string } }
   | { type: 'teacher/setExternalCount'; payload: { date: string; teacherName: string; value: unknown } }
-  | { type: 'teacher/addExternalSession'; payload: { date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string } }
-  | { type: 'teacher/addExternalSessions'; payload: { items: Array<{ date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string }> } }
+  | { type: 'teacher/addExternalSession'; payload: { date: string; teacherName: string; label?: string; memo?: string; course?: string; startTime?: string; endTime?: string } }
+  | { type: 'teacher/addExternalSessions'; payload: { items: Array<{ date: string; teacherName: string; label?: string; memo?: string; course?: string; startTime?: string; endTime?: string }> } }
   | { type: 'teacher/removeExternalSession'; payload: { id: number } }
+  | { type: 'teacher/updateExternalSession'; payload: { id: number; updates: { memo?: string; course?: string } } }
   | { type: 'teacher/applyPresetMemos' }
+  | { type: 'teacher/splitSessionCourses' }
   | { type: 'preset/add'; payload: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string; teachers?: string[] } }
   | { type: 'preset/update'; payload: { id: number; updates: Partial<Omit<ExternalSessionPreset, 'id'>>; syncSessionMemos?: boolean } }
   | { type: 'preset/remove'; payload: { id: number } }
@@ -1291,11 +1294,13 @@ function applyAction(project: Project, action: ProjectAction): Project {
       // 落とす (orphan endTime を残すと getSessionTimeRange が start を
       // 復元できず、データだけが残って自動NGに反映されない silent failure
       // になるため)。
-      const { date, teacherName, label, memo, startTime, endTime } = action.payload;
+      const { date, teacherName, label, memo, course, startTime, endTime } = action.payload;
       if (!date || !teacherName) return project;
       const sessions = project.externalSessions || [];
       const newId = sessions.reduce((max, s) => Math.max(max, s.id), 0) + 1;
       const newSession: ExternalSession = { id: newId, date, teacherName, label: label || '', memo: memo || '' };
+      const courseText = normalizeSessionCourse(course);
+      if (courseText) newSession.course = courseText;
       if (startTime) {
         newSession.startTime = startTime;
         if (endTime) newSession.endTime = endTime;
@@ -1314,15 +1319,16 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const sessions = project.externalSessions || [];
       // N1i: 内容が完全一致する既存セッションはスキップする (NG CSV の
       // dedupe = F2h と同思想)。同条件の再登録で一覧に二重に溜まるのを防ぐ。
-      // バッチ内の重複も同じキーで弾く。
-      const contentKey = (s: { date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string }) =>
-        JSON.stringify([s.date, s.teacherName, s.label || '', s.memo || '', s.startTime || '', s.endTime || '']);
+      // バッチ内の重複も同じキーで弾く (キーは utils/externalSessionShape の 1 か所)。
+      const contentKey = externalSessionContentKey;
       const seen = new Set(sessions.map(contentKey));
       let nextId = sessions.reduce((max, s) => Math.max(max, s.id), 0) + 1;
       const newOnes: ExternalSession[] = [];
       for (const it of items) {
         if (!it?.date || !it?.teacherName) continue;
         const ns: ExternalSession = { id: nextId, date: it.date, teacherName: it.teacherName, label: it.label || '', memo: it.memo || '' };
+        const courseText = normalizeSessionCourse(it.course);
+        if (courseText) ns.course = courseText;
         if (it.startTime) {
           ns.startTime = it.startTime;
           if (it.endTime) ns.endTime = it.endTime;
@@ -1342,6 +1348,41 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const filtered = sessions.filter(s => s.id !== id);
       if (filtered.length === sessions.length) return project;
       return { ...project, externalSessions: filtered };
+    }
+
+    // 登録済みのセッションのメモ・講座名を直す (日付ごとの一覧から)。空にしたら
+    // 講座名は持たない。同じ値なら何もしない
+    case 'teacher/updateExternalSession': {
+      const { id, updates } = action.payload;
+      const sessions = project.externalSessions || [];
+      const target = sessions.find(s => s.id === id);
+      if (!target || !updates) return project;
+      const next: ExternalSession = { ...target };
+      if ('memo' in updates) next.memo = String(updates.memo ?? '').trim();
+      if ('course' in updates) {
+        const courseText = normalizeSessionCourse(updates.course);
+        if (courseText) next.course = courseText;
+        else delete next.course;
+      }
+      if ((next.memo || '') === (target.memo || '') && (next.course || '') === (target.course || '')) return project;
+      return { ...project, externalSessions: sessions.map(s => (s.id === id ? next : s)) };
+    }
+
+    // 講座名の欄ができる前に「プリセットの名前 + 講座名」をメモに入れていたセッションを、
+    // メモと講座名に分ける (utils/externalSessionShape.computeCourseSplit)。分けると
+    // プリセットの改名のメモ同期が効くようになる。Undo 1 回で戻せる
+    case 'teacher/splitSessionCourses': {
+      const sessions = project.externalSessions || [];
+      const assignments = computeCourseSplit(sessions, project.externalSessionPresets || []);
+      if (assignments.length === 0) return project;
+      const byId = new Map(assignments.map(a => [a.sessionId, a]));
+      return {
+        ...project,
+        externalSessions: sessions.map(s => {
+          const a = byId.get(s.id);
+          return a ? { ...s, memo: a.memo, course: a.course } : s;
+        }),
+      };
     }
 
     // メモ未設定のセッションへ、時刻が一致するプリセットの名前を一括適用する

@@ -16,6 +16,8 @@ import type { NgViolationItem } from '../../utils/ngViolations';
 import SessionCsvImport from './SessionCsvImport';
 import OffsiteImport from './OffsiteImport';
 import DraftNumberInput from './DraftNumberInput';
+import DraftLineInput from './DraftLineInput';
+import { computeCourseSplit, externalSessionContentKey, sessionDisplayLabel } from '../../utils/externalSessionShape';
 
 // 時刻 <input type="time"> のスピナー刻み (秒)。講習の時刻は 5 分単位が前提
 // なので 1 分刻み (= 既定 60) だと『分を合わせづらい』。300 = 5 分にして
@@ -43,6 +45,8 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
     handleExternalCountChange,
     addExternalSessions,
     removeExternalSession,
+    updateExternalSession,
+    splitSessionCourses,
     addExternalSessionPreset,
     updateExternalSessionPreset,
     removeExternalSessionPreset,
@@ -115,6 +119,8 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
   // periodIds も同様に『動的全選択』モードを持つ (code-review P2)。
   const [formPeriods, setFormPeriods] = useState(() => ({ allMode: true, ids: new Set<number>() }));
   const [formMemo, setFormMemo] = useState('');
+  // 講座名 (任意、2026-10-27)。メモ (プリセットの名前) とは分けて持つ
+  const [formCourse, setFormCourse] = useState('');
   // 他学年モード用 (時刻)
   const [formStartTime, setFormStartTime] = useState('');
   const [formEndTime, setFormEndTime] = useState('');
@@ -381,7 +387,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
     for (const teacherName of selectedTeacherNames) {
       for (const dl of dateLabelsInRange) {
         items.push({
-          date: dl, teacherName, label: autoLabel, memo: formMemo.trim(),
+          date: dl, teacherName, label: autoLabel, memo: formMemo.trim(), course: formCourse.trim(),
           startTime: formStartTime || undefined,
           endTime: formEndTime || undefined,
         });
@@ -389,8 +395,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
     }
     // N1i: reducer は内容が完全一致する既存セッションをスキップするので、
     // toast も実際の登録件数と重複スキップ件数を分けて出す (キーは reducer と同形)。
-    const contentKey = (s) =>
-      JSON.stringify([s.date, s.teacherName, s.label || '', s.memo || '', s.startTime || '', s.endTime || '']);
+    const contentKey = externalSessionContentKey;
     const seen = new Set((project.externalSessions || []).map(contentKey));
     let added = 0;
     for (const it of items) {
@@ -417,6 +422,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
     setFormStartTime('');
     setFormEndTime('');
     setFormMemo('');
+    setFormCourse('');
   };
 
   const handleApplyNg = async (value) => {
@@ -543,6 +549,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
       setFormStartTime('');
       setFormEndTime('');
       setFormMemo('');
+      setFormCourse('');
     }
   };
 
@@ -570,6 +577,15 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
     () => computePresetMemoBackfill(sessions, presets, project.dates || []),
     [sessions, presets, project.dates],
   );
+  // メモに「プリセットの名前 + 講座名」を入れていたセッション (講座名の欄ができる前の
+  // 登録) を、メモと講座名に分ける。分けるとプリセットの改名がメモに追従する
+  const courseSplit = useMemo(() => computeCourseSplit(sessions, presets), [sessions, presets]);
+  const handleSplitCourses = () => {
+    const n = courseSplit.length;
+    if (n === 0) return;
+    splitSessionCourses();
+    showToast(`${n} 件のセッションのメモを「プリセットの名前」と「講座名」に分けました (Undo で戻せます)`, 'success', 4000);
+  };
   const handleApplyPresetMemos = () => {
     const n = memoBackfill.assignments.length;
     if (n === 0) return;
@@ -632,6 +648,21 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
         selectedTeacherNames={selectedTeacherNames}
         showToast={showToast}
       />
+
+      {/* メモに入れていた講座名を分ける (当てはまるセッションがあるときだけ) */}
+      {courseSplit.length > 0 && (
+        <div className="border border-builder-info-border bg-builder-info-soft rounded p-3 mb-4 text-xs text-builder-ink">
+          <div className="mb-2">
+            ✂ メモが「プリセットの名前 + 講座名」になっている他学年セッションが <strong>{courseSplit.length} 件</strong> あります
+            (例:「{courseSplit[0].memo} {courseSplit[0].course}」)。メモと講座名に分けると、プリセットの名前を直したときにメモも追従します。
+          </div>
+          <button
+            type="button"
+            onClick={handleSplitCourses}
+            className="px-3 py-1 bg-builder-blue text-white rounded text-xs font-bold hover:opacity-90"
+          >メモと講座名に分ける ({courseSplit.length}件)</button>
+        </div>
+      )}
 
       {/* プリセット名のメモ後付け (メモ未設定の既存セッションがあるときだけ表示) */}
       {(memoBackfill.assignments.length > 0 || memoBackfill.ambiguousCount > 0) && (
@@ -852,16 +883,28 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
                 />
               </div>
             </div>
-            <label className="flex flex-col gap-1 text-xs mb-3 max-w-md">
-              <span className="text-builder-ink-muted">メモ (任意)</span>
-              <input
-                type="text"
-                value={formMemo}
-                onChange={(e) => setFormMemo(e.target.value)}
-                placeholder="予備校 / 高2 英語 等"
-                className="border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
-              />
-            </label>
+            <div className="flex flex-wrap gap-2 mb-3 max-w-2xl">
+              <label className="flex flex-col gap-1 text-xs flex-1 min-w-[12rem]">
+                <span className="text-builder-ink-muted">メモ (任意・プリセットの名前が入ります)</span>
+                <input
+                  type="text"
+                  value={formMemo}
+                  onChange={(e) => setFormMemo(e.target.value)}
+                  placeholder="予備校 / Ⅰ期 予備校３限 等"
+                  className="border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs flex-1 min-w-[12rem]">
+                <span className="text-builder-ink-muted">講座名 (任意・月間の予定と講師別 Excel にメモと並べて出ます)</span>
+                <input
+                  type="text"
+                  value={formCourse}
+                  onChange={(e) => setFormCourse(e.target.value)}
+                  placeholder="高3 共通テスト理科基礎(物理基礎) 等"
+                  className="border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+                />
+              </label>
+            </div>
           </>
         ) : (
           <div className="flex flex-col gap-1 text-xs mb-3">
@@ -1009,6 +1052,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
             autoNgByTeacher={autoNgByTeacher}
             sessions={sessionsByDate.get(d.label) || []}
             removeExternalSession={removeExternalSession}
+            updateExternalSession={updateExternalSession}
             toggleTeacherNg={toggleTeacherNg}
             ngCount={ngCountByDate[d.id] || 0}
           />
@@ -1099,7 +1143,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
 function DateSection({
   date, expanded, onToggle,
   periods, teacherGroups, teacherIdxByName, autoNgByTeacher,
-  sessions, removeExternalSession,
+  sessions, removeExternalSession, updateExternalSession,
   toggleTeacherNg, ngCount,
 }) {
   return (
@@ -1140,6 +1184,7 @@ function DateSection({
                       <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink text-left">講師</th>
                       <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">時刻</th>
                       <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">メモ</th>
+                      <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">講座名</th>
                       <th className="border border-builder-ink-ghost p-1 bg-builder-bg w-8"></th>
                     </tr>
                   </thead>
@@ -1153,6 +1198,16 @@ function DateSection({
                           <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink font-bold">{s.teacherName}</td>
                           <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{timeText}</td>
                           <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{s.memo || '-'}</td>
+                          <td className="border border-builder-ink-ghost p-0.5 bg-builder-surface text-builder-ink">
+                            {/* 講座名はその場で直せる (欄を離れる / Enter で確定、Esc で取り消し) */}
+                            <DraftLineInput
+                              value={s.course || ''}
+                              ariaLabel={`${s.date} ${s.teacherName} の講座名`}
+                              placeholder="-"
+                              className="w-full min-w-[8rem] px-1 py-0.5 bg-transparent text-builder-ink focus:bg-builder-info-soft focus:outline-none"
+                              onCommit={(v) => updateExternalSession(s.id, { course: v })}
+                            />
+                          </td>
                           <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-center">
                             <button
                               type="button"
@@ -1229,7 +1284,7 @@ function DateSection({
                                     const timeText = s.startTime
                                       ? (s.endTime ? `${s.startTime}〜${s.endTime}` : `${s.startTime}〜`)
                                       : (s.label || '');
-                                    return s.memo ? `${s.memo} (${timeText})` : timeText;
+                                    return s.memo || s.course ? `${sessionDisplayLabel(s)} (${timeText})` : timeText;
                                   })
                                   .filter(Boolean)
                                   .join(', ');

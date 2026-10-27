@@ -20,7 +20,7 @@
 // 注意: constants.js は本ファイルの parseKey を import しているため、
 // ここから constants.js を import すると循環になる。import してよいのは
 // 無依存モジュール (generationParams / dateGenerate / dateLabelUnify /
-// availabilityShape / carriedTimetable / publishState) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
+// availabilityShape / carriedTimetable / publishState / externalSessionShape) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
 // availabilityShape の無依存モジュールのみ。
 import { clampGenerationParam } from './generationParams';
 import { sortPoolDatesByCalendar } from './dateGenerate';
@@ -28,6 +28,7 @@ import { unifyDateLabelWeekdays } from './dateLabelUnify';
 import { sanitizeAvailability } from './availabilityShape';
 import { normalizeCarriedTimetable } from './carriedTimetable';
 import { isPublishState } from './publishState';
+import { normalizeSessionCourse } from './externalSessionShape';
 import type {
   CombinedGroup,
   EffectiveConfig,
@@ -517,6 +518,19 @@ export function migrateProject(project: any): Project {
     result = { ...result, externalSessions: [] };
   } else if (result.externalSessions.some(s => !s || typeof s !== 'object')) {
     result = { ...result, externalSessions: result.externalSessions.filter(s => s && typeof s === 'object') };
+  }
+  // 講座名 (任意): 文字列でない・空白だけは落とし、前後の空白を落とす
+  const courseNeedsFix = (s: any) => 'course' in s && (!s.course || s.course !== normalizeSessionCourse(s.course));
+  if (result.externalSessions.some(courseNeedsFix)) {
+    result = {
+      ...result,
+      externalSessions: result.externalSessions.map((s: any) => {
+        if (!courseNeedsFix(s)) return s;
+        const course = normalizeSessionCourse(s.course);
+        const { course: _course, ...rest } = s;
+        return course ? { ...rest, course } : rest;
+      }),
+    };
   }
 
   // externalSessionPresets が未設定 / 型崩れの場合は空配列で初期化 (他学年
