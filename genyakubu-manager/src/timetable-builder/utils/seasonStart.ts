@@ -20,7 +20,8 @@
 // - carryTimetable: 作り直す前の時間割を控えとして残す (previousTimetable。
 //   「📋 前の講習の時間割を写す」で使う)。同じ季節を翌年用に作り直すときだけ。
 //   今の時間割が空 (作り直した直後にもう一度作り直した) なら前の控えを残す
-// - 月間の予定へ出すか (publishState) は作成中に戻す (utils/publishState)
+// - 月間の予定へ出すか (publishState) は作成中に戻す (utils/publishState)。季節の中の
+//   枠 (utils/frames) は名前・時限・タブの所属を残し、枠の状態も作成中に戻す
 
 import { removeDatesFromPool } from '../hooks/projectReducer';
 import { stripAvailability } from './availabilityShape';
@@ -72,6 +73,10 @@ export function buildFreshSeasonProject(
     activeTabId: tabs[0]?.id ?? cleared.activeTabId,
     dates: [],
     tabs,
+    // 季節の中の枠 (冬期講習 / 直前ポイント演習…) は名前・時限を残し、作成中に戻す
+    ...(cleared.frames && cleared.frames.length > 0
+      ? { frames: cleared.frames.map(f => ({ ...f, publishState: NEW_PROJECT_PUBLISH_STATE })) }
+      : {}),
     // 講師不在・NG は日付 × 時限なので全部外す (プールに無い日付の NG も残さない)。
     // 出勤可能調査の回答もその季節のもの
     teachers: stripAvailability((cleared.teachers || []).filter(t => !dropped.has(t.name))).map(t => ({ ...t, ngSlots: [] })),

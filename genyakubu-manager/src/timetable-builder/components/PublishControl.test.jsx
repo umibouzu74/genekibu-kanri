@@ -21,15 +21,16 @@ const project = (over = {}) => ({
 
 function renderControl(projectOver = {}, ui = {}) {
   const setPublishState = vi.fn();
+  const setFramePublishState = vi.fn();
   const uiValue = { showToast: vi.fn(), showConfirm: vi.fn().mockResolvedValue(true), ...ui };
   render(
-    <ProjectContext.Provider value={{ project: project(projectOver), setPublishState }}>
+    <ProjectContext.Provider value={{ project: project(projectOver), activeTab: project(projectOver).tabs[0], setPublishState, setFramePublishState }}>
       <UIContext.Provider value={uiValue}>
         <PublishControl />
       </UIContext.Provider>
     </ProjectContext.Provider>,
   );
-  return { setPublishState, uiValue };
+  return { setPublishState, setFramePublishState, uiValue };
 }
 
 describe('PublishControl (月間の予定: 作成中 / 仮確定 / 確定)', () => {
@@ -54,6 +55,19 @@ describe('PublishControl (月間の予定: 作成中 / 仮確定 / 確定)', () 
     );
     fireEvent.click(screen.getByRole('radio', { name: /^作成中/ }));
     await waitFor(() => expect(showConfirm).toHaveBeenCalled());
+    expect(setPublishState).not.toHaveBeenCalled();
+  });
+
+  it('枠に入ったタブを開いているときは、その枠の状態を切り替える', () => {
+    const { setPublishState, setFramePublishState } = renderControl({
+      publishState: 'final',
+      frames: [{ id: 3, name: '直前ポイント演習', periodIds: [1], publishState: 'draft' }],
+      tabs: [{ id: 1, name: '中3直前 火木', config: { classes: [], subjectCounts: {}, frameId: 3, activePeriodIds: [1] }, schedule: {} }],
+    });
+    expect(screen.getByRole('group', { name: '「直前ポイント演習」の本体の月間の予定への反映' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /^作成中/ })).toBeChecked();
+    fireEvent.click(screen.getByRole('radio', { name: /^確定/ }));
+    expect(setFramePublishState).toHaveBeenCalledWith(3, 'final');
     expect(setPublishState).not.toHaveBeenCalled();
   });
 });

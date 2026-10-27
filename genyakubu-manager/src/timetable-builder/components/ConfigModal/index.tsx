@@ -12,6 +12,7 @@ import SubjectManager from './SubjectManager';
 import CombinedGroupSettings from './CombinedGroupSettings';
 import GenerationSettings from './GenerationSettings';
 import TemplateManager from './TemplateManager';
+import FrameSettings from './FrameSettings';
 import { KOSHU_SEASONS, koshuSeasonDef, suggestSeasonProjectName, type KoshuSeason } from '../../utils/seasons';
 import { buildFreshSeasonProject } from '../../utils/seasonStart';
 import SeasonCopyDialog, { type SeasonCopyChoice } from '../SeasonCopyDialog';
@@ -213,6 +214,8 @@ export default function ConfigModal({ onClose, season }: { onClose: () => void; 
                   </span>
                 </div>
               </div>
+              {/* 季節の中の枠 (冬期講習 / 直前ポイント演習…) */}
+              <FrameSettings />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <BasicSettings />
                 <TeacherManager />

@@ -204,6 +204,26 @@ export function useProject(options: HistoryStackOptions) {
     dispatch({ type: 'project/setPublishState', payload: { state } });
   }, [dispatch]);
 
+  // --- 季節の中の枠 (utils/frames) ---
+  const addFrame = useCallback((name: string, tabIds: number[] = []) => {
+    dispatch({ type: 'frame/add', payload: { name, tabIds } });
+  }, [dispatch]);
+  const renameFrame = useCallback((id: number, name: string) => {
+    dispatch({ type: 'frame/rename', payload: { id, name } });
+  }, [dispatch]);
+  const removeFrame = useCallback((id: number) => {
+    dispatch({ type: 'frame/remove', payload: { id } });
+  }, [dispatch]);
+  const setTabFrame = useCallback((tabId: number, frameId: number | null) => {
+    dispatch({ type: 'frame/setTab', payload: { tabId, frameId } });
+  }, [dispatch]);
+  const setFramePeriods = useCallback((id: number, value: string) => {
+    dispatch({ type: 'frame/setPeriods', payload: { id, value } });
+  }, [dispatch]);
+  const setFramePublishState = useCallback((id: number, state: PublishState) => {
+    dispatch({ type: 'frame/setPublishState', payload: { id, state } });
+  }, [dispatch]);
+
   // --- 自動生成パラメータ (E2e) ---
   // { numPatterns?, maxDailyHours?, maxIterations? } の部分更新。
   const updateGenerationParams = useCallback((updates: Partial<Record<GenerationParamKey, unknown>>) => {
@@ -313,6 +333,13 @@ export function useProject(options: HistoryStackOptions) {
     // メタデータ
     updateProjectName,
     setPublishState,
+    // 季節の中の枠
+    addFrame,
+    renameFrame,
+    removeFrame,
+    setTabFrame,
+    setFramePeriods,
+    setFramePublishState,
     // 自動生成パラメータ
     updateGenerationParams,
     // スナップショット

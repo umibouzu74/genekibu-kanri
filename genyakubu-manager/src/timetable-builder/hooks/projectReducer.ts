@@ -33,7 +33,7 @@ import {
 } from '../utils/availabilityShape';
 import { computePresetMemoBackfill } from '../utils/presetMemoBackfill';
 import { computePresetRenameSyncIds, presetSessionLabel } from '../utils/presetRenameSync';
-import { isPublishState, projectPublishState } from '../utils/publishState';
+import { framePublishState, isPublishState, leastPublished, projectPublishState, publishStateForTab } from '../utils/publishState';
 import { computeCourseSplit, externalSessionContentKey, isExternalOnlyDate, normalizeSessionCourse } from '../utils/externalSessionShape';
 import type {
   AvailabilityMark,
@@ -41,6 +41,7 @@ import type {
   DayStatus,
   ExternalSession,
   ExternalSessionPreset,
+  Frame,
   GenerationParamKey,
   Project,
   ProjectState,
@@ -136,6 +137,12 @@ export type ProjectAction =
   | { type: 'combinedGroup/remove'; payload: { id: number } }
   | { type: 'project/updateName'; payload: { name: string } }
   | { type: 'project/setPublishState'; payload: { state: PublishState } }
+  | { type: 'frame/add'; payload: { name: string; tabIds?: number[] } }
+  | { type: 'frame/rename'; payload: { id: number; name: string } }
+  | { type: 'frame/remove'; payload: { id: number } }
+  | { type: 'frame/setTab'; payload: { tabId: number; frameId: number | null } }
+  | { type: 'frame/setPeriods'; payload: { id: number; value: string } }
+  | { type: 'frame/setPublishState'; payload: { id: number; state: PublishState } }
   | { type: 'project/setGenerationParams'; payload: Partial<Record<GenerationParamKey, unknown>> }
   | { type: 'project/replace'; payload: { project: Project } };
 
@@ -239,6 +246,40 @@ export function removeDatesFromPool(project: Project, dateIds: number[]): Projec
     externalCounts: newExternal,
     externalSessions: newSessions,
     ...(presetsChanged ? { externalSessionPresets: newPresets } : {}),
+  });
+}
+
+// 時限をプールから削除する共通処理 (枠の時限の編集 frame/setPeriods が使う)。
+// config/setList('periods') と同じ cascade: 全タブの使う時限・枠の時限から外し、
+// NG キー (`${date}-${period}`)・出勤可能調査の回答を掃除して cleanSchedule。
+export function removePeriodsFromPool(project: Project, periodIds: number[]): Project {
+  const pool = project.periods || [];
+  const idSet = new Set(periodIds);
+  const targets = pool.filter(p => idSet.has(p.id));
+  if (targets.length === 0) return project;
+  const removedLabels = targets.map(p => p.label);
+  const shouldDrop = makePeriodKeyDropMatcher(pool.map(p => p.label), removedLabels);
+  const teachers = mapTeachersAvailability(
+    (project.teachers || []).map(t => {
+      const ngSlots = t.ngSlots || [];
+      const filtered = ngSlots.filter(k => !shouldDrop(k));
+      return filtered.length === ngSlots.length ? t : { ...t, ngSlots: filtered };
+    }),
+    map => dropAvailabilityPeriods(map, removedLabels),
+  );
+  const tabs = project.tabs.map(t => {
+    const ids = t.config.activePeriodIds;
+    if (!ids || !ids.some(id => idSet.has(id))) return t;
+    return { ...t, config: { ...t.config, activePeriodIds: ids.filter(id => !idSet.has(id)) } };
+  });
+  const frames = project.frames?.map(f =>
+    f.periodIds.some(id => idSet.has(id)) ? { ...f, periodIds: f.periodIds.filter(id => !idSet.has(id)) } : f);
+  return cleanSchedule({
+    ...project,
+    periods: pool.filter(p => !idSet.has(p.id)),
+    tabs,
+    teachers,
+    ...(frames ? { frames } : {}),
   });
 }
 
@@ -447,6 +488,11 @@ function applyAction(project: Project, action: ProjectAction): Project {
         ? {
             ...project,
             [key]: resultArr,
+            // 枠の時限からもプールから消えた時限を外す
+            ...(key === 'periods' && project.frames ? {
+              frames: project.frames.map(f =>
+                f.periodIds.every(id => resultIds.has(id)) ? f : { ...f, periodIds: f.periodIds.filter(id => resultIds.has(id)) }),
+            } : {}),
             ...(key === 'periods' ? {
               tabs: project.tabs.map(t => {
                 const ids = t.config.activePeriodIds;
@@ -842,6 +888,9 @@ function applyAction(project: Project, action: ProjectAction): Project {
       if (!target) return project;
       const pool = project.periods || [];
       if (!pool.some(p => p.id === periodId)) return project;
+      // 枠に入ったタブは枠の時限からだけ選ぶ
+      const frame = (project.frames || []).find(f => f.id === target.config.frameId);
+      if (frame && !frame.periodIds.includes(periodId)) return project;
       const current = target.config.activePeriodIds ?? pool.map(p => p.id);
       const set = new Set(current);
       if (set.has(periodId)) set.delete(periodId); else set.add(periodId);
@@ -857,7 +906,9 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const targetId = tabId ?? project.activeTabId;
       const target = project.tabs.find(t => t.id === targetId) || project.tabs[0];
       if (!target) return project;
-      const activePeriodIds = active ? null : [];
+      // 枠に入ったタブの「全選択」は枠の全時限 (null = プールの全部にしない)
+      const frame = (project.frames || []).find(f => f.id === target.config.frameId);
+      const activePeriodIds = active ? (frame ? [...frame.periodIds] : null) : [];
       const newTabs = project.tabs.map(t =>
         t.id === target.id ? { ...t, config: { ...t.config, activePeriodIds } } : t
       );
@@ -875,9 +926,12 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const source = project.tabs.find(t => t.id === sourceTabId);
       if (!source || project.tabs.length < 2) return project;
       const src = source.config[key];
+      // 季節の中の枠があれば、写す先は同じ枠のタブだけ (冬期講習の日程を直前ポイント演習の
+      // タブへ写さない。時限も枠ごと)
+      const sameFrame = (t: typeof source) => (t.config.frameId ?? null) === (source.config.frameId ?? null);
       let changed = false;
       const newTabs = project.tabs.map(t => {
-        if (t.id === sourceTabId) return t;
+        if (t.id === sourceTabId || !sameFrame(t)) return t;
         const curr = t.config[key];
         // §M: 同値判定は Set 比較 (length + includes だと外部 JSON 由来の
         // 重複 id 入り配列を multiset として誤同一視しうる)
@@ -2070,6 +2124,139 @@ function applyAction(project: Project, action: ProjectAction): Project {
       if (action.payload.name === project.name) return project;
       return { ...project, name: action.payload.name };
     }
+    // ─── 季節の中の枠 (utils/frames) ─────
+    // 枠を作る。指定したタブを入れ、枠の時限はそのタブが今使っている時限 (和集合)。
+    // 新しい枠の「月間の予定」は入れるタブの今の状態から (作っただけで月間から消えない・出ない)
+    case 'frame/add': {
+      const name = String(action.payload.name ?? '').trim();
+      const frames = project.frames || [];
+      if (!name || frames.some(f => f.name === name)) return project;
+      const id = frames.reduce((m, f) => Math.max(m, f.id), 0) + 1;
+      const tabIds = new Set(action.payload.tabIds || []);
+      const used = new Set<number>();
+      project.tabs.forEach(t => {
+        if (tabIds.has(t.id)) effectiveConfig(project, t).periods.forEach(p => used.add(p.id));
+      });
+      const periodIds = (project.periods || []).map(p => p.id).filter(pid => used.has(pid));
+      // 入れるタブの今の状態のうち、いちばん出していないもの (作成中のタブを入れただけで
+      // 月間に出ないように)。タブを入れなければ project の状態
+      const tabStates = project.tabs.filter(t => tabIds.has(t.id)).map(t => publishStateForTab(project, t));
+      const initialState = tabStates.length > 0 ? leastPublished(tabStates) : projectPublishState(project);
+      const frame: Frame = { id, name, periodIds, publishState: initialState };
+      const tabs = project.tabs.map(t => {
+        if (!tabIds.has(t.id)) return t;
+        const active = effectiveConfig(project, t).periods.map(p => p.id);
+        return { ...t, config: { ...t.config, frameId: id, activePeriodIds: active } };
+      });
+      return { ...project, frames: [...frames, frame], tabs };
+    }
+    case 'frame/rename': {
+      const name = String(action.payload.name ?? '').trim();
+      const frames = project.frames || [];
+      const target = frames.find(f => f.id === action.payload.id);
+      if (!target || !name || target.name === name || frames.some(f => f.name === name)) return project;
+      return { ...project, frames: frames.map(f => (f.id === target.id ? { ...f, name } : f)) };
+    }
+    // 枠を消す (タブは枠なしに戻り、使う時限はそのまま。時限・コマは消さない)
+    case 'frame/remove': {
+      const frames = project.frames || [];
+      if (!frames.some(f => f.id === action.payload.id)) return project;
+      const rest = frames.filter(f => f.id !== action.payload.id);
+      const tabs = project.tabs.map(t => {
+        if (t.config.frameId !== action.payload.id) return t;
+        const { frameId: _frameId, ...config } = t.config;
+        return { ...t, config };
+      });
+      const next = { ...project, tabs, frames: rest };
+      if (rest.length === 0) delete next.frames;
+      return next;
+    }
+    // タブを枠に入れる / 外す。入れるときの使う時限は、今の時限のうち枠にあるもの
+    // (1 つも無ければ枠の全時限)。外すときは今の時限のまま
+    case 'frame/setTab': {
+      const { tabId, frameId } = action.payload;
+      const tab = project.tabs.find(t => t.id === tabId);
+      if (!tab || (tab.config.frameId ?? null) === frameId) return project;
+      if (frameId == null) {
+        const { frameId: _frameId, ...config } = tab.config;
+        const active = effectiveConfig(project, tab).periods.map(p => p.id);
+        return { ...project, tabs: project.tabs.map(t => (t.id === tabId ? { ...t, config: { ...config, activePeriodIds: active } } : t)) };
+      }
+      const frame = (project.frames || []).find(f => f.id === frameId);
+      if (!frame) return project;
+      const allowed = new Set(frame.periodIds);
+      let active = effectiveConfig(project, tab).periods.map(p => p.id).filter(id => allowed.has(id));
+      if (active.length === 0) active = [...frame.periodIds];
+      return {
+        ...project,
+        tabs: project.tabs.map(t => (t.id === tabId ? { ...t, config: { ...t.config, frameId, activePeriodIds: active } } : t)),
+      };
+    }
+    // 枠の時限をカンマ区切りで直す。名前の同じ時限はプールの時限をそのまま使い (枠を
+    // またいで同じ時限)、無い名前は足す。枠から外した時限は、ほかの枠・枠に入っていない
+    // タブも使っていなければプールから消す (config/setList と同じ cascade)。足した時限は
+    // 枠のタブの使う時限にも足す。プールの並びは枠の並びにそろえる (時間割の行の順)
+    case 'frame/setPeriods': {
+      const { id, value } = action.payload;
+      const frames = project.frames || [];
+      const frame = frames.find(f => f.id === id);
+      if (!frame) return project;
+      const labels = [...new Set(String(value ?? '').split(',').map(s => s.trim()).filter(Boolean))];
+      if (labels.length === 0) return project;
+      const pool = project.periods || [];
+      const byLabel = new Map(pool.map(p => [p.label, p] as const));
+      let next = nextId(pool);
+      const created: Array<{ id: number; label: string }> = [];
+      const newIds = labels.map(label => {
+        const hit = byLabel.get(label);
+        if (hit) return hit.id;
+        const ent = { id: next++, label };
+        created.push(ent);
+        byLabel.set(label, ent);
+        return ent.id;
+      });
+      const oldIds = frame.periodIds;
+      const sameList = newIds.length === oldIds.length && newIds.every((v, i) => v === oldIds[i]);
+      if (sameList && created.length === 0) return project;
+      const newIdSet = new Set(newIds);
+      const added = newIds.filter(pid => !oldIds.includes(pid));
+      const removed = oldIds.filter(pid => !newIdSet.has(pid));
+      // プールの並び: この枠の時限を、最初の時限があった位置に枠の並びでまとめる
+      const allEntities = [...pool, ...created];
+      const entById = new Map(allEntities.map(p => [p.id, p] as const));
+      const firstIdx = pool.findIndex(p => newIdSet.has(p.id) || oldIds.includes(p.id));
+      const without = pool.filter(p => !newIdSet.has(p.id));
+      const insertAt = firstIdx < 0 ? without.length : without.filter(p => pool.indexOf(p) < firstIdx).length;
+      const periods = [...without.slice(0, insertAt), ...newIds.map(pid => entById.get(pid)!), ...without.slice(insertAt)];
+      const tabs = project.tabs.map(t => {
+        if (t.config.frameId !== id) return t;
+        const current = t.config.activePeriodIds || [];
+        const active = [...current.filter(pid => newIdSet.has(pid)), ...added.filter(pid => !current.includes(pid))];
+        return { ...t, config: { ...t.config, activePeriodIds: active } };
+      });
+      let result: Project = {
+        ...project,
+        periods,
+        tabs,
+        frames: frames.map(f => (f.id === id ? { ...f, periodIds: newIds } : f)),
+      };
+      // 外した時限のうち、どこも使っていないものはプールから消す
+      const otherFrameIds = new Set(frames.filter(f => f.id !== id).flatMap(f => f.periodIds));
+      const unframed = result.tabs.filter(t => !(result.frames || []).some(f => f.id === t.config.frameId));
+      const unframedAll = unframed.some(t => !t.config.activePeriodIds);
+      const unframedIds = new Set(unframed.flatMap(t => t.config.activePeriodIds || []));
+      const drop = removed.filter(pid => !otherFrameIds.has(pid) && !unframedAll && !unframedIds.has(pid));
+      if (drop.length > 0) result = removePeriodsFromPool(result, drop);
+      return result;
+    }
+    case 'frame/setPublishState': {
+      const { id, state } = action.payload;
+      const frames = project.frames || [];
+      const target = frames.find(f => f.id === id);
+      if (!target || !isPublishState(state) || framePublishState(project, target) === state) return project;
+      return { ...project, frames: frames.map(f => (f.id === id ? { ...f, publishState: state } : f)) };
+    }
+
     case 'project/setPublishState': {
       // 月間の予定へ出すか (作成中 / 仮確定 / 確定)。Undo で戻せる (履歴に積む)
       const { state } = action.payload;

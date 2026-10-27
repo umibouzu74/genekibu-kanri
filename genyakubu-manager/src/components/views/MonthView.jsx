@@ -1126,11 +1126,11 @@ export function MonthView({
         // 仮確定の時間割 (講習時間割作成の「🟡 仮確定」)。まだ変わるかもしれない
         const tentativeNote = lesson.tentative ? "\n(仮確定: まだ変わることがあります)" : "";
         const title = external
-          ? `[講習期間の外部授業] ${lesson.subj}${
+          ? `[講習期間の外部授業${lesson.frameName ? `: ${lesson.frameName}` : ""}] ${lesson.subj}${
               lesson.time ? ` (${lesson.time})` : ""
             }\n講習時間割作成の「講師不在・NG」で登録されたコマ${tentativeNote}`
           : `[講習${
-              lesson.projectName ? `: ${lesson.projectName}` : ""
+              lesson.frameName || lesson.projectName ? `: ${lesson.frameName || lesson.projectName}` : ""
             }] ${lesson.tabName} ${lesson.cls} ${subjText} (${
               lesson.periodLabel
             }${lesson.time ? ` ${lesson.time}` : ""})${

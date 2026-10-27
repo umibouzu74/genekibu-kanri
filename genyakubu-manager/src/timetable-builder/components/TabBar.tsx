@@ -1,6 +1,7 @@
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { effectiveConfigForTab } from '../utils/scheduleKey';
+import { frameOfTab } from '../utils/frames';
 
 export default function TabBar() {
   const {
@@ -127,6 +128,8 @@ export default function TabBar() {
         // ✨ ではなく「空」バッジで気づけるようにする。
         const cfg = effectiveConfigForTab(project, tab);
         const isEmptyTab = cfg.dates.length === 0 || cfg.periods.length === 0 || (cfg.classes || []).length === 0;
+        // 季節の中の枠 (冬期講習 / 直前ポイント演習…) の名前をタブ名の上に小さく出す
+        const frame = frameOfTab(project, tab);
         return (
           <div
             key={tab.id}
@@ -155,7 +158,12 @@ export default function TabBar() {
             }}
             className={`px-4 py-2 rounded-t-lg cursor-pointer flex items-center gap-2 select-none transition-all ${selected ? "bg-builder-surface text-builder-blue font-bold shadow-[0_-2px_5px_rgba(0,0,0,0.05)] pt-3" : "bg-builder-border text-builder-ink-muted hover:bg-builder-ink-ghost mt-1"}`}
           >
-            {tab.name}
+            {frame ? (
+              <span className="flex flex-col leading-tight">
+                <span className="text-[10px] font-normal text-builder-ink-muted">{frame.name}</span>
+                <span>{tab.name}</span>
+              </span>
+            ) : tab.name}
             {errorCount > 0 ? (
               <span
                 className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-builder-danger-soft text-builder-red border border-builder-danger-border"

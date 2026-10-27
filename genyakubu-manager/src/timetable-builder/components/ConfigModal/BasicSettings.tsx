@@ -3,43 +3,9 @@ import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
 import { expandExcludeInput, generateDateLabels, sortPoolDatesByCalendar, WEEKDAY_LABELS, ymdToLabel } from '../../utils/dateGenerate';
 import DraftLineInput from './DraftLineInput';
+import DraftListTextarea from './DraftListTextarea';
 import { isExternalOnlyDate } from '../../utils/externalSessionShape';
-
-// カンマ区切りリスト編集用の textarea。編集中は draft をローカルに持ち、
-// フォーカスを外した時にだけ onCommit で確定する。
-// keystroke ごとに commit すると (a) ラベルの編集途中の中間状態が
-// 「entity 削除 + 新規追加」として reducer に届き、全タブの該当セルが
-// cleanSchedule で即消える、(b) 末尾に打ったカンマが state 再導出で即消えて
-// 項目を追加できない、(c) 1 打鍵 = 1 Undo 履歴で MAX_HISTORY を食い潰す、
-// という 3 重の実害があるため、必ず確定タイミングを blur に寄せること。
-function DraftListTextarea({ value, onCommit }) {
-  const [draft, setDraft] = useState(null); // null = 非編集 (canonical を表示)
-  // aria-label は付けない (ラップする <label> の文言が accessible name になる)
-  return (
-    <textarea
-      className="w-full border border-builder-border p-2 text-sm h-16 rounded"
-      value={draft ?? value}
-      onChange={(e) => setDraft(e.target.value)}
-      onFocus={() => setDraft((d) => d ?? value)}
-      onBlur={() => {
-        if (draft != null && draft !== value) onCommit(draft);
-        setDraft(null);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          // IME 変換中の Esc は「変換のキャンセル」であって編集の取り消しでは
-          // ない (Chrome は composition 中も key='Escape' の keydown を配信する)。
-          // ここで draft を破棄すると未確定の編集内容が丸ごと消える。
-          if (e.nativeEvent?.isComposing) return;
-          // 編集の取り消し。stopPropagation しないと ConfigModal の
-          // focus trap まで届いてモーダルごと閉じてしまう。
-          e.stopPropagation();
-          setDraft(null);
-        }
-      }}
-    />
-  );
-}
+import { framePeriods, frameOfTab } from '../../utils/frames';
 
 export default function BasicSettings() {
   const {
@@ -60,6 +26,7 @@ export default function BasicSettings() {
     handleSetAllTabPeriods,
     handleSetClassRoom,
     handleRenameHeader,
+    setFramePeriods,
   } = useProjectContext();
   const { showConfirm, showToast } = useUI();
 
@@ -88,12 +55,24 @@ export default function BasicSettings() {
   // currentConfig.periods を使うと「今のタブが使う時限だけ」が表示され、
   // 保存すると他タブの時限がプールごと消えてしまうため誤り (AbsenceNgPanel と同じ注意点)。
   const poolPeriods = useMemo(() => project.periods || [], [project.periods]);
+  // 季節の中の枠 (utils/frames) に入ったタブは、枠の時限から使う時限を選ぶ。時限の
+  // テキストエリアも枠の時限を直す (全タブ共通のプール全体は出さない)
+  const activeFrame = frameOfTab(project, activeTab);
+  const choicePeriods = useMemo(
+    () => (activeFrame ? framePeriods(project, activeFrame) : poolPeriods),
+    [activeFrame, project, poolPeriods],
+  );
   const activePeriodIds = activeTab.config.activePeriodIds; // undefined = 全時限
   const isPeriodActive = (id) => !activePeriodIds || activePeriodIds.includes(id);
-  const activePeriodCount = poolPeriods.filter(p => isPeriodActive(p.id)).length;
+  const activePeriodCount = choicePeriods.filter(p => isPeriodActive(p.id)).length;
   const isPeriodActiveForTab = (tab, periodId) => {
     const ids = tab.config.activePeriodIds;
     return !ids || ids.includes(periodId);
+  };
+  // 全タブまとめて表示: 枠に入ったタブは枠の時限だけ選べる
+  const periodChoosableForTab = (tab, periodId) => {
+    const f = frameOfTab(project, tab);
+    return !f || f.periodIds.includes(periodId);
   };
 
   // ── 日付ジェネレータ form state ──
@@ -230,23 +209,30 @@ export default function BasicSettings() {
   };
 
   // L4g: 使う日 / 使う時限の選択を他の全タブへコピー
+  // 季節の中の枠があれば、写す先は同じ枠のタブだけ (reducer も同じ)
+  const copyTargetText = (tab) => {
+    const f = frameOfTab(project, tab);
+    return (project.frames || []).length > 0
+      ? (f ? `枠「${f.name}」の他のタブ` : '枠に入っていない他のタブ')
+      : '他の全タブ';
+  };
   const copyDatesSelection = async (tab) => {
     const ok = await showConfirm(
-      `「${tab.name}」の使う日の選択を他の全タブへコピーしますか？\n他タブの選択は上書きされます (Undo で戻せます)。`,
+      `「${tab.name}」の使う日の選択を${copyTargetText(tab)}へコピーしますか？\n他タブの選択は上書きされます (Undo で戻せます)。`,
       { title: '使う日の選択をコピー', confirmLabel: 'コピーする' },
     );
     if (!ok) return;
     handleCopyTabDatesToOthers(tab.id);
-    showToast(`「${tab.name}」の使う日の選択を他のタブへコピーしました`, 'success', 2500);
+    showToast(`「${tab.name}」の使う日の選択を${copyTargetText(tab)}へコピーしました`, 'success', 2500);
   };
   const copyPeriodsSelection = async (tab) => {
     const ok = await showConfirm(
-      `「${tab.name}」の使う時限の選択を他の全タブへコピーしますか？\n他タブの選択は上書きされます (Undo で戻せます)。`,
+      `「${tab.name}」の使う時限の選択を${copyTargetText(tab)}へコピーしますか？\n他タブの選択は上書きされます (Undo で戻せます)。`,
       { title: '使う時限の選択をコピー', confirmLabel: 'コピーする' },
     );
     if (!ok) return;
     handleCopyTabPeriodsToOthers(tab.id);
-    showToast(`「${tab.name}」の使う時限の選択を他のタブへコピーしました`, 'success', 2500);
+    showToast(`「${tab.name}」の使う時限の選択を${copyTargetText(tab)}へコピーしました`, 'success', 2500);
   };
 
   // 時限 / クラス用 (カンマ区切りテキスト)
@@ -506,21 +492,40 @@ export default function BasicSettings() {
       {/* ── 時限 ── */}
       <div className="border border-builder-blue/40 rounded p-3 bg-builder-info-soft/30 space-y-3">
         <div className="font-bold text-builder-ink text-sm">
-          ⏰ 時限
+          ⏰ 時限{activeFrame && <span className="font-normal"> (枠「{activeFrame.name}」)</span>}
           <span className={`ml-2 text-xs ${activePeriodCount === 0 ? "font-bold text-builder-orange" : "font-normal text-builder-ink-muted"}`}>
-            選択 {activePeriodCount} / プール {poolPeriods.length} コマ
+            選択 {activePeriodCount} / {activeFrame ? '枠' : 'プール'} {choicePeriods.length} コマ
             {activePeriodCount === 0 && " — ⚠️ 0 件のためこのタブの時間割は空になります"}
           </span>
         </div>
 
-        <label className="block">
-          <span className="text-xs font-bold text-builder-ink-muted">時限プールを編集 (カンマ区切り・<span className="text-builder-blue">全タブ共通</span>)</span>
-          <DraftListTextarea
-            value={poolPeriods.map(e => e.label).join(', ')}
-            onCommit={(v) => handleConfigChange('periods', v)}
-          />
-          <span className="block text-[11px] text-builder-ink-muted">欄の外をクリックすると確定します (Esc で取り消し)</span>
-        </label>
+        {activeFrame ? (
+          <label className="block">
+            <span className="text-xs font-bold text-builder-ink-muted">「{activeFrame.name}」の時限を編集 (カンマ区切り・<span className="text-builder-blue">この枠のタブ共通</span>)</span>
+            <DraftListTextarea
+              value={choicePeriods.map(e => e.label).join(', ')}
+              onCommit={(v) => {
+                if (!String(v).split(',').some(x => x.trim())) {
+                  showToast('枠には時限が 1 つ以上要ります', 'error', 3000);
+                  return;
+                }
+                setFramePeriods(activeFrame.id, v);
+              }}
+            />
+            <span className="block text-[11px] text-builder-ink-muted">
+              欄の外をクリックすると確定します (Esc で取り消し)。ほかの枠の時限は ⚙ 上の「🧩 枠」で直します (季節の時限は全部で {poolPeriods.length} コマ)
+            </span>
+          </label>
+        ) : (
+          <label className="block">
+            <span className="text-xs font-bold text-builder-ink-muted">時限プールを編集 (カンマ区切り・<span className="text-builder-blue">全タブ共通</span>)</span>
+            <DraftListTextarea
+              value={poolPeriods.map(e => e.label).join(', ')}
+              onCommit={(v) => handleConfigChange('periods', v)}
+            />
+            <span className="block text-[11px] text-builder-ink-muted">欄の外をクリックすると確定します (Esc で取り消し)</span>
+          </label>
+        )}
 
         {/* 使う時限チェックリスト */}
         <div className="space-y-1">
@@ -538,7 +543,7 @@ export default function BasicSettings() {
               </button>
             </div>
           </div>
-          {poolPeriods.length === 0 ? (
+          {choicePeriods.length === 0 ? (
             <div className="text-[11px] text-builder-ink-muted italic">まだ時限がありません。上のテキストエリアで追加してください。</div>
           ) : showAllTabsPeriods ? (
             <div className="overflow-x-auto border border-builder-border rounded">
@@ -567,12 +572,16 @@ export default function BasicSettings() {
                       <td className="px-2 py-1 border-b border-builder-border whitespace-nowrap sticky left-0 bg-inherit">{p.label}</td>
                       {project.tabs.map(tab => (
                         <td key={tab.id} className="px-2 py-1 border-b border-l border-builder-border text-center">
-                          <input
-                            type="checkbox"
-                            checked={isPeriodActiveForTab(tab, p.id)}
-                            onChange={() => handleToggleTabPeriod(p.id, tab.id)}
-                            aria-label={`${p.label} を「${tab.name}」で使う`}
-                          />
+                          {periodChoosableForTab(tab, p.id) ? (
+                            <input
+                              type="checkbox"
+                              checked={isPeriodActiveForTab(tab, p.id)}
+                              onChange={() => handleToggleTabPeriod(p.id, tab.id)}
+                              aria-label={`${p.label} を「${tab.name}」で使う`}
+                            />
+                          ) : (
+                            <span className="text-builder-ink-ghost" title="このタブの枠に無い時限">—</span>
+                          )}
                         </td>
                       ))}
                     </tr>
@@ -582,7 +591,7 @@ export default function BasicSettings() {
             </div>
           ) : (
             <div className="flex flex-wrap gap-1.5">
-              {poolPeriods.map(p => {
+              {choicePeriods.map(p => {
                 const on = isPeriodActive(p.id);
                 return (
                   <label key={p.id} className={`inline-flex items-center gap-1 px-2 py-1 border rounded text-xs cursor-pointer ${on ? 'bg-builder-info-soft border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border-builder-border text-builder-ink-muted'}`}>

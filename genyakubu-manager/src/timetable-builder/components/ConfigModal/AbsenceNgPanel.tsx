@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
-import { makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
+import { effectiveConfigForTab, makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
 import { autoNgSourceLabel, computeAutoNgEntries } from '../../utils/autoNg';
 import { computePresetMemoBackfill } from '../../utils/presetMemoBackfill';
 import { computePresetRenameSyncIds, presetSessionLabel } from '../../utils/presetRenameSync';
@@ -18,6 +18,7 @@ import OffsiteImport from './OffsiteImport';
 import DraftNumberInput from './DraftNumberInput';
 import DraftLineInput from './DraftLineInput';
 import { computeCourseSplit, externalSessionContentKey, isExternalOnlyDate, sessionDisplayLabel } from '../../utils/externalSessionShape';
+import { framePeriods, projectFrames } from '../../utils/frames';
 
 // 時刻 <input type="time"> のスピナー刻み (秒)。講習の時刻は 5 分単位が前提
 // なので 1 分刻み (= 既定 60) だと『分を合わせづらい』。300 = 5 分にして
@@ -227,14 +228,52 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
     return map;
   }, [sessions]);
 
-  // 日付ヘッダの NG 件数 (手動 + 自動 両方)
+  // 日付ごとの NG マトリクスに出す時限 (2026-10-27): その日を使うタブの時限 + 手動NG の
+  // ある時限。季節の中の枠 (冬期講習の昼・直前の夜・弱点補強の朝) で時限が 14 個に
+  // なると、どの日にも全部の列が並んで読めなかった。その日を使うタブが無い日は全時限
+  const periodsByDate = useMemo(() => {
+    const m = new Map<number, typeof poolPeriods>();
+    const tabCfgs = (project.tabs || []).map(t => effectiveConfigForTab(project, t));
+    poolDates.forEach(d => {
+      const ids = new Set<number>();
+      tabCfgs.forEach(cfg => {
+        if (cfg.dates.some(x => x.id === d.id)) cfg.periods.forEach(p => ids.add(p.id));
+      });
+      if (ids.size > 0) {
+        project.teachers.forEach(t => {
+          poolPeriods.forEach(p => {
+            if (t.ngSlots?.includes(makeNgKey(d.label, p.label))) ids.add(p.id);
+          });
+        });
+      }
+      m.set(d.id, ids.size > 0 ? poolPeriods.filter(p => ids.has(p.id)) : poolPeriods);
+    });
+    return m;
+  }, [project, poolDates, poolPeriods]);
+
+  // NG モードの時限の選択肢: 季節の中の枠があれば枠ごとにまとめる
+  const periodGroups = useMemo(() => {
+    const frames = projectFrames(project);
+    if (frames.length === 0) return [{ key: 'all', label: '', periods: poolPeriods }];
+    const seen = new Set<number>();
+    const groups = frames.map(f => {
+      const periods = framePeriods(project, f).filter(p => !seen.has(p.id));
+      periods.forEach(p => seen.add(p.id));
+      return { key: `f${f.id}`, label: f.name, periods };
+    });
+    const rest = poolPeriods.filter(p => !seen.has(p.id));
+    if (rest.length > 0) groups.push({ key: 'rest', label: '枠なし', periods: rest });
+    return groups.filter(g => g.periods.length > 0);
+  }, [project, poolPeriods]);
+
+  // 日付ヘッダの NG 件数 (手動 + 自動 両方。その日の NG マトリクスに出す時限で数える)
   const ngCountByDate = useMemo(() => {
     const out = {};
     poolDates.forEach(d => {
       let count = 0;
       project.teachers.forEach(t => {
         const autoEntries = autoNgByTeacher?.get(t.name);
-        poolPeriods.forEach(p => {
+        (periodsByDate.get(d.id) || poolPeriods).forEach(p => {
           const k = makeNgKey(d.label, p.label);
           if (t.ngSlots?.includes(k) || autoEntries?.has(k)) count++;
         });
@@ -242,7 +281,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
       out[d.id] = count;
     });
     return out;
-  }, [poolDates, poolPeriods, project.teachers, autoNgByTeacher]);
+  }, [poolDates, poolPeriods, periodsByDate, project.teachers, autoNgByTeacher]);
 
   // 期間内の date ラベル配列
   const rangeDateLabels = useMemo(() => {
@@ -927,19 +966,23 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
                 </button>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {poolPeriods.map(p => (
-                <label key={p.id}
-                  className={`flex items-center gap-1 px-2 py-1 border rounded cursor-pointer text-xs ${isPeriodSelected(p.id) ? 'bg-builder-info-soft border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border-builder-ink-ghost text-builder-ink hover:bg-builder-bg'}`}>
-                  <input
-                    type="checkbox"
-                    checked={isPeriodSelected(p.id)}
-                    onChange={() => togglePeriod(p.id)}
-                  />
-                  <span>{p.label}</span>
-                </label>
-              ))}
-            </div>
+            {/* 季節の中の枠があれば枠ごとにまとめる (同じ時限は最初の枠に) */}
+            {periodGroups.map(group => (
+              <div key={group.key} className="flex flex-wrap items-center gap-2">
+                {group.label && <span className="text-[11px] font-bold text-builder-ink-muted">{group.label}:</span>}
+                {group.periods.map(p => (
+                  <label key={p.id}
+                    className={`flex items-center gap-1 px-2 py-1 border rounded cursor-pointer text-xs ${isPeriodSelected(p.id) ? 'bg-builder-info-soft border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border-builder-ink-ghost text-builder-ink hover:bg-builder-bg'}`}>
+                    <input
+                      type="checkbox"
+                      checked={isPeriodSelected(p.id)}
+                      onChange={() => togglePeriod(p.id)}
+                    />
+                    <span>{p.label}</span>
+                  </label>
+                ))}
+              </div>
+            ))}
           </div>
         )}
 
@@ -1047,7 +1090,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
             date={d}
             expanded={expandedDates[d.id] !== false}
             onToggle={() => toggleDate(d.id)}
-            periods={poolPeriods}
+            periods={periodsByDate.get(d.id) || poolPeriods}
             teacherGroups={teacherGroups}
             teacherIdxByName={teacherIdxByName}
             autoNgByTeacher={autoNgByTeacher}

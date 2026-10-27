@@ -25,6 +25,10 @@ export function buildTemplatePayload(project: Project | null | undefined): Omit<
   const { snapshots: _snapshots, previousTimetable: _previous, publishState: _publish, ...rest } = project || {};
   const payload = JSON.parse(JSON.stringify(rest));
   if (Array.isArray(payload.teachers)) payload.teachers = stripAvailability(payload.teachers);
+  // 枠の「月間の予定」も同じ (枠の名前・時限はテンプレートに残す)
+  if (Array.isArray(payload.frames)) {
+    payload.frames = payload.frames.map(({ publishState: _state, ...f }: Record<string, unknown>) => f);
+  }
   return payload;
 }
 

@@ -14,7 +14,7 @@
 //
 // 無依存 (型だけ) なので scheduleKey.migrateProject から使える。
 
-import type { Project, PublishState, Tab } from '../types';
+import type { Frame, Project, PublishState, Tab } from '../types';
 
 export interface PublishStateDef {
   key: PublishState;
@@ -52,18 +52,36 @@ export function isPublished(state: PublishState): boolean {
   return state !== 'draft';
 }
 
-/** そのタブの時間割の状態 */
-export function publishStateForTab(
+/** 枠の状態 (未設定 = project の状態) */
+export function framePublishState(
   project: Pick<Project, 'publishState'> | null | undefined,
-  _tab: Pick<Tab, 'id'> | null | undefined,
+  frame: Pick<Frame, 'publishState'> | null | undefined,
 ): PublishState {
-  return projectPublishState(project);
+  return isPublishState(frame?.publishState) ? frame!.publishState! : projectPublishState(project);
 }
 
-/** 他学年セッション (日付ラベル) の状態 */
-export function publishStateForSessionDate(
-  project: Pick<Project, 'publishState'> | null | undefined,
-  _dateLabel: string,
+/** そのタブの時間割の状態 (枠に入っていれば枠の状態) */
+export function publishStateForTab(
+  project: Pick<Project, 'publishState' | 'frames'> | null | undefined,
+  tab: Pick<Tab, 'config'> | null | undefined,
 ): PublishState {
-  return projectPublishState(project);
+  const frameId = tab?.config?.frameId;
+  const frame = frameId != null ? (project?.frames || []).find(f => f.id === frameId) : null;
+  return frame ? framePublishState(project, frame) : projectPublishState(project);
+}
+
+const RANK: Record<PublishState, number> = { draft: 0, tentative: 1, final: 2 };
+
+/** いちばん本体に出している状態 (確定 > 仮確定 > 作成中)。空なら null */
+export function mostPublished(states: PublishState[]): PublishState | null {
+  let best: PublishState | null = null;
+  for (const s of states) if (best == null || RANK[s] > RANK[best]) best = s;
+  return best;
+}
+
+/** いちばん出していない状態 (作成中 > 仮確定 > 確定)。空なら確定 */
+export function leastPublished(states: PublishState[]): PublishState {
+  let best: PublishState | null = null;
+  for (const s of states) if (best == null || RANK[s] < RANK[best]) best = s;
+  return best ?? 'final';
 }

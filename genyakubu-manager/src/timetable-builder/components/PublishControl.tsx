@@ -1,7 +1,8 @@
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
-import { PUBLISH_STATES, projectPublishState, publishStateDef } from '../utils/publishState';
+import { PUBLISH_STATES, framePublishState, projectPublishState, publishStateDef } from '../utils/publishState';
 import { projectBaseYmd, resolveDateLabelsYmd, usedDateLabels } from '../utils/courseDates';
+import { frameLessonDates, frameOfTab } from '../utils/frames';
 import type { Project, PublishState } from '../types';
 
 function todayYmd(): string {
@@ -9,43 +10,51 @@ function todayYmd(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// 今日より前に授業の日がある (済んだ講習を作成中に戻すと、授業時間の集計からも消える)
-function hasPastLessonDays(project: Project, today: string): boolean {
+// 今日より前に授業の日がある (済んだ講習を作成中に戻すと、授業時間の集計からも消える)。
+// 枠を選んでいればその枠の日だけ見る (年は季節の日付でまとめて決める)
+function hasPastLessonDays(project: Project, today: string, frameId: number | null): boolean {
   const base = projectBaseYmd(project, today);
   if (!base) return false;
-  for (const ymd of resolveDateLabelsYmd(usedDateLabels(project), base).values()) {
-    if (ymd && ymd < today) return true;
-  }
-  return false;
+  const ymdByLabel = resolveDateLabelsYmd(usedDateLabels(project), base);
+  const labels = frameId != null
+    ? frameLessonDates(project, frameId).map(d => d.label)
+    : [...ymdByLabel.keys()];
+  return labels.some(l => {
+    const ymd = ymdByLabel.get(l);
+    return !!ymd && ymd < today;
+  });
 }
 
 // 本体の月間の予定へ出すか (作成中 / 仮確定 / 確定、2026-10-27)。決まりは
-// utils/publishState。作成中に戻すと、本体の講師の月間・授業時間の集計から消える
+// utils/publishState。作成中に戻すと、本体の講師の月間・授業時間の集計から消える。
+// 季節の中の枠 (utils/frames) に入ったタブを開いているときは、その枠の状態を切り替える
 export default function PublishControl() {
-  const { project, setPublishState } = useProjectContext();
+  const { project, activeTab, setPublishState, setFramePublishState } = useProjectContext();
   const { showConfirm, showToast } = useUI();
-  const state = projectPublishState(project);
+  const frame = frameOfTab(project, activeTab);
+  const state = frame ? framePublishState(project, frame) : projectPublishState(project);
 
   const choose = async (next: PublishState) => {
     if (next === state) return;
     const today = todayYmd();
-    if (next === 'draft' && hasPastLessonDays(project, today)) {
+    if (next === 'draft' && hasPastLessonDays(project, today, frame?.id ?? null)) {
       const ok = await showConfirm(
-        'この時間割には今日より前の授業の日があります。作成中に戻すと、本体の講師の月間の予定と授業時間の集計 (済んだ日の分も) から消えます。作成中に戻しますか?',
+        `${frame ? `「${frame.name}」` : 'この時間割'}には今日より前の授業の日があります。作成中に戻すと、本体の講師の月間の予定と授業時間の集計 (済んだ日の分も) から消えます。作成中に戻しますか?`,
         { title: '作成中に戻す', confirmLabel: '作成中に戻す' },
       );
       if (!ok) return;
     }
-    setPublishState(next);
+    if (frame) setFramePublishState(frame.id, next);
+    else setPublishState(next);
     const def = publishStateDef(next);
-    showToast(`「${def.label}」にしました。${def.note} (Undo で戻せます)`, 'success', 5000);
+    showToast(`${frame ? `「${frame.name}」を` : ''}「${def.label}」にしました。${def.note} (Undo で戻せます)`, 'success', 5000);
   };
 
   return (
     // fieldset の既定の枠・余白は消す (講習側は preflight を読み込んでいない)
     <fieldset className="flex flex-wrap items-center gap-1 text-xs border-0 p-0 m-0 min-w-0">
-      <legend className="sr-only">本体の月間の予定への反映</legend>
-      <span aria-hidden="true" className="text-builder-ink-muted">月間の予定:</span>
+      <legend className="sr-only">{frame ? `「${frame.name}」の` : ''}本体の月間の予定への反映</legend>
+      <span aria-hidden="true" className="text-builder-ink-muted">{frame ? `「${frame.name}」の` : ''}月間の予定:</span>
       {PUBLISH_STATES.map(s => {
         const on = s.key === state;
         const tone = on

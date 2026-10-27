@@ -102,8 +102,10 @@ export interface TabConfig {
    * undefined / null = 全日使う (後方互換の既定)。[] = 0 日。
    */
   activeDateIds?: number[] | null;
-  /** activeDateIds の periods 版 (E-3) */
+  /** activeDateIds の periods 版 (E-3)。枠に入ったタブは必ず配列 (枠の時限の部分集合) */
   activePeriodIds?: number[] | null;
+  /** このタブが入っている枠 (Project.frames の id、任意。2026-10-27) */
+  frameId?: number;
   /** v3 以前の互換: migrate 前の外部 JSON にのみ現れる (v4 では project 側) */
   dates?: Entity[];
   /** v3 以前の互換 (同上) */
@@ -171,6 +173,22 @@ export interface ExternalSessionPreset {
   memo?: string;
   /** N4c: 適用時に選択状態へ展開する対象講師名 (任意)。無指定 = 講師は触らない */
   teachers?: string[];
+}
+
+/**
+ * 季節の中の「枠」(2026-10-27)。冬期講習 (12/25〜1/7) と直前ポイント演習 (1/12〜3/4)・
+ * 弱点補強演習 (土曜) のように、1 つの季節の中の別の講習。タブは枠に入り (TabConfig.frameId)、
+ * 枠ごとに時限 (プールの部分集合) と本体の月間の予定への反映 (作成中 / 仮確定 / 確定) を
+ * 持つ。本体の月間の「講」と講師別 Excel にはプロジェクト名ではなく枠の名前を出す。
+ * 決まりは utils/frames (形の確認は無依存の utils/frameShape)
+ */
+export interface Frame {
+  id: number;
+  name: string;
+  /** この枠の時限 (project.periods の id)。枠に入ったタブはこの中から使う時限を選ぶ */
+  periodIds: number[];
+  /** 本体の月間の予定へ出すか。未設定 = project の状態 (utils/publishState) */
+  publishState?: PublishState;
 }
 
 /** 名前付きスナップショット (E1c)。タブ単位で schedule を保存 */
@@ -249,6 +267,8 @@ export interface Project {
   /** v4: 全タブ共通の時限プール (各タブは activePeriodIds で絞る) */
   periods: Entity[];
   tabs: Tab[];
+  /** 季節の中の枠 (任意。無ければ従来どおり 1 つの講習) */
+  frames?: Frame[];
   subjects: string[];
   subjectColors: Record<string, string>;
   combinedGroups: CombinedGroup[];

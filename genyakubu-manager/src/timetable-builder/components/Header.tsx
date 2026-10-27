@@ -4,6 +4,7 @@ import { useUI } from '../contexts/uiContextValue';
 import { useDismissablePopover } from '../hooks/useDismissablePopover';
 import { measureLocalStorageBytes, formatBytes, STORAGE_LIMIT_BYTES, STORAGE_WARN_RATIO } from '../utils/storageHealth';
 import PublishControl from './PublishControl';
+import { projectFrames } from '../utils/frames';
 
 // N1b: 保存ステータスバッジの状態別スタイル。以前は成功色 (緑) 固定で、
 // 「⚠️ 保存失敗」まで緑地に描画され失敗が成功に見えていた。
@@ -75,7 +76,7 @@ export default function Header() {
   //   2. 進行中はボタンを disabled + スピナー表示
   //   3. catch では console.error も残してデバッグ可能に
   //   4. exceljs ベースで download* は async なので await する
-  const handleExport = async (type) => {
+  const handleExport = async (type, frameId = null) => {
     setExcelMenuOpen(false);
     setExportingType(type);
     let mod;
@@ -96,7 +97,8 @@ export default function Header() {
         await mod.downloadDistributionExcel(project);
         showToast('配布用Excelをダウンロードしました');
       } else {
-        await mod.downloadTeacherExcel(project);
+        // frameId: 季節の中の枠のタブと日だけの講師別 (utils/frames)
+        await mod.downloadTeacherExcel(project, { frameId });
         showToast('個人別Excelをダウンロードしました');
       }
     } catch (err) {
@@ -165,7 +167,7 @@ export default function Header() {
             <span aria-hidden="true" className="text-[10px]">▾</span>
           </button>
           {excelMenuOpen && (
-            <div role="menu" className="absolute z-50 top-full right-0 mt-1 w-44 bg-builder-surface border border-builder-border rounded shadow-lg py-1 text-builder-ink">
+            <div role="menu" className="absolute z-50 top-full right-0 mt-1 w-56 bg-builder-surface border border-builder-border rounded shadow-lg py-1 text-builder-ink">
               <button
                 role="menuitem"
                 onClick={() => handleExport('all')}
@@ -183,7 +185,17 @@ export default function Header() {
                 onClick={() => handleExport('teacher')}
                 className="w-full text-left px-3 py-2 text-sm hover:bg-builder-surface-alt"
                 title="講師別スケジュールをExcel出力"
-              >👤 講師別スケジュール</button>
+              >👤 講師別スケジュール{projectFrames(project).length > 0 ? ' (全部の枠)' : ''}</button>
+              {/* 季節の中の枠ごと (見出しは枠の名前、期間はその枠の日) */}
+              {projectFrames(project).map(f => (
+                <button
+                  key={f.id}
+                  role="menuitem"
+                  onClick={() => handleExport('teacher', f.id)}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-builder-surface-alt"
+                  title={`枠「${f.name}」のタブと日だけの講師別スケジュールをExcel出力`}
+                >👤 講師別 ({f.name})</button>
+              ))}
             </div>
           )}
         </div>

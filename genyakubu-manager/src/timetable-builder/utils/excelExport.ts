@@ -23,6 +23,7 @@ import { computePresetMemoBackfill } from './presetMemoBackfill';
 import { classLabelWithRoom } from './classRoom';
 import { sessionDateLabels, usedDateLabels } from './courseDates';
 import { normalizeSessionCourse, sessionKindLabel } from './externalSessionShape';
+import { frameById, frameOfTab, projectForFrame } from './frames';
 
 // ─── 共通スタイル定義 (exceljs 形式) ──────────────────────────────
 
@@ -216,8 +217,9 @@ export function buildScheduleWorkbook(project: Project): ExcelJS.Workbook {
     const rangeText = dates.length > 0 ? `期間 ${dates[0].label}〜${dates[dates.length - 1].label}` : '';
     const d0 = new Date();
     const printedAt = `出力日 ${d0.getMonth() + 1}/${d0.getDate()}`;
+    // 季節の中の枠に入ったタブは枠の名前 (「直前ポイント演習 — 中3直前 火木」)
     const titleText = [
-      `${project.name || '講習時間割'} — ${tab.name}`,
+      `${frameOfTab(project, tab)?.name || project.name || '講習時間割'} — ${tab.name}`,
       rangeText,
       printedAt,
     ].filter(Boolean).join(' / ');
@@ -1130,7 +1132,11 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
 }
 
 // ─── 講師別 Excel: 公開エントリ ────────────────────────────────────
-export async function downloadTeacherExcel(project: Project) {
-  const workbook = buildTeacherWorkbook(project);
-  await downloadWorkbook(workbook, buildExcelFilename(project, '講師別'));
+// frameId を渡すと、その枠のタブと日だけ (季節の中の枠、utils/frames.projectForFrame)。
+// 紙面の見出しは枠の名前、ファイル名は「プロジェクト名_講師別_枠の名前」
+export async function downloadTeacherExcel(project: Project, { frameId }: { frameId?: number | null } = {}) {
+  const frame = frameId != null ? frameById(project, frameId) : null;
+  const workbook = buildTeacherWorkbook(frame ? projectForFrame(project, frame.id) : project);
+  const suffix = frame ? `講師別_${frame.name.replace(/[\\/:?*[\]<>|"]/g, '')}` : '講師別';
+  await downloadWorkbook(workbook, buildExcelFilename(project, suffix));
 }

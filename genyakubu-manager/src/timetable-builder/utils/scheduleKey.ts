@@ -20,7 +20,8 @@
 // 注意: constants.js は本ファイルの parseKey を import しているため、
 // ここから constants.js を import すると循環になる。import してよいのは
 // 無依存モジュール (generationParams / dateGenerate / dateLabelUnify /
-// availabilityShape / carriedTimetable / publishState / externalSessionShape) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
+// availabilityShape / carriedTimetable / publishState / externalSessionShape /
+// frameShape) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
 // availabilityShape の無依存モジュールのみ。
 import { clampGenerationParam } from './generationParams';
 import { sortPoolDatesByCalendar } from './dateGenerate';
@@ -29,6 +30,7 @@ import { sanitizeAvailability } from './availabilityShape';
 import { normalizeCarriedTimetable } from './carriedTimetable';
 import { isPublishState } from './publishState';
 import { isExternalOnlyDate, normalizeSessionCourse } from './externalSessionShape';
+import { normalizeProjectFrames } from './frameShape';
 import type {
   CombinedGroup,
   EffectiveConfig,
@@ -715,6 +717,10 @@ export function migrateProject(project: any): Project {
   // して共存しているプールはマージし、参照 (schedule / NG / externalCounts /
   // 合同 / セッション) も付け替える。idempotent (詳細は dateLabelUnify.js)。
   result = unifyDateLabelWeekdays(result);
+
+  // 季節の中の枠 (任意、utils/frameShape): 形の崩れた枠・無い枠を指す frameId を落とし、
+  // 枠に入ったタブの使う時限を枠の時限の中に収める
+  result = normalizeProjectFrames(result);
 
   // 外部授業だけの日の印 (任意): true 以外は落とす。タブが使う日になっていれば外す
   // (時間割に出る日は外部授業だけの日ではない。tabDates の操作も同じく外す)

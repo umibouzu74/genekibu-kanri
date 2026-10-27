@@ -38,11 +38,13 @@ import {
 } from "../timetable-builder/utils/courseDates";
 import { computePresetMemoBackfill } from "../timetable-builder/utils/presetMemoBackfill";
 import { sessionDisplayLabel } from "../timetable-builder/utils/externalSessionShape";
+import { isPublished, publishStateForTab } from "../timetable-builder/utils/publishState";
 import {
-  isPublished,
+  frameById,
+  frameIdForDate,
+  frameOfTab,
   publishStateForSessionDate,
-  publishStateForTab,
-} from "../timetable-builder/utils/publishState";
+} from "../timetable-builder/utils/frames";
 import {
   formatHHmm,
   getPeriodTimeRange,
@@ -102,7 +104,8 @@ function periodShortLabel(label) {
 //   ラベル、grade/cls/tabName は空)。時刻の読めないものは Excel の講師別
 //   シートと同じく同日の末尾に沈める
 // - 作成中の時間割 (publishState = draft) は出さない。仮確定は tentative=true
-//   (月間のカードに「仮」の印)。決まりは timetable-builder/utils/publishState
+//   (月間のカードに「仮」の印)。決まりは timetable-builder/utils/publishState。
+//   季節の中の枠 (utils/frames) があれば状態は枠ごと、frameName に枠の名前
 export function buildKoshuLessons(project, { todayYmd } = {}) {
   if (!project || !Array.isArray(project.tabs)) return [];
   const baseYmd = projectBaseYmd(project, todayYmd);
@@ -212,6 +215,8 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
         room: g.classes.some((c) => c.room) ? g.classes.map((c) => c.room || "?").join("/") : "",
         tabName: tab.name || "",
         projectName: project.name || "",
+        // 季節の中の枠 (冬期講習 / 直前ポイント演習…)。カードの説明は枠の名前を出す
+        frameName: frameOfTab(project, tab)?.name || "",
         tentative: state === "tentative",
         _sortMin: g.period.sortMin,
         _sortPeriod: g.period.index,
@@ -270,6 +275,7 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
       room: "",
       tabName: "",
       projectName: project.name || "",
+      frameName: frameById(project, frameIdForDate(project, s.date))?.name || "",
       tentative: publishStateForSessionDate(project, s.date) === "tentative",
       _sortMin: range ? range.startMin : Number.POSITIVE_INFINITY,
       _sortPeriod: Number.POSITIVE_INFINITY,
