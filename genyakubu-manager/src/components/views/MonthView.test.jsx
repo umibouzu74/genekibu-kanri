@@ -69,6 +69,12 @@ describe("MonthView 講習コマ", () => {
     expect(screen.getByText(/英語②/)).toBeInTheDocument();
   });
 
+  it("クラスに教室があればカードに「@401」を添え、title にも教室を出す", () => {
+    render(<MonthView {...baseProps} koshuLessons={[{ ...KOSHU_LESSON, room: "401/403" }]} />);
+    expect(screen.getByText("@401/403")).toBeInTheDocument();
+    expect(screen.getByText("@401/403").closest(".month-print-card").getAttribute("title")).toContain("教室 401/403");
+  });
+
   it("講習期間の外部授業 (予備校・高校等) は「外」バッジで表示する", () => {
     render(
       <MonthView

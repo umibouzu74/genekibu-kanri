@@ -434,6 +434,7 @@ export interface KoshuLesson {
   countText: string;
   grade: string; // タブ名 ("中3" 等)。gradeColor の色分けに使う
   cls: string; // クラスラベル ("３S"。合同まとめは "３S/３A")
+  room: string; // 教室 ("401"。合同は "401/403"。講習時間割作成のクラスに教室が無ければ "")
   tabName: string;
   projectName: string;
 }

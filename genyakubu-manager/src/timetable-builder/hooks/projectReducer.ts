@@ -63,6 +63,7 @@ export type ProjectAction =
   | { type: 'tab/setDayStatus'; payload: { dateId: number; status: DayStatus | null; tabId?: number } }
   | { type: 'config/setList'; payload: { key: 'dates' | 'periods' | 'classes'; value: string } }
   | { type: 'config/setSubjectCount'; payload: { subject: string; value: unknown; tabId?: number } }
+  | { type: 'config/setClassRoom'; payload: { classId: number; room: string; tabId?: number } }
   | { type: 'config/setClassSubjectCount'; payload: { subject: string; classId: number; value: unknown; tabId?: number } }
   | { type: 'config/setClassSubjectCountsMode'; payload: { tabId: number; enabled: boolean } }
   | { type: 'config/fillSubjectCounts'; payload: { tabId: number; value: unknown } }
@@ -534,6 +535,30 @@ function applyAction(project: Project, action: ProjectAction): Project {
       // cleanSchedule で消えた entity を参照する schedule キーを掃除する
       // (dates/periods は project 共通なので全タブの schedule が対象)。
       return cleanSchedule({ ...cascadedTabsProject, combinedGroups: newCombined });
+    }
+    case 'config/setClassRoom': {
+      // クラスの教室 (2026-10-27)。空にしたら room を持たない。ラベル参照は
+      // 変わらないので cascade は要らない
+      const { classId, room, tabId } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      const value = String(room ?? '').trim();
+      let changed = false;
+      const newTabs = project.tabs.map(t => {
+        if (t.id !== targetId) return t;
+        const classes = (t.config.classes || []).map(c => {
+          if (c.id !== classId) return c;
+          const current = typeof c.room === 'string' ? c.room : '';
+          if (current === value) return c;
+          changed = true;
+          if (!value) {
+            const { room: _room, ...rest } = c;
+            return rest;
+          }
+          return { ...c, room: value };
+        });
+        return changed ? { ...t, config: { ...t.config, classes } } : t;
+      });
+      return changed ? { ...project, tabs: newTabs } : project;
     }
     case 'config/setSubjectCount': {
       // tabId 省略時はアクティブタブを対象にする (従来挙動)。

@@ -55,6 +55,11 @@ test("旧データは冬期へ移り、春期は冬期から写して始めら�
   await expect(page.getByRole("heading", { name: /春期講習の時間割はまだありません/ })).toBeVisible();
   await page.getByRole("textbox", { name: "プロジェクト名" }).fill("e2e 春期講習");
   await page.getByRole("button", { name: /冬期講習「e2e 冬期講習」の設定を写して始める/ }).click();
+  // プリセット・写さない講師を確かめる画面を挟む
+  await page
+    .getByRole("dialog", { name: /冬期講習の設定を写して始める/ })
+    .getByRole("button", { name: "この内容で始める" })
+    .click();
   await expect(page.getByRole("heading", { name: "e2e 春期講習" })).toBeVisible();
   await expect(page.getByText(/まだ講習の日付がありません/)).toBeVisible();
 
@@ -68,3 +73,63 @@ test("旧データは冬期へ移り、春期は冬期から写して始めら�
   await expect(page.getByRole("heading", { name: "e2e 冬期講習" })).toBeVisible({ timeout: 30_000 });
   await expect(seasons.getByRole("button", { name: /^春期講習: e2e 春期講習/ })).toBeVisible();
 });
+
+test("翌年用に作り直し、日付を作ってから前の講習の時間割を N 日目 → N 日目に写す。教室を入れると見出しに出る", async ({ page }) => {
+  await page.goto("/genekibu-kanri/");
+  await openKoshuBuilder(page, { season: "winter" });
+  await expect(page.getByRole("heading", { name: "e2e 冬期講習" })).toBeVisible();
+
+  await page.getByRole("button", { name: "⚙️ 設定", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "⚙️ 設定メニュー" });
+  await settings.getByRole("button", { name: /次の冬期講習用に作り直す/ }).click();
+  const rebuild = page.getByRole("dialog", { name: "次の冬期講習用に作り直す" });
+  await expect(rebuild).toContainText("今の時間割 (1 コマ) は控えとして残ります");
+  await rebuild.getByLabel("作り直した後のプロジェクト名").fill("e2e 次の冬期講習");
+  await rebuild.getByRole("button", { name: "作り直す" }).click();
+
+  // 今年の日付を作る (2 日)
+  await settings.getByLabel("生成 開始日").fill("2027-12-23");
+  await settings.getByLabel("生成 終了日").fill("2027-12-24");
+  await settings.getByRole("button", { name: "この内容でこのタブに設定" }).click();
+
+  // 前の講習の時間割を写す (1 日目の 1限 3S 英語 堀上)
+  await settings.getByRole("button", { name: /前の講習の時間割を写す/ }).click();
+  const copy = page.getByRole("dialog", { name: "📋 前の講習の時間割を写す" });
+  await expect(copy).toContainText("作り直す前の時間割「e2e 冬期講習」");
+  await expect(copy.getByRole("status")).toContainText("1 コマを写します");
+  await copy.getByRole("button", { name: "写す (1 コマ)" }).click();
+
+  // 教室を入れる
+  const room = settings.getByLabel("クラス「3S」の教室");
+  await room.fill("401");
+  await room.press("Enter");
+  await settings.getByRole("button", { name: "設定を閉じる" }).click();
+
+  await expect(page.getByRole("heading", { name: "e2e 次の冬期講習" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: /^3S\s*401$/ })).toBeVisible();
+  // 1 日目 (12/23) の 1限 3S に科目と講師が写っている。2 日目は元に無いので空
+  await expect(page.getByRole("combobox", { name: "12/23(木) 1限 (13:00~13:45) 3S の科目" })).toHaveValue("英語");
+  await expect(page.getByRole("combobox", { name: "12/23(木) 1限 (13:00~13:45) 3S の講師" })).toHaveValue("堀上");
+  await expect(page.getByRole("combobox", { name: "12/24(金) 1限 (13:00~13:45) 3S の科目" })).toHaveValue("");
+});
+
+test("他学年セッションを表で一括登録し、NG に当たっている割当の一覧からセルへ飛ぶ", async ({ page }) => {
+  await page.goto("/genekibu-kanri/");
+  await openKoshuBuilder(page, { season: "winter" });
+  await page.getByRole("button", { name: "⚙️ 設定", exact: true }).click();
+  const settings = page.getByRole("dialog", { name: "⚙️ 設定メニュー" });
+  await settings.getByRole("tab", { name: /講師不在・NG/ }).click();
+  await settings.getByRole("button", { name: /他学年セッションを表で一括登録/ }).click();
+  await settings
+    .getByLabel("他学年セッションの表 (CSV)")
+    .fill("講師,日付,開始,終了,メモ\n堀上・山田,12/24,12:25,13:35,予備校３限");
+  await settings.getByRole("button", { name: "他学年セッションを追加 (2 件)" }).click();
+
+  // 12/24 1限 (13:00〜) の堀上の割当が予備校３限と重なる
+  const list = settings.getByRole("region", { name: "NG に当たっている割当" });
+  await expect(list).toContainText("中3 12/24(木) 1限 3S 英語 堀上");
+  await expect(list).toContainText("予備校３限 12:25〜13:35");
+  await list.getByRole("button", { name: /のセルへ移動/ }).click();
+  await expect(settings).toBeHidden();
+});
+

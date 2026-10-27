@@ -1082,7 +1082,9 @@ export function MonthView({
               lesson.projectName ? `: ${lesson.projectName}` : ""
             }] ${lesson.tabName} ${lesson.cls} ${subjText} (${
               lesson.periodLabel
-            }${lesson.time ? ` ${lesson.time}` : ""})\n編集は「講習時間割作成」で行います`;
+            }${lesson.time ? ` ${lesson.time}` : ""})${
+              lesson.room ? ` 教室 ${lesson.room}` : ""
+            }\n編集は「講習時間割作成」で行います`;
         return (
           <div
             key={`koshu-${lesson.key}`}
@@ -1130,6 +1132,8 @@ export function MonthView({
               </span>
             )}
             {startText && <b>{startText}</b>} {subjText}
+            {/* 教室 (講習時間割作成のクラスの教室)。振替先の教室と同じ「@」の書き方 */}
+            {!external && lesson.room && <span style={{ fontSize: 10, color: "#555" }}> @{lesson.room}</span>}
           </div>
         );
       })

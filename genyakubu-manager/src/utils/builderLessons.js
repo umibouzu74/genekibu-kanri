@@ -136,7 +136,10 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
       });
     });
     const classById = new Map(
-      (tab.config?.classes || []).map((c, index) => [c.id, { label: c.label, index }])
+      (tab.config?.classes || []).map((c, index) => [
+        c.id,
+        { label: c.label, room: typeof c.room === "string" ? c.room.trim() : "", index },
+      ])
     );
 
     const grouped = new Map();
@@ -192,6 +195,9 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
         countText,
         grade: tab.name || "",
         cls: g.classes.map((c) => c.label).join("/"),
+        // 教室 (講習時間割作成のクラスの教室。合同はクラスの並びで "/" 連結、
+        // 教室を入れていないクラスだけなら空)
+        room: g.classes.some((c) => c.room) ? g.classes.map((c) => c.room || "?").join("/") : "",
         tabName: tab.name || "",
         projectName: project.name || "",
         _sortMin: g.period.sortMin,
@@ -244,6 +250,7 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
       countText: "",
       grade: "",
       cls: "",
+      room: "",
       tabName: "",
       projectName: project.name || "",
       _sortMin: range ? range.startMin : Number.POSITIVE_INFINITY,

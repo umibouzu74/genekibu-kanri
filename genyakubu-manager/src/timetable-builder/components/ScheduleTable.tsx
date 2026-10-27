@@ -7,6 +7,7 @@ import ScheduleCell from './ScheduleCell';
 import type { ReactNode, ThHTMLAttributes } from 'react';
 import type { DayStatus, ScheduleEntry } from '../types';
 import type { BuilderContextMenuState } from './ContextMenu';
+import { classRoomOf } from '../utils/classRoom';
 
 type HeaderContextMenuHandler = (
   e: { preventDefault: () => void; clientX: number; clientY: number },
@@ -203,6 +204,10 @@ export default function ScheduleTable({ isCompact, onContextMenu, highlightTeach
                 onContextMenu={(e) => onContextMenu(e, null, null, null, 'class', c.label)}
                 onLongPressOpen={(e) => onContextMenu(e, null, null, null, 'class', c.label)}>
                 {c.label}
+                {/* 教室 (クラス名とは別に持つ。⚙ 設定 > 基本設定 の「クラスと教室」) */}
+                {classRoomOf(c) && (
+                  <span className="block text-[10px] font-normal opacity-80">{classRoomOf(c)}</span>
+                )}
               </LongPressTh>
             ))}
           </tr>

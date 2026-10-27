@@ -574,6 +574,32 @@ export function migrateProject(project: any): Project {
     }
   }
 
+  // クラスの教室 (任意): 文字列でない / 空白だけの room は落とす (表示で
+  // "[object Object]" や空の括弧を出さない)
+  {
+    let tabsChanged = false;
+    const normalizedTabs = result.tabs.map((tab: any) => {
+      const classes = tab?.config?.classes;
+      if (!Array.isArray(classes) || !classes.some((c: any) => c && 'room' in c)) return tab;
+      let changed = false;
+      const next = classes.map((c: any) => {
+        if (!c || !('room' in c)) return c;
+        const room = typeof c.room === 'string' ? c.room.trim() : '';
+        if (room && room === c.room) return c;
+        changed = true;
+        if (!room) {
+          const { room: _room, ...rest } = c;
+          return rest;
+        }
+        return { ...c, room };
+      });
+      if (!changed) return tab;
+      tabsChanged = true;
+      return { ...tab, config: { ...tab.config, classes: next } };
+    });
+    if (tabsChanged) result = { ...result, tabs: normalizedTabs };
+  }
+
   // 自動生成パラメータ (numPatterns 等) が保存値として範囲外の場合は clamp
   // する (F5d)。UI は resolveGenerationParams で clamp 表示する一方、solver は
   // 保存値をそのまま読むため、ここで正規化しないと「表示は 1・実動作は 0 で

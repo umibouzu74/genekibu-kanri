@@ -2808,6 +2808,27 @@ describe('teacher/rename と externalCounts キー (F2o)', () => {
 
 // ─── タブ間複製 (K4a) ────────────────────────────────────
 
+describe('projectReducer — config/setClassRoom (クラスの教室)', () => {
+  it('アクティブタブのクラスに教室を入れ、空にすると room を持たない', () => {
+    const state = makeState();
+    const classId = state.project.tabs[0].config.classes[0].id;
+    const next = projectReducer(state, { type: 'config/setClassRoom', payload: { classId, room: ' 401 ' } });
+    expect(next.project.tabs[0].config.classes[0]).toMatchObject({ id: classId, room: '401' });
+    // 同じ値は no-op
+    expect(projectReducer(next, { type: 'config/setClassRoom', payload: { classId, room: '401' } })).toBe(next);
+    const cleared = projectReducer(next, { type: 'config/setClassRoom', payload: { classId, room: '' } });
+    expect('room' in cleared.project.tabs[0].config.classes[0]).toBe(false);
+  });
+
+  it('改名 (schedule/renameHeader) しても教室は残る', () => {
+    const state = makeState();
+    const cls = state.project.tabs[0].config.classes[0];
+    const withRoom = projectReducer(state, { type: 'config/setClassRoom', payload: { classId: cls.id, room: '401' } });
+    const renamed = projectReducer(withRoom, { type: 'schedule/renameHeader', payload: { type: 'class', oldVal: cls.label, newVal: '新クラス' } });
+    expect(renamed.project.tabs[0].config.classes[0]).toMatchObject({ id: cls.id, label: '新クラス', room: '401' });
+  });
+});
+
 describe('projectReducer — schedule/importCells (前の講習の時間割を写す)', () => {
   it('セルに科目・講師を 1 回の履歴で書き、ロックしたセル・空の書き込みは飛ばす', () => {
     const state = makeState({

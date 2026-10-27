@@ -110,6 +110,16 @@ describe('carryTimetable', () => {
     expect(normalizeCarriedTimetable({ tabs: [] })).toBeNull();
   });
 
+  it('migrateProject はクラスの教室の空白を整え、文字列でない・空の教室を落とす', () => {
+    const base = lastWinter();
+    base.tabs[0].config.classes = [P(1, '3S401'), { ...P(2, '3A'), room: ' 403 ' }, { ...P(3, '3B'), room: 5 }, { ...P(4, '3C'), room: '  ' }];
+    const p = migrateProject(base);
+    const classes = p.tabs[0].config.classes;
+    expect(classes[1].room).toBe('403');
+    expect('room' in classes[2]).toBe(false);
+    expect('room' in classes[3]).toBe(false);
+  });
+
   it('migrateProject は形の崩れた控えを落とす', () => {
     const p = migrateProject({ ...lastWinter(), previousTimetable: { tabs: 'x' } });
     expect(p.previousTimetable).toBeUndefined();

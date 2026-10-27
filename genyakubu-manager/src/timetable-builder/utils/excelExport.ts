@@ -20,6 +20,7 @@ import { computeAutoNgByTeacher } from './autoNg';
 import { getPeriodTimeRange, getSessionTimeRange } from './timeRange';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { computePresetMemoBackfill } from './presetMemoBackfill';
+import { classLabelWithRoom } from './classRoom';
 import { usedDateLabels } from './courseDates';
 
 // ─── 共通スタイル定義 (exceljs 形式) ──────────────────────────────
@@ -225,7 +226,8 @@ export function buildScheduleWorkbook(project: Project): ExcelJS.Workbook {
     ws.getRow(1).height = 20;
 
     // ヘッダー行
-    const headerRow = ['日付', '時限', ...classes.map(c => c.label)];
+    // クラスの見出しに教室を添える (「3S (401)」)
+    const headerRow = ['日付', '時限', ...classes.map(c => classLabelWithRoom(c))];
     ws.addRow(headerRow);
     headerRow.forEach((_, ci) => applyCellStyle(ws.getCell(2, ci + 1), HEADER_STYLE));
 
@@ -392,7 +394,7 @@ export function computeSubjectStats(project: Project, subject: string) {
           detailRows.push({
             date: d.label,
             period: p.label,
-            className: c.label,
+            className: classLabelWithRoom(c),
             tabName: tab.name,
             teacher: e.teacher || '',
             note: noteParts.join(' '),
@@ -608,7 +610,8 @@ export function buildTeacherRows(project: Project, teacherName: string): Teacher
               ? entry.subject + orderMark(k, entry.subject, c.id, d.id)
               : '';
             rows.push({
-              cells: [d.label, p.label, c.label, subjText, tab.name, note],
+              // 講師別: どの教室へ行くかも分かるようクラスに教室を添える
+              cells: [d.label, p.label, classLabelWithRoom(c), subjText, tab.name, note],
               subject: entry.subject,
               isExternal: false,
               dateIdx: dateIdx(d.label),
@@ -730,7 +733,7 @@ export function computeTeacherClassCounts(project: Project): TeacherClassCounts 
     // 別タブのクラスを巻き込まない)
     tabSpans.push({ tabName: tab.name, count: classes.length });
     const colBase = columns.length;
-    classes.forEach(c => columns.push({ tabName: tab.name, className: c.label }));
+    classes.forEach(c => columns.push({ tabName: tab.name, className: classLabelWithRoom(c) }));
 
     // v4(Y)+E-3: そのタブが使う日・使う時限だけを集計対象にする
     const { dates, periods } = effectiveConfigForTab(project, tab);

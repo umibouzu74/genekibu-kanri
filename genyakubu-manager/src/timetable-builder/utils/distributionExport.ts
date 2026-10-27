@@ -12,15 +12,16 @@
 //   - 先頭に クラス行 + 教室行 (複数タブなら 学年 行も) のヘッダ
 //   - A4 縦・1×1 ページに収める fit-to-page を pageSetup に埋め込み
 //
-// モデルに無い情報 (教室番号・確認テストの出題範囲・イベント日の説明文・
-// 欄外のお知らせ) は空欄 or 結合済みの空セルとして紙面に確保し、Excel 上で
-// 手書きして完成させる運用 (完成版レイアウトの範囲はあくまで時間割本体)。
+// モデルに無い情報 (確認テストの出題範囲・イベント日の説明文・欄外のお知らせ) は
+// 空欄 or 結合済みの空セルとして紙面に確保し、Excel 上で手書きして完成させる運用
+// (完成版レイアウトの範囲はあくまで時間割本体)。教室番号はクラスに教室を入れて
+// あればその番号を出し、無ければ空欄 (2026-10-27、ClassEntity.room)。
 //
 // 書式 (フォント・罫線・塗り・列幅・ページ設定) は 2025 年版 xls の実測値。
 // 科目セルの色分けは行わない (モノクロ印刷前提の紙面のため)。
 import ExcelJS from 'exceljs';
 import { cleanSchedule } from './constants';
-import type { Entity, Project, Schedule, Tab } from '../types';
+import type { ClassEntity, Entity, Project, Schedule, Tab } from '../types';
 import { makeKey, findCombinedGroup, isPrimaryCombinedClass, effectiveConfigForTab } from './scheduleKey';
 import { getPeriodTimeRange } from './timeRange';
 import { sortPoolDatesByCalendar } from './dateGenerate';
@@ -31,6 +32,7 @@ import {
   uniqueSheetName,
 } from './excelExport';
 import { makeSubjectOrderMarker } from './analysisHelpers';
+import { classRoomOf } from './classRoom';
 
 // ─── 紙面の実測定数 (2025 年版 xls 由来) ──────────────────────────
 
@@ -210,7 +212,7 @@ class BorderPainter {
 /** クラス列 1 本分: どのタブのどのクラスが何列目 (0-based offset) か */
 interface ClassColumn {
   tabIdx: number; // group.tabs 内の index
-  cls: Entity;
+  cls: ClassEntity;
   offset: number;
 }
 
@@ -355,10 +357,13 @@ function buildDistributionSheet(
       cell.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };
     });
 
-    // 教室行: モデルに教室情報が無いので空欄 (塗り + 罫線だけ用意して
-    // Excel 上で番号を書き込む)。クラス列 1 本 = 教室 1 つ。
+    // 教室行: クラスに教室を入れてあればその番号 (ClassEntity.room、2026-10-27)。
+    // 無ければ空欄 (塗り + 罫線だけ用意して Excel 上で番号を書き込む)。
+    // クラス列 1 本 = 教室 1 つ。
     for (let off = 0; off < classCount; off++) {
       const cell = ws.getCell(roomRow, cols.firstClassCol + off);
+      const room = classRoomOf(classColumns[off]?.cls);
+      if (room) cell.value = room;
       cell.fill = accentFill;
       cell.font = { name: GOTHIC, size: 9 };
       cell.alignment = { horizontal: 'center', vertical: 'middle', shrinkToFit: true };

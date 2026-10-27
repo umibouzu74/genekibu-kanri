@@ -64,9 +64,18 @@ export interface ScheduleEntry {
 /** キーは makeKey(dateId, periodId, classId) = `d{n}-p{n}-c{n}` */
 export type Schedule = Record<string, ScheduleEntry>;
 
+/**
+ * クラス (tab-local)。room は教室 (任意、2026-10-27)。年ごとに教室が変わっても
+ * クラス名 (ラベル参照のキー) を変えずに済むよう、教室は別に持つ。表示・Excel・
+ * 本体の講師の月間 (「講」のカード) に添える (utils/classRoom)
+ */
+export interface ClassEntity extends Entity {
+  room?: string;
+}
+
 export interface TabConfig {
   /** クラスは tab-local (タブ間で同 id が別クラスを指し得る) */
-  classes: Entity[];
+  classes: ClassEntity[];
   /** 科目 → このタブでのコマ数上限 (1 クラスあたり) */
   subjectCounts: Record<string, number>;
   /**
