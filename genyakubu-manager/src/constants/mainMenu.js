@@ -193,6 +193,10 @@ export const MAIN_MENU = Object.freeze([
       koshuSeason("spring", "講習時間割作成: 3 月末〜4 月頭の講習"),
       koshuSeason("summer", "講習時間割作成: 7〜8 月の講習"),
       koshuSeason("winter", "講習時間割作成: 12 月末〜1 月頭の講習"),
+      navItem(
+        VIEWS.SENIOR_KOSHU,
+        "高校部・予備校の講習の担当 (期・時限・講座名)。講師の月間に出て、講習時間割作成が取り込む"
+      ),
     ],
   },
   {

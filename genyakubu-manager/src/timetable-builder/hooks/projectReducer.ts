@@ -41,6 +41,7 @@ import type {
   CombinedGroup,
   DayStatus,
   ExternalSession,
+  ExternalSessionDraft,
   ExternalSessionPreset,
   Frame,
   GenerationParamKey,
@@ -111,6 +112,7 @@ export type ProjectAction =
   | { type: 'teacher/updateExternalSession'; payload: { id: number; updates: { memo?: string; course?: string } } }
   | { type: 'teacher/applyPresetMemos' }
   | { type: 'teacher/splitSessionCourses' }
+  | { type: 'teacher/replaceExternalSessions'; payload: { removeIds: number[]; items: ExternalSessionDraft[] } }
   | { type: 'preset/add'; payload: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string; teachers?: string[] } }
   | { type: 'preset/update'; payload: { id: number; updates: Partial<Omit<ExternalSessionPreset, 'id'>>; syncSessionMemos?: boolean } }
   | { type: 'preset/remove'; payload: { id: number } }
@@ -1449,6 +1451,35 @@ function applyAction(project: Project, action: ProjectAction): Project {
       }
       if (newOnes.length === 0) return project;
       return { ...project, externalSessions: [...sessions, ...newOnes] };
+    }
+    // 本体の「高校・予備校の講習」の取り込み (ConfigModal/SeniorKoshuImport)。消すもの
+    // (前に取り込んで本体から無くなった / 変わったもの、置き換える手入力のもの) と足すものを
+    // 1 アクションで (Undo 1 回で戻る)。足すものは内容の重複を飛ばさない (計画の側で
+    // 決めてある。同じ内容の手入力を残すと決めた場合も、取り込んだ印のある方を持つ)
+    case 'teacher/replaceExternalSessions': {
+      const { removeIds, items } = action.payload;
+      const remove = new Set(removeIds || []);
+      const sessions = project.externalSessions || [];
+      const kept = sessions.filter(s => !remove.has(s.id));
+      let nextId = sessions.reduce((max, s) => Math.max(max, s.id), 0) + 1;
+      const added: ExternalSession[] = [];
+      for (const it of items || []) {
+        if (!it?.date || !it?.teacherName) continue;
+        const ns: ExternalSession = { id: nextId++, date: it.date, teacherName: it.teacherName, label: it.label || '', memo: it.memo || '' };
+        const courseText = normalizeSessionCourse(it.course);
+        if (courseText) ns.course = courseText;
+        if (it.startTime) {
+          ns.startTime = it.startTime;
+          if (it.endTime) ns.endTime = it.endTime;
+        }
+        if (it.source === 'seniorKoshu' && it.sourceKey) {
+          ns.source = 'seniorKoshu';
+          ns.sourceKey = it.sourceKey;
+        }
+        added.push(ns);
+      }
+      if (kept.length === sessions.length && added.length === 0) return project;
+      return { ...project, externalSessions: [...kept, ...added] };
     }
     case 'teacher/removeExternalSession': {
       const { id } = action.payload;

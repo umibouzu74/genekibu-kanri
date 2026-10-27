@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { Dispatch } from 'react';
 import type { ProjectAction } from './projectReducer';
-import type { AvailabilityMark, ExternalSessionPreset } from '../types';
+import type { AvailabilityMark, ExternalSessionDraft, ExternalSessionPreset } from '../types';
 
 // 講師管理アクションを dispatch でラップする。
 // dispatch は useReducer から得られる安定参照なので、返り値の関数群も
@@ -48,6 +48,9 @@ export function useTeacherActions(dispatch: Dispatch<ProjectAction>) {
       dispatch({ type: 'teacher/addExternalSessions', payload: { items } }),
     removeExternalSession: (id: number) =>
       dispatch({ type: 'teacher/removeExternalSession', payload: { id } }),
+    // 本体の高校・予備校の講習の取り込み: 消すものと足すものを 1 アクションで
+    replaceExternalSessions: (removeIds: number[], items: ExternalSessionDraft[]) =>
+      dispatch({ type: 'teacher/replaceExternalSessions', payload: { removeIds, items } }),
     // 登録済みセッションのメモ・講座名を直す
     updateExternalSession: (id: number, updates: { memo?: string; course?: string }) =>
       dispatch({ type: 'teacher/updateExternalSession', payload: { id, updates } }),

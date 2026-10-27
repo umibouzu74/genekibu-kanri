@@ -167,7 +167,18 @@ export interface ExternalSession {
   startTime?: string;
   /** startTime がある場合のみ保持 (orphan endTime は作らない) */
   endTime?: string;
+  /**
+   * 取り込んだ元 (2026-10-27)。'seniorKoshu' = 本体の「高校・予備校の講習」から
+   * 取り込んだもの (ConfigModal/SeniorKoshuImport)。本体の月間には本体の登録の方を
+   * 出すので、このセッションは出さない (utils/builderLessons)。手で入れたものは持たない
+   */
+  source?: 'seniorKoshu';
+  /** 取り込んだ元の予定のキー (本体の expandSeniorKoshu の key = 担当 id:日付) */
+  sourceKey?: string;
 }
+
+/** 登録前の他学年セッション (id は reducer が振る) */
+export type ExternalSessionDraft = Omit<ExternalSession, 'id'>;
 
 export interface ExternalSessionPreset {
   id: number;

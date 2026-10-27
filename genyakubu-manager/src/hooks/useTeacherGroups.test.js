@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   GENYAKU_FULLTIME_GROUP_KEY,
   GENYAKU_PARTTIME_GROUP_KEY,
+  SENIOR_KOSHU_GROUP_KEY,
   buildTeacherGroups,
 } from "./useTeacherGroups";
 
@@ -85,5 +86,21 @@ describe("buildTeacherGroups", () => {
       ["数学", ["片岡", "半田"]],
     ]);
     expect(groups.every((g) => g.section === undefined)).toBe(true);
+  });
+
+  it("高校・予備校の講習だけの講師 (extraTeachers) は時間割・バイトにいなければ専用のグループに並べる", () => {
+    const groups = buildTeacherGroups({
+      ...base,
+      teacherKana: { ...teacherKana, 伊藤: "いとう", 藤本: "ふじもと" },
+      // 堀上 (時間割にいる)・香川 (バイト) はいつものグループのまま
+      extraTeachers: ["藤本", "伊藤", "堀上", "香川"],
+    });
+    expect(groups.map((g) => [g.label, g.teachers])).toEqual([
+      ["バイト", ["香川"]],
+      ["英語", ["西岡", "堀上"]],
+      ["数学", ["片岡", "半田"]],
+      ["高校・予備校の講習", ["伊藤", "藤本"]],
+    ]);
+    expect(groups.at(-1).key).toBe(SENIOR_KOSHU_GROUP_KEY);
   });
 });

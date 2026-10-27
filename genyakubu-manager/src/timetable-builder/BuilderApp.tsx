@@ -759,6 +759,7 @@ export default function BuilderApp({
   partTimeStaffNames = EMPTY_HOST_NAMES,
   retiredTeacherNames = EMPTY_HOST_NAMES,
   specialEvents = EMPTY_HOST_LIST,
+  seniorKoshuItems = EMPTY_HOST_LIST,
 }: Partial<HostData> & {
   season?: KoshuSeason;
   onSeasonChange?: (season: KoshuSeason) => void;
@@ -768,8 +769,8 @@ export default function BuilderApp({
   const season = seasonProp ?? ownSeason;
   const changeSeason = onSeasonChange ?? setOwnSeason;
   const hostData = useMemo(
-    () => ({ offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents }),
-    [offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents],
+    () => ({ offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents, seniorKoshuItems }),
+    [offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents, seniorKoshuItems],
   );
   // 季節ごとに作り直すのは作業領域だけ (key)。UIProvider も中に入れて作り直すので、
   // 開いたままの確認ダイアログが、季節を切り替えた後に前の季節の操作 (リセット・

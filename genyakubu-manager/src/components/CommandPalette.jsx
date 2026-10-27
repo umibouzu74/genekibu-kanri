@@ -332,6 +332,7 @@ export function CommandPalette({
       // 画面名からは辿れない中身 (確認テストの科目・バス時刻) でも引けるように
       { key: views.FUZOKU_PLAN, label: "附属の授業予定 (確認テスト・バス時刻)" },
       { key: views.OFFSITE, label: "他校舎の授業 (講師の出講予定)" },
+      { key: views.SENIOR_KOSHU, label: "高校・予備校の講習 (担当・講座名・期)" },
       { key: views.REGULAR_BUILDER, label: "通常時間割作成 (次の期の時間割を組む)" },
     ];
     if (canUseAdminData) {

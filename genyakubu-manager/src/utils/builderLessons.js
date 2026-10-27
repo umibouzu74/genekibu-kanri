@@ -235,7 +235,12 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
     ? project.externalSessions
     : []
   ).filter(
-    (s) => sessionDates.has(s?.date) && isPublished(publishStateForSessionDate(project, s.date))
+    (s) =>
+      sessionDates.has(s?.date) &&
+      isPublished(publishStateForSessionDate(project, s.date)) &&
+      // 本体の「高校・予備校の講習」から取り込んだもの (自動NG のため) は出さない。
+      // 本体の登録の方が「講」カードで出る (utils/seniorKoshu)
+      s?.source !== "seniorKoshu"
   );
   const { assignments } = computePresetMemoBackfill(
     sessions,

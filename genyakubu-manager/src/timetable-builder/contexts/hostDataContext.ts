@@ -18,9 +18,21 @@ export interface HostData {
   retiredTeacherNames: string[];
   /** 本体の特別イベント (種別「講習」とタブの使う日の食い違いを知らせる) */
   specialEvents?: unknown[];
+  /**
+   * 本体の高校・予備校の講習を日付ごとに広げたもの (utils/seniorKoshu.expandSeniorKoshu)。
+   * 講師不在・NG の「🎓 本体の高校・予備校の講習を取り込む」に使う
+   */
+  seniorKoshuItems?: unknown[];
 }
 
-const EMPTY: HostData = { offsiteLessons: [], holidays: [], partTimeStaffNames: [], retiredTeacherNames: [], specialEvents: [] };
+const EMPTY: HostData = {
+  offsiteLessons: [],
+  holidays: [],
+  partTimeStaffNames: [],
+  retiredTeacherNames: [],
+  specialEvents: [],
+  seniorKoshuItems: [],
+};
 
 export const HostDataContext = createContext<HostData>(EMPTY);
 

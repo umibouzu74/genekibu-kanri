@@ -43,6 +43,8 @@ export function computePresetRenameSyncIds(
   return (sessions || [])
     .filter(s =>
       s.memo === oldLabel
+      // 本体の高校・予備校の講習から取り込んだものは本体が正 (取り込み直しで決まる)
+      && s.source !== 'seniorKoshu'
       && normTime(s.startTime) === start
       && normTime(s.endTime) === end,
     )

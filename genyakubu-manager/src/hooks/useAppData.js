@@ -27,6 +27,7 @@ import { isConfigured } from "../firebase/config";
 import { migrateHandoverNotes } from "../utils/handoverNotes";
 import { migrateOffsiteLessons } from "../utils/offsiteLessons";
 import { migrateYobikoEvents } from "../utils/yobikoEvents";
+import { EMPTY_SENIOR_KOSHU, migrateSeniorKoshu } from "../utils/seniorKoshu";
 import { migrateTeacherAffiliations } from "../utils/teacherAffiliations";
 import { EMPTY_STAFF_LEAVE, migrateStaffLeave } from "../utils/staffLeave";
 import { migrateCourseMapping } from "../utils/yoteihyo/courseMapping";
@@ -214,6 +215,13 @@ export function useAppData({ toasts, isAdmin }) {
     EMPTY_LIST,
     { migrate: migrateOffsiteLessons, onError: onStorageError }
   );
+  // 高校部・予備校の講習 (期・時限・担当)。講師の月間に出すので閲覧者も読める appData/。
+  // RTDB が消す空の配列を migrate で補う
+  const [seniorKoshu, saveSeniorKoshu] = useSyncedStorage(
+    LS.seniorKoshu,
+    EMPTY_SENIOR_KOSHU,
+    { migrate: migrateSeniorKoshu, onError: onStorageError }
+  );
   // 予備校部の予定 (年間カレンダーの上半分)。閲覧者も読める appData/
   const [yobikoEvents, saveYobikoEvents] = useSyncedStorage(
     LS.yobikoEvents,
@@ -327,6 +335,8 @@ export function useAppData({ toasts, isAdmin }) {
     saveFuzokuPlan,
     offsiteLessons,
     saveOffsiteLessons,
+    seniorKoshu,
+    saveSeniorKoshu,
     yobikoEvents,
     saveYobikoEvents,
     handoverNotes,

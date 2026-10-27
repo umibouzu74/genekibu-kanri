@@ -538,6 +538,22 @@ export function migrateProject(project: any): Project {
     };
   }
 
+  // 取り込んだ元の印 (source / sourceKey、任意): 知らない値・片方だけは両方落とす
+  // (手で入れたセッションとして扱う)
+  const sourceNeedsFix = (s: any) =>
+    ('source' in s || 'sourceKey' in s) &&
+    !(s.source === 'seniorKoshu' && typeof s.sourceKey === 'string' && s.sourceKey !== '');
+  if (result.externalSessions.some(sourceNeedsFix)) {
+    result = {
+      ...result,
+      externalSessions: result.externalSessions.map((s: any) => {
+        if (!sourceNeedsFix(s)) return s;
+        const { source: _source, sourceKey: _sourceKey, ...rest } = s;
+        return rest;
+      }),
+    };
+  }
+
   // externalSessionPresets が未設定 / 型崩れの場合は空配列で初期化 (他学年
   // セッション登録テンプレートの保存先、後発フィールド)
   if (!Array.isArray(result.externalSessionPresets)) {

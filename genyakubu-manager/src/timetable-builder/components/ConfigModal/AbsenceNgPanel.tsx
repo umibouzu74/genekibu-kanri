@@ -15,6 +15,7 @@ import { useJumpToCell } from '../../hooks/useJumpToCell';
 import type { NgViolationItem } from '../../utils/ngViolations';
 import SessionCsvImport from './SessionCsvImport';
 import OffsiteImport from './OffsiteImport';
+import SeniorKoshuImport from './SeniorKoshuImport';
 import DraftNumberInput from './DraftNumberInput';
 import DraftLineInput from './DraftLineInput';
 import { computeCourseSplit, externalSessionContentKey, isExternalOnlyDate, sessionDisplayLabel } from '../../utils/externalSessionShape';
@@ -670,7 +671,8 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
         </section>
       )}
 
-      {/* 本体の「他校舎の授業」から講師不在を取り込む (予定があるときだけ出る) */}
+      {/* 本体の「高校・予備校の講習」「他校舎の授業」から講師不在を取り込む (予定があるときだけ出る) */}
+      <SeniorKoshuImport />
       <OffsiteImport />
 
       {/* 表での一括登録: 他学年セッション (時刻つき) と NG 日時 (時限指定, E2a) */}
@@ -1244,18 +1246,31 @@ function DateSection({
                         : (s.label || '-');
                       return (
                         <tr key={s.id}>
-                          <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink font-bold">{s.teacherName}</td>
+                          <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink font-bold">
+                            {s.teacherName}
+                            {/* 本体の高校・予備校の講習から取り込んだもの。直すのは本体の画面 */}
+                            {s.source === 'seniorKoshu' && (
+                              <span
+                                className="ml-1 px-1 rounded bg-builder-info-soft text-[10px] font-normal text-builder-ink"
+                                title="本体の「🎓 高校・予備校の講習」から取り込んだものです。講座名・時刻は本体で直してから取り込み直してください"
+                              >🎓本体</span>
+                            )}
+                          </td>
                           <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{timeText}</td>
                           <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{s.memo || '-'}</td>
                           <td className="border border-builder-ink-ghost p-0.5 bg-builder-surface text-builder-ink">
-                            {/* 講座名はその場で直せる (欄を離れる / Enter で確定、Esc で取り消し) */}
-                            <DraftLineInput
-                              value={s.course || ''}
-                              ariaLabel={`${s.date} ${s.teacherName} の講座名`}
-                              placeholder="-"
-                              className="w-full min-w-[8rem] px-1 py-0.5 bg-transparent text-builder-ink focus:bg-builder-info-soft focus:outline-none"
-                              onCommit={(v) => updateExternalSession(s.id, { course: v })}
-                            />
+                            {s.source === 'seniorKoshu' ? (
+                              <span className="px-1">{s.course || '-'}</span>
+                            ) : (
+                              /* 講座名はその場で直せる (欄を離れる / Enter で確定、Esc で取り消し) */
+                              <DraftLineInput
+                                value={s.course || ''}
+                                ariaLabel={`${s.date} ${s.teacherName} の講座名`}
+                                placeholder="-"
+                                className="w-full min-w-[8rem] px-1 py-0.5 bg-transparent text-builder-ink focus:bg-builder-info-soft focus:outline-none"
+                                onCommit={(v) => updateExternalSession(s.id, { course: v })}
+                              />
+                            )}
                           </td>
                           <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-center">
                             <button

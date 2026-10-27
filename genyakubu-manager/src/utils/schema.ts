@@ -35,6 +35,7 @@ import type {
   OffsiteLesson,
   PartTimeStaffObject,
   ScheduleAdjustment,
+  SeniorKoshuData,
   SessionOverride,
   Slot,
   SpecialEvent,
@@ -52,7 +53,7 @@ import type {
 import { SPECIAL_EVENT_TYPE_BY_KEY } from "../constants/specialEvents";
 import { upgradeSpecialEventTypes } from "./specialEventTypes";
 
-export const CURRENT_SCHEMA_VERSION = 27;
+export const CURRENT_SCHEMA_VERSION = 28;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -378,6 +379,18 @@ export function isOffsiteLesson(x: unknown): x is OffsiteLesson {
   }
   if (x.keepOnHolidays !== undefined && typeof x.keepOnHolidays !== "boolean") return false;
   if (x.memo !== undefined && !isString(x.memo)) return false;
+  return true;
+}
+
+// 高校部・予備校の講習 (utils/seniorKoshu)。形だけを見る: 期・時限・担当の配列
+// (RTDB が消した空の配列は欠けてよい)。中身の崩れ (無い期を指す担当など) は読み込みの
+// migrateSeniorKoshu が落とすので、1 件のためにバックアップ全体を拒まない
+export function isSeniorKoshuData(x: unknown): x is SeniorKoshuData {
+  if (!isObject(x)) return false;
+  for (const k of ["terms", "periods", "lessons"] as const) {
+    if (x[k] !== undefined && !Array.isArray(x[k])) return false;
+    if (Array.isArray(x[k]) && !(x[k] as unknown[]).every((v) => isObject(v) && isNumber(v.id))) return false;
+  }
   return true;
 }
 
@@ -739,6 +752,11 @@ export function validateExportBundle(
         error: `offsiteLessons[${bad}] の形式が不正です`,
         path: `offsiteLessons[${bad}]`,
       };
+  }
+
+  if (raw.seniorKoshu != null) {
+    if (!isSeniorKoshuData(raw.seniorKoshu))
+      return { ok: false, error: "seniorKoshu の形式が不正です" };
   }
 
   if (raw.yobikoEvents != null) {
@@ -1196,6 +1214,9 @@ export function migrateExportBundle(raw: unknown): unknown {
 
   // v26 → v27: cardForgets (バイトのカード忘れ: 出退勤のカードを通し忘れた日) を
   //             追加。既定値で埋めない (無ければ現状維持)。
+
+  // v27 → v28: seniorKoshu (高校部・予備校の講習: 期・時限・担当) を追加。既定値で
+  //             埋めない (無ければ現状維持)。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;
