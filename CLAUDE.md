@@ -547,7 +547,8 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   - 控えの日付・時限・クラスは**添字** (`cells` の d / p / c)。日付は新しい季節で作り
     直すのでラベルで合わせない。**日付は「N 日目 → N 日目」**、時限は同じラベル → 短い
     名前 (「1限」) → N 番目、クラスは同じラベル → 前方一致 (教室番号の付け外し)。
-    どれも人が付け替えられる
+    どれも人が付け替えられる。日数が違うときは写す元の日を外して詰める (下の
+    「前の講習の時間割を写すときの日の対応」)
   - **入れない講師は講師を空にして科目だけ写す**。既定で外すのはバイト・退職・講師マスタに
     いない人。既定は空いているセルだけに写し、ロックしたセルには写さない
   - 書き込みは `schedule/importCells` の 1 アクション (Undo 1 回で戻る)
@@ -576,6 +577,103 @@ popup 方式は popup ブロック対応が必要だが、`handlePrint` 内で
   クラス別回数)・配布用の教室の行 (無ければ空欄)・本体の講師の月間の「講」のカード
   (`KoshuLesson.room`、合同は「401/403」、カードに「@401」)
 - 読込で文字列でない・空白だけの教室は落とす (`migrateProject`)
+
+## 講習の公開状態・枠・外部授業 (2026-10-27、実際に操作して出た問題の改善)
+
+Claude in Chrome で講習時間割作成を操作して出た問題と、作成中の時間割が月間に出る
+問題への対応。
+
+### 本体の月間への反映 (作成中 / 仮確定 / 確定)
+
+- **`Project.publishState` / `Frame.publishState`** (`'draft' | 'tentative' | 'final'`、
+  決まりは無依存の `utils/publishState`)。ヘッダの `PublishControl` で切り替える
+- **未設定は確定**として扱う (この項目ができる前の project を本体の月間・授業時間の集計から
+  黙って消さない)。**新しく作る季節 (始め方・作り直し・初期値・リセット・JSON の始め方) は
+  作成中から**。読み込んだ JSON に状態が無ければ今の状態を保つ。テンプレートには載せない
+- 本体側の絞り込みは **`builderLessons.buildKoshuLessons` の 1 か所** (作成中のタブは
+  KoshuLesson にしない、仮確定は `tentative: true` で月間のカードに「仮」・点線の枠・
+  紙面の凡例)。他学年セッションは `frames.publishStateForSessionDate` (その日を使う枠の
+  うち最も公開されたもの) で決める。授業時間の集計も同じ KoshuLesson を見るので、作成中は
+  集計からも外れる。**画面ごとに状態を見に行かない**
+- 今日より前の授業の日がある時間割を作成中に戻すときは確認を出す (済んだ日の分も
+  集計から消えるため)
+
+### 季節の中の枠 (`Frame`)
+
+- 冬期講習・直前ポイント演習・弱点補強演習のように 1 つの季節の中の別の講習。
+  `Project.frames` + `TabConfig.frameId`。決まりは `utils/frames`、形の確認は無依存の
+  `utils/frameShape` (migrateProject から使う)
+- **枠の時限は季節の時限プールの部分集合** (NG のキーがラベルなので、ラベルは季節で
+  一意のまま)。枠に入ったタブは `activePeriodIds` を明示で持ち、枠の時限の中から選ぶ。
+  日付プール・講師・NG・他学年セッションは季節で共通 (枠をまたいだ重なりを見逃さない)
+- 公開状態は枠ごと。枠の状態が未設定なら project の状態。新しい枠は入るタブの中で
+  最も公開されていない状態を引き継ぐ (作成中のタブを枠に入れた瞬間に月間へ出さない)
+- 本体の月間の「講」と講師別 Excel には **枠の名前** (`displayNameForTabs`、`KoshuLesson.frameName`)。
+  講師別 Excel は枠ごとにも出せる (`downloadTeacherExcel(project, {frameId})`)
+- 枠を使わない project は従来どおり (`frames` を持たない)
+
+### 外部授業だけの日・講座名
+
+- **外部授業だけの日** = `DateEntity.externalOnly`。どのタブの時間割にも出さない
+  (`activeDatesForTab` が外す) が、他学年セッションの登録・本体の月間・講師別 Excel の対象。
+  **他学年セッションを出す日は `courseDates.sessionDateLabels`** (使う日 + 外部授業だけの日)、
+  **授業の日は `usedDateLabels`** のまま (出勤可能調査・行事予定の確認・期間の表示)。
+  タブが使い始めたら印は外れる。「未使用の日を一括削除」では消さない
+- 他学年セッションの **`course` (講座名)** はメモ (= プリセットの名前) と別に持つ。表示は
+  `externalSessionShape.sessionDisplayLabel` (メモ + 講座名)、同じ内容の判定は
+  `externalSessionContentKey` の 1 か所 (講座名も含む)。プリセットの改名の同期はメモだけを見る。
+  メモに両方を入れていた古いセッションは `computeCourseSplit` で分ける (人が押したときだけ)
+
+### 行事予定 (講習) とタブの結び付け
+
+- `TabConfig.courseEventNames` (比べる行事予定の名前) と `Project.ignoredCourseEvents`
+  (この講習の対象外)。名前の比べ方は無依存の **`utils/eventName.normalizeEventName`**
+  (reducer から使うので、本体のモジュールを import する courseEventCheck に置かない)
+- 結び付けたタブはその行事予定とだけ比べる。結び付けの無いタブは、学年の合う結び付けの
+  無い行事予定と比べる。対象外の行事予定はどのタブとも比べない
+- 名前の近いタブは提案するだけ (「名前から結び付ける」を押したときだけ結び付ける)
+
+### 前の講習の時間割を写すときの日の対応
+
+- 写す元の日を外せる (`timetableCopy` の `skippedDates`。外した日を飛ばして N 日目を詰める、
+  `sequentialDateMapping`)。曜日の食い違いは印だけ (`weekdayMismatches`)
+- 写した後に**クラスごとの科目のコマ数の過不足** (`subjectCountDiffsAfterCopy`) を結果の
+  画面に出す
+
+### 高校部・予備校の講習 (本体の `seniorKoshu`)
+
+高校部 (高1・高2 / 高3) と予備校の講習の担当を**本体に 1 か所で**登録する (サイドバー
+「🎓 高校・予備校の講習」(時間割)、`components/views/SeniorKoshuView.jsx` +
+`utils/seniorKoshu.js`)。以前は講習時間割作成の他学年セッションに、中学の講師一覧に
+いる先生の分だけ手で入れていたので、高校・予備校だけの先生の講習はどこにも出ず、
+同じ内容を二度打っていた。
+
+- 形は **期 (名前 + YYYY-MM-DD の並び) × 時限 (名前 + 時刻) × 担当 (講師 1 人・学年・
+  講座名・担当しない日 `skipDates`・メモ)** (`LS.seniorKoshu`、appData、schema v28)。
+  期・時限を別に持つのは、パンフレットの担当表の形で、日程・時刻を直したときに担当を
+  全部直さずに済むように。**Slot にしない** (塾の通常授業ではないので第N回・表示期間・
+  休講日には関与しない)
+- 入れ方は「📋 表でまとめて登録」(TSV / CSV、列は `SENIOR_KOSHU_COLUMNS`。期・時限は名前で
+  合わせ、無ければ「日付」「時刻」の列から作る。講師は「・」で 1 人 1 件) と、期・時限・
+  担当の個別の欄。書き込みは管理者だけ。担当の削除は removeWithUndo、**期・時限の削除は
+  担当ごと消える (cascade) ので確認ダイアログ**
+- 本体の月間: `expandSeniorKoshu` (日付ごとに広げる) を MonthView の `seniorKoshuLessons` に
+  渡し、「講」+ 学年 + 講座名のカード (`pushCards`)。押すとこの画面。サイドバーの講師一覧は
+  `useTeacherGroups` の `extraTeachers` (先月以降の担当) で、時間割にもバイト一覧にも
+  いない先生を「高校・予備校の講習」のグループに並べる
+- **講習時間割作成への取り込み**は講師不在・NG の「🎓 本体の「高校・予備校の講習」を
+  取り込む」(`ConfigModal/SeniorKoshuImport`、計画は `utils/seniorKoshuImport.planSeniorKoshuImport`、
+  本体のデータは hostData の `seniorKoshuItems`)。押したときだけ。取り込んだ他学年セッションには
+  **`source: 'seniorKoshu'` + `sourceKey`** (本体の予定のキー) を付け、前に取り込んだもので
+  本体から無くなった・変わったものは消して入れ直す。手で入れた同じ講師・日・時刻のものは
+  既定で置き換える。書き込みは `teacher/replaceExternalSessions` の 1 アクション (Undo 1 回)。
+  対象はこの講習の日 (`sessionDateLabels`) で、講習の前後 14 日のプールに無い日は「外部授業
+  だけの日として足す」を出す
+- **二重に出さない**: 取り込んだセッションは `buildKoshuLessons` が月間に出さない。手で入れた
+  他学年セッションも、本体の登録と同じ講師・日・時刻なら月間に出さない
+  (App の `dropLessonsCoveredBySeniorKoshu`)。取り込んだものはプリセットの改名の同期の
+  対象外・一覧で講座名を直せない (本体が正)
+- 授業時間の集計にはまだ数えていない (要件が出たら `teachingMinutes` に種別を足す)
 
 ## 講習時間割作成の罫線・ボタンの土台 (2026-10-09)
 
