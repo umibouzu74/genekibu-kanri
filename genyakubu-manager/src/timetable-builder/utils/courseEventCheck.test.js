@@ -163,6 +163,58 @@ describe('行事予定とタブの結び付け (2026-10-27)', () => {
   });
 });
 
+describe('結び付けの点検 (校正, 2026-10-28)', () => {
+  it('見つからない名前への結び付けは無かったことにして比べ、外せるように一覧に出す', () => {
+    const p = winter();
+    p.tabs[0] = { ...p.tabs[0], config: { ...p.tabs[0].config, courseEventNames: ['冬期講習 後半'] } };
+    const specialEvents = [ev(1, '冬期講習（前半）', '2026-12-25', '2026-12-28'), ev(2, '冬期講習（後半）', '2027-01-04', '2027-01-06')];
+    const { findings, staleLinks, rows } = checkCourseEvents({ project: p, specialEvents });
+    expect(findings).toContainEqual({ kind: 'outside', tabNames: ['中３'], dates: ['1/7(木)'], eventName: '冬期講習（後半）', eventRange: '1/4〜1/6' });
+    expect(staleLinks).toEqual([{ tabId: 1, tabName: '中３', name: '冬期講習 後半' }]);
+    expect(rows.every(r => r.linkedTabIds.length === 0)).toBe(true);
+  });
+
+  it('1 つの行事予定に火木・水金のタブ: 曜日はタブごとに決めて合わせる (月・土を比べない)', () => {
+    const P3 = (id, label) => ({ id, label });
+    const project = {
+      name: '2026 冬期講習',
+      updatedAt: '2026-11-20T00:00:00.000Z',
+      dates: [P3(1, '1/12(火)'), P3(2, '1/14(木)'), P3(3, '1/19(火)'), P3(4, '1/21(木)'), P3(5, '1/13(水)'), P3(6, '1/15(金)'), P3(7, '1/20(水)'), P3(8, '1/22(金)')],
+      periods: [P3(1, '夜1')],
+      tabs: [
+        { id: 1, name: '中３直前 火木', config: { classes: [], subjectCounts: {}, activeDateIds: [1, 2, 3, 4] }, schedule: {} },
+        { id: 2, name: '中３直前 水金', config: { classes: [], subjectCounts: {}, activeDateIds: [5, 6, 7] }, schedule: {} },
+      ],
+    };
+    const { findings } = checkCourseEvents({ project, specialEvents: [ev(1, '中3 直前ポイント', '2027-01-12', '2027-01-22', { targetGrades: ['中3'] })] });
+    expect(findings).toEqual([
+      { kind: 'unused', tabNames: ['中３直前 火木', '中３直前 水金'], dates: ['1/22(金)'], eventName: '中3 直前ポイント', eventRange: '1/12〜1/22' },
+    ]);
+  });
+
+  it('毎日の講習で曜日が 3 つ以下でも、使う日が多ければ全曜日を比べる (入れ忘れを見逃さない)', () => {
+    const P3 = (id, label) => ({ id, label });
+    const project = {
+      name: '2026 冬期講習',
+      updatedAt: '2026-11-20T00:00:00.000Z',
+      dates: [P3(1, '12/21(月)'), P3(2, '12/22(火)'), P3(3, '12/23(水)'), P3(4, '12/28(月)')],
+      periods: [P3(1, '1限')],
+      tabs: [{ id: 1, name: '中３', config: { classes: [], subjectCounts: {} }, schedule: {} }],
+    };
+    const { findings } = checkCourseEvents({ project, specialEvents: [ev(1, '冬期講習', '2026-12-21', '2026-12-28', { targetGrades: ['中3'] })] });
+    expect(findings).toEqual([
+      { kind: 'unused', tabNames: ['中３'], dates: ['12/24(木)', '12/25(金)', '12/26(土)'], eventName: '冬期講習', eventRange: '12/21〜12/28' },
+    ]);
+  });
+
+  it('日・時限の無いタブの結び付けも結び付けとして出す (外せるように)', () => {
+    const p = winter();
+    p.tabs.push({ id: 3, name: '中３直前', config: { classes: [], subjectCounts: {}, activePeriodIds: [], courseEventNames: ['冬期講習（後半）'] }, schedule: {} });
+    const { rows } = checkCourseEvents({ project: p, specialEvents: [ev(2, '冬期講習（後半）', '2027-01-04', '2027-01-06')] });
+    expect(rows[0].linkedTabIds).toEqual([3]);
+  });
+});
+
 describe('結び付けの保存 (reducer・読込)', () => {
   const tabs = [
     { id: 1, name: '中３', config: { classes: [], subjectCounts: {} }, schedule: {} },
@@ -179,6 +231,14 @@ describe('結び付けの保存 (reducer・読込)', () => {
     expect('courseEventNames' in p.tabs[1].config).toBe(false);
     p = reduce(p, { type: 'courseEvents/linkMany', payload: { links: [{ tabId: 1, name: '冬期講習' }, { tabId: 2, name: '直前ポイント 火木' }] } });
     expect(p.tabs.map(t => t.config.courseEventNames)).toEqual([['冬期講習'], ['直前ポイント 火木']]);
+  });
+
+  it('タブを足しても開いているタブの結び付けは写さない', () => {
+    let p = reduce({ ...base, activeTabId: 2 }, { type: 'courseEvents/setLink', payload: { tabId: 2, name: '直前ポイント 火木', linked: true } });
+    p = reduce(p, { type: 'tab/add', payload: { name: '中３弱点補強' } });
+    const added = p.tabs.find(t => t.name === '中３弱点補強');
+    expect('courseEventNames' in added.config).toBe(false);
+    expect(p.tabs[1].config.courseEventNames).toEqual(['直前ポイント 火木']);
   });
 
   it('対象外にすると結び付けも外し、結び付けると対象外から外す', () => {

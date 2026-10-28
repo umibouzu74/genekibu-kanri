@@ -75,11 +75,7 @@ describe('TimetableCopyDialog', () => {
       { tabId: 1, key: makeKey(2, 1, 2), subject: '理科', teacher: '' },
       { tabId: 1, key: makeKey(2, 2, 2), subject: '英語', teacher: '' },
     ]);
-    // コマ数の設定 (ここでは 0) と合わないクラスを出してから閉じる
-    expect(dialog).toHaveTextContent('コマ数の設定と合わないクラス');
-    expect(dialog).toHaveTextContent('中３ 3S: 英語 1/0 (+1)・数学 1/0 (+1)');
-    expect(onClose).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
+    // コマ数が設定されていない (0) ので合わないクラスは無く、そのまま閉じる
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -109,14 +105,15 @@ describe('TimetableCopyDialog', () => {
       },
     });
     const dialog = screen.getByRole('dialog', { name: '📋 前の講習の時間割を写す' });
-    expect(dialog).toHaveTextContent('去年 3 日 (外す 0 日) → 今年 2 日');
-    // 既定 (N 日目 → N 日目) だと 3 日目は写さず、数学が 1 つ足りない・理科が 1 つ多い
-    expect(dialog).toHaveTextContent('中３直前 火木 3SS: 数学 1/2 (−1)・理科 1/0 (+1)');
+    expect(dialog).toHaveTextContent('去年 3 日 → 今年 2 日');
+    // 既定 (N 日目 → N 日目) だと 3 日目は写さず、数学が 1 つ足りない (理科はコマ数 0 = 未設定なので比べない)
+    expect(dialog).toHaveTextContent('中３直前 火木 3SS: 数学 1/2 (−1)');
+    expect(dialog).not.toHaveTextContent('理科 1/0');
     // 2 日目 (1/15 木) を外すと 3 日目 (1/20 火) → 1/14 (木) で曜日が違う
     fireEvent.click(within(dialog).getByRole('button', { name: /^2日目 1\/15\(木\)/ }));
     expect(within(dialog).getByRole('button', { name: /^3日目 1\/20\(火\) → 1\/14\(木\) \(曜日が違う\)/ })).toBeInTheDocument();
     expect(dialog).toHaveTextContent('曜日が違う対応があります');
-    expect(dialog).toHaveTextContent('どのクラスもコマ数の設定どおりです');
+    expect(dialog).toHaveTextContent('コマ数を設定した科目は、どのクラスも設定どおりです');
     // 最後の 1 日を外すボタン
     fireEvent.click(within(dialog).getByRole('button', { name: '最後の 1 日を外す' }));
     expect(dialog).toHaveTextContent('去年 3 日 (外す 1 日) → 今年 2 日');
@@ -125,7 +122,7 @@ describe('TimetableCopyDialog', () => {
       { tabId: 1, key: makeKey(1, 1, 1), subject: '数学', teacher: '堀上' },
       { tabId: 1, key: makeKey(2, 1, 1), subject: '理科', teacher: '堀上' },
     ]);
-    expect(dialog).toHaveTextContent('中３直前 火木 3SS: 数学 1/2 (−1)・理科 1/0 (+1)');
+    expect(dialog).toHaveTextContent('中３直前 火木 3SS: 数学 1/2 (−1)');
     fireEvent.click(within(dialog).getByRole('button', { name: '閉じる' }));
     expect(onClose).toHaveBeenCalled();
   });
@@ -142,6 +139,17 @@ describe('TimetableCopyDialog', () => {
       { tabId: 1, key: makeKey(1, 1, 1), subject: '英語', teacher: '堀上' },
       { tabId: 1, key: makeKey(1, 2, 1), subject: '数学', teacher: '福江' },
     ]);
+  });
+
+  it('対応の表で日を選び直すと外す日とそろう (写さない = 外した日、写す先を選ぶ = 外さない)', () => {
+    renderDialog();
+    const dialog = screen.getByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: '▼ 日付・時限・クラスの対応' }));
+    const select = within(dialog).getByLabelText('日付 (N 日目): 2日目 12/26(金) を写す先');
+    fireEvent.change(select, { target: { value: '' } });
+    expect(within(dialog).getByRole('button', { name: /^2日目 12\/26\(金\) \(外す\)/ })).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: '2' } });
+    expect(within(dialog).getByRole('button', { name: /^2日目 12\/26\(金\) → 12\/26\(土\)/ })).toBeInTheDocument();
   });
 
   it('控えが無ければ JSON から選ぶよう案内し、写すボタンは押せない', () => {

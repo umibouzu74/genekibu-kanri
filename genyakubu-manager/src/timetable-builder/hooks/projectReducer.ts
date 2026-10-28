@@ -391,6 +391,9 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const newId = Math.max(...project.tabs.map(t => t.id)) + 1;
       const configToCopy = JSON.parse(JSON.stringify(activeTab.config));
+      // 行事予定との結び付けはタブの中身 (どの講習か) の話なので写さない。写すと新しい
+      // タブが前のタブの行事予定とだけ比べられ、名前からの提案も出ない
+      delete configToCopy.courseEventNames;
       const newTab = { id: newId, name, config: configToCopy, schedule: {} };
       return { ...project, tabs: [...project.tabs, newTab], activeTabId: newId };
     }

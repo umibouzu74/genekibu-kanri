@@ -96,28 +96,40 @@ export default function TimetableCopyDialog({ onClose }: { onClose: () => void }
   // 写した後の結果 (写したあとのコマ数の差を出してから閉じる)
   const [applied, setApplied] = useState<{ count: number; blanked: number; diffs: SubjectCountDiff[] } | null>(null);
 
-  // 去年の日を外す / 戻す。外した日を飛ばして残りを先頭から順に詰め直す
-  const setSkipped = (targetTabId: number, skipped: number[]) =>
-    setMappings(prev => prev.map(m => {
-      if (m.targetTabId !== targetTabId || m.sourceTabIndex == null) return m;
-      const src = source?.timetable.tabs[m.sourceTabIndex];
-      const tab = project.tabs.find(t => t.id === targetTabId);
-      if (!src || !tab) return m;
-      const targets = effectiveConfigForTab(project, tab).dates;
-      return { ...m, skippedDates: skipped, dates: sequentialDateMapping(src.dates.length, targets, skipped) };
-    }));
+  // 去年の日を外す / 戻す。外した日を飛ばして残りを先頭から順に詰め直す。下の対応の表で
+  // 日を手で付け替えていたら、詰め直すと元に戻るので知らせる
+  const setSkipped = (targetTabId: number, skipped: number[]) => {
+    const m = mappings.find(x => x.targetTabId === targetTabId);
+    const src = m?.sourceTabIndex != null ? source?.timetable.tabs[m.sourceTabIndex] : null;
+    const tab = project.tabs.find(t => t.id === targetTabId);
+    if (!m || !src || !tab) return;
+    const targets = effectiveConfigForTab(project, tab).dates;
+    const packed = sequentialDateMapping(src.dates.length, targets, m.skippedDates || []);
+    const handEdited = m.dates.some((v, i) => (v ?? null) !== (packed[i] ?? null));
+    setMappings(prev => prev.map(x => (
+      x.targetTabId === targetTabId
+        ? { ...x, skippedDates: skipped, dates: sequentialDateMapping(src.dates.length, targets, skipped) }
+        : x
+    )));
+    if (handEdited) showToast('日の対応を詰め直しました (手で付け替えた日の対応は元に戻りました)', 'warning', 3500);
+  };
   const toggleSkip = (m: TabCopyMapping, i: number) => {
     const current = new Set(m.skippedDates || []);
     if (current.has(i)) current.delete(i); else current.add(i);
     setSkipped(m.targetTabId, [...current].sort((a, b) => a - b));
   };
 
+  // 対応を 1 つ付け替える。日は「外す日」と揃える (写す先を選んだ日は外さない・
+  // 「写さない」にした日は外した日として出す。詰め直しはしない)
   const setMappingAt = (targetTabId: number, key: 'dates' | 'periods' | 'classes', idx: number, value: number | null) =>
     setMappings(prev => prev.map(m => {
       if (m.targetTabId !== targetTabId) return m;
       const arr = [...m[key]];
       arr[idx] = value;
-      return { ...m, [key]: arr };
+      if (key !== 'dates') return { ...m, [key]: arr };
+      const skipped = new Set(m.skippedDates || []);
+      if (value == null) skipped.add(idx); else skipped.delete(idx);
+      return { ...m, dates: arr, skippedDates: [...skipped].sort((a, b) => a - b) };
     }));
 
   const apply = () => {
@@ -159,7 +171,7 @@ export default function TimetableCopyDialog({ onClose }: { onClose: () => void }
               <h3 id="builder-timetable-copy-result" className="text-sm font-bold">コマ数の設定と合わないクラス</h3>
               <CountDiffList diffs={applied.diffs} />
               <p className="text-xs text-builder-ink-muted">
-                日数の違い (去年より講習の日が少ない) で科目のコマが足りない・多いクラスです。時間割で直すか、⚙ 設定のコマ数を見直してください。
+                日数の違いなどで、科目のコマが足りない・多いクラスです (コマ数を設定していない科目は比べません)。時間割で直すか、⚙ 設定のコマ数を見直してください。
               </p>
             </section>
             <div className="flex justify-end">
@@ -399,7 +411,7 @@ export default function TimetableCopyDialog({ onClose }: { onClose: () => void }
 // 写したあとの科目ごとのコマ数とコマ数の設定の差 (「3SS 数学 8/9 (−1)」)
 function CountDiffList({ diffs }: { diffs: SubjectCountDiff[] }) {
   if (diffs.length === 0) {
-    return <p className="text-xs text-builder-green">どのクラスもコマ数の設定どおりです。</p>;
+    return <p className="text-xs text-builder-green">コマ数を設定した科目は、どのクラスも設定どおりです。</p>;
   }
   return (
     <ul className="text-xs space-y-0.5 max-h-48 overflow-y-auto">
@@ -483,7 +495,7 @@ function DaySkipRow({
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-bold">日の対応</span>
         <span className={used > targetDates.length ? 'text-builder-orange' : 'text-builder-ink-muted'}>
-          去年 {sourceDates.length} 日 (外す {skipped.size} 日) → 今年 {targetDates.length} 日
+          去年 {sourceDates.length} 日{skipped.size > 0 ? ` (外す ${skipped.size} 日)` : ''} → 今年 {targetDates.length} 日
           {used > targetDates.length && ` — 今年の日が ${used - targetDates.length} 日足りないので、最後の ${used - targetDates.length} 日は写しません。外す日を選んでください`}
         </span>
         {extra > 0 && (

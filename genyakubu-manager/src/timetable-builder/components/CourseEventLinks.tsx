@@ -16,33 +16,60 @@ export default function CourseEventLinks() {
   const { project, setCourseEventLink, linkCourseEvents, setCourseEventIgnored } = useProjectContext();
   const { specialEvents, holidays } = useHostData();
   const { showToast } = useUI();
-  const { rows } = useMemo(
+  const { rows, staleLinks } = useMemo(
     () => checkCourseEvents({ project, specialEvents: (specialEvents || []) as CourseEventLike[], holidays, todayYmd: todayYmd() }),
     [project, specialEvents, holidays],
   );
+  // 見つからない行事予定への結び付け (名前の打ち間違い・ほかの季節から写したもの)。
+  // 比べるときは無かったことにしているので、ここで外せるようにする
+  const staleNotice = staleLinks.length > 0 && (
+    <div className="p-2 rounded border border-builder-warning-border bg-builder-warning-soft text-builder-ink" role="group" aria-label="見つからない行事予定への結び付け">
+      <div className="font-bold mb-1">講習の日付の前後に見つからない行事予定への結び付け ({staleLinks.length} 件)</div>
+      <div className="text-builder-ink-muted mb-1">名前が変わった・ほかの季節から写した結び付けです。このタブは結び付けの無いタブとして比べています。</div>
+      <ul className="space-y-0.5">
+        {staleLinks.map(l => (
+          <li key={`${l.tabId}:${l.name}`} className="flex flex-wrap items-center gap-2">
+            <span>{l.tabName} → 「{l.name}」</span>
+            <button
+              type="button"
+              onClick={() => setCourseEventLink(l.tabId, l.name, false)}
+              className="px-1.5 py-0.5 rounded border border-builder-border bg-builder-surface hover:bg-builder-surface-alt"
+              aria-label={`${l.tabName} の「${l.name}」への結び付けを外す`}
+            >外す</button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
   if (rows.length === 0) {
-    return <p className="text-xs text-builder-ink-muted">講習の日付の前後に、本体の行事予定 (種別「📚 講習」) はありません。</p>;
+    return (
+      <div className="space-y-2 text-xs">
+        <p className="text-builder-ink-muted">講習の日付の前後に、本体の行事予定 (種別「📚 講習」) はありません。</p>
+        {staleNotice}
+      </div>
+    );
   }
   const tabs = project.tabs || [];
   const suggestions = rows.flatMap(r => r.suggestedTabIds.map(tabId => ({ tabId, name: r.name })));
   const applySuggestions = () => {
     linkCourseEvents(suggestions);
-    showToast(`${suggestions.length} 件の行事予定をタブに結び付けました (Undo で戻せます)`, 'success', 3500);
+    showToast(`${suggestions.length} 個のタブを行事予定に結び付けました (Undo で戻せます)`, 'success', 3500);
   };
 
   return (
     <div className="space-y-2 text-xs">
       <p className="text-builder-ink-muted">
-        タブに行事予定を結び付けると、そのタブはその行事予定とだけ比べます (「直前ポイント 火木」と「中３直前 火木」など)。
-        結び付けの無いタブは、学年の合う結び付けの無い行事予定と比べます。この講習と関係の無い行事予定は「対象外」にします。
+        タブに行事予定を結び付けると、そのタブはその行事予定とだけ比べます (行事予定「中3 直前ポイント演習 火木」とタブ「中３直前 火木」など)。
+        結び付けの無いタブは、どのタブにも結び付けていない行事予定のうち、学年の合うものと比べます。この講習と関係の無い行事予定は「対象外」にします。
       </p>
+      {staleNotice}
       {suggestions.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={applySuggestions}
             className="px-2 py-1 rounded bg-builder-blue text-white font-bold hover:bg-builder-blue-hover"
-          >名前から結び付ける ({suggestions.length} 件)</button>
+          >名前から結び付ける ({suggestions.length} タブ)</button>
           <span className="text-builder-ink-muted">点線のタブが提案です (学年を除いたタブ名と行事予定の名前が近いもの)</span>
         </div>
       )}

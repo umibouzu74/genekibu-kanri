@@ -305,7 +305,7 @@ export interface SubjectCountDiff {
 /**
  * 写したあと (writes を当てた時間割) の、クラスごとの科目のコマ数とコマ数の設定
  * (subjectCounts / クラス別の上書き) の差。対象は tabIds のタブだけ、差のある
- * クラス・科目だけ。「3SS 数学 −1・理科 +1」
+ * クラス・科目だけ (コマ数 0 = 未設定の科目は比べない)。「3SS 数学 −1・理科 +1」
  */
 export function subjectCountDiffsAfterCopy(
   project: Project,
@@ -335,7 +335,9 @@ export function subjectCountDiffsAfterCopy(
       const order = new Map((project.subjects || []).map((sub, i) => [sub, i] as const));
       const items = subjects
         .map(subject => ({ subject, count: counts[subject] || 0, quota: quotas[subject] || 0 }))
-        .filter(x => x.count !== x.quota)
+        // コマ数 0 (未設定) の科目は比べない (違反チェックの subjectOver と同じ。設定の無い
+        // タブで全科目が「多い」と並ばないように)
+        .filter(x => x.quota > 0 && x.count !== x.quota)
         .map(x => ({ ...x, diff: x.count - x.quota }))
         .sort((a, b) => (order.get(a.subject) ?? 999) - (order.get(b.subject) ?? 999));
       if (items.length > 0) out.push({ tabId: tab.id, tabName: tab.name, className: c.label, items });

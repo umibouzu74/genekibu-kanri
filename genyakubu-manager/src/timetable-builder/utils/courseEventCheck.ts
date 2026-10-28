@@ -166,16 +166,44 @@ export interface CourseEventRow {
   suggestedTabIds: number[];
 }
 
+/** 見つからない行事予定への結び付け (名前の打ち間違い・ほかの季節から写した結び付け) */
+export interface StaleCourseEventLink {
+  tabId: number;
+  tabName: string;
+  name: string;
+}
+
 type TabDays = { id: number; name: string; grades: string[]; days: Array<{ label: string; ymd: string }>; links: Set<string> };
 
-// 週ごとのコース (火木・水金・土曜・月水金) なら、比べる曜日をタブが使う曜日に絞る。
-// 行事予定の期間が 1 週間以上あり、タブが使う曜日 (日曜を除く) が 3 つ以下のとき。
-// 冬期講習のような毎日の講習は全曜日 (日曜を除く) を比べる
-function weeklyWeekdays(event: { startDate: string; endDate: string }, tabs: TabDays[]): Set<number> | null {
-  const inRange = tabs.flatMap(t => t.days.filter(d => d.ymd >= event.startDate && d.ymd <= event.endDate));
-  if (inRange.length === 0 || daysBetween(event.startDate, event.endDate) < 7) return null;
-  const wd = new Set(inRange.map(d => parseYmd(d.ymd)!.getDay()).filter(w => w !== 0));
-  return wd.size > 0 && wd.size <= 3 ? wd : null;
+// 比べる曜日。週ごとのコース (火木・水金・土曜・月水金) のタブは、そのタブが使う曜日だけ
+// 比べる。タブごとに決めて合わせる (火木のタブと水金のタブを 1 つの行事予定と比べると
+// 火水木金。月・土は比べない)。週ごとのコースとみなすのは、行事予定の期間が 1 週間以上で、
+// タブが使う曜日 (日曜を除く) が 3 つ以下、かつ使う日が期間の日 (日曜・全体休講日を除く) の
+// 半分以下のとき。冬期講習のような毎日の講習 (使う日が多い) は全曜日 (日曜を除く) を比べる
+// (12/24〜26 を入れ忘れた月火水のタブを週ごとのコースと見て見逃さないように)。
+// null = 全曜日を比べる
+function expectedWeekdays(
+  event: { startDate: string; endDate: string },
+  tabs: TabDays[],
+  holidayDates: Set<string>,
+): Set<number> | null {
+  if (daysBetween(event.startDate, event.endDate) < 7) return null;
+  let eventDays = 0;
+  for (let d = event.startDate; d <= event.endDate; d = addDays(d, 1)) {
+    const dt = parseYmd(d);
+    if (dt && dt.getDay() !== 0 && !holidayDates.has(d)) eventDays++;
+  }
+  const out = new Set<number>();
+  let any = false;
+  for (const t of tabs) {
+    const inRange = t.days.filter(d => d.ymd >= event.startDate && d.ymd <= event.endDate && parseYmd(d.ymd)!.getDay() !== 0);
+    if (inRange.length === 0) continue;
+    any = true;
+    const wd = new Set(inRange.map(d => parseYmd(d.ymd)!.getDay()));
+    if (wd.size > 3 || inRange.length * 2 > eventDays) return null;
+    wd.forEach(w => out.add(w));
+  }
+  return any ? out : null;
 }
 
 export function checkCourseEvents({
@@ -188,8 +216,8 @@ export function checkCourseEvents({
   specialEvents: CourseEventLike[];
   holidays?: unknown[];
   todayYmd?: string;
-}): { events: CourseEventLike[]; findings: CourseEventFinding[]; rows: CourseEventRow[] } {
-  const empty = { events: [], findings: [], rows: [] };
+}): { events: CourseEventLike[]; findings: CourseEventFinding[]; rows: CourseEventRow[]; staleLinks: StaleCourseEventLink[] } {
+  const empty = { events: [], findings: [], rows: [], staleLinks: [] };
   const used = usedDateLabels(project);
   if (used.size === 0) return empty;
   const baseYmd = projectBaseYmd(project, todayYmd);
@@ -208,6 +236,19 @@ export function checkCourseEvents({
   if (inWindow.length === 0) return empty;
 
   const ignoredKeys = new Set((project.ignoredCourseEvents || []).map(normalizeEventName));
+  // 比べる行事予定 (対象外を除く)
+  const events = inWindow.filter(e => !ignoredKeys.has(normalizeEventName(e.name)));
+  const eventKeys = new Set(events.map(e => normalizeEventName(e.name)));
+  const windowKeys = new Set(inWindow.map(e => normalizeEventName(e.name)));
+  // 見つからない行事予定への結び付け (名前の打ち間違い・ほかの季節から写したもの) は
+  // 画面に出して外せるようにする。比べるときは無かったことにする (結び付けが全部
+  // 見つからないタブは結び付けの無いタブとして比べる。黙って比べなくならないように)
+  const staleLinks: StaleCourseEventLink[] = [];
+  for (const tab of project.tabs || []) {
+    for (const n of tab.config.courseEventNames || []) {
+      if (!windowKeys.has(normalizeEventName(n))) staleLinks.push({ tabId: tab.id, tabName: tab.name, name: n });
+    }
+  }
   const holidayDates = new Set(
     (holidays as Array<{ date?: string }>).filter(h => isFullDayHoliday(h)).map(h => h.date).filter(Boolean) as string[],
   );
@@ -218,16 +259,18 @@ export function checkCourseEvents({
       const days = cfg.dates
         .map(d => ({ label: d.label, ymd: ymdByLabel.get(d.label) }))
         .filter((d): d is { label: string; ymd: string } => !!d.ymd);
-      const links = new Set((tab.config.courseEventNames || []).map(normalizeEventName).filter(Boolean));
+      const links = new Set((tab.config.courseEventNames || []).map(normalizeEventName).filter(k => eventKeys.has(k)));
       return { id: tab.id, name: tab.name, grades: gradesFromTabName(tab.name), days, links };
     })
     .filter((t): t is TabDays => !!t && t.days.length > 0);
 
   // 結び付けたタブ (名前の一致) を行事予定ごとに
   const linkedTabsOf = (e: CourseEventLike) => tabs.filter(t => t.links.has(normalizeEventName(e.name)));
-  const linkedKeys = new Set(tabs.flatMap(t => [...t.links]));
-  // 比べる行事予定 (対象外を除く)
-  const events = inWindow.filter(e => !ignoredKeys.has(normalizeEventName(e.name)));
+  // 結び付けのある行事予定 (日・時限がまだ無いタブの結び付けも含む。結び付けた行事予定を
+  // ほかのタブと比べない)
+  const linkedKeys = new Set(
+    (project.tabs || []).flatMap(t => (t.config.courseEventNames || []).map(normalizeEventName)).filter(k => eventKeys.has(k)),
+  );
   // 結び付けの無い行事予定は、結び付けの無いタブと学年で比べる (従来どおり)
   const unlinkedEvents = events.filter(e => !linkedKeys.has(normalizeEventName(e.name)));
 
@@ -270,7 +313,7 @@ export function checkCourseEvents({
     const mine = tabsForEvent(e);
     if (mine.length === 0) continue;
     const usedYmd = new Set(mine.flatMap(t => t.days.map(d => d.ymd)));
-    const weekly = weeklyWeekdays(e as { startDate: string; endDate: string }, mine);
+    const weekly = expectedWeekdays(e as { startDate: string; endDate: string }, mine, holidayDates);
     const unused: string[] = [];
     for (let d = e.startDate!; d <= e.endDate!; d = addDays(d, 1)) {
       const dt = parseYmd(d);
@@ -300,7 +343,10 @@ export function checkCourseEvents({
       grades.forEach(g => { if (!row.grades.includes(g)) row.grades.push(g); });
       continue;
     }
-    const linked = tabs.filter(t => t.links.has(key)).map(t => t.id);
+    // 結び付けは日・時限の無いタブも含めて設定から読む (外せなくならないように)
+    const linked = (project.tabs || [])
+      .filter(t => (t.config.courseEventNames || []).some(n => normalizeEventName(n) === key))
+      .map(t => t.id);
     rowsByKey.set(key, {
       name: e.name || '',
       key,
@@ -315,7 +361,7 @@ export function checkCourseEvents({
   // 名前から結び付けを提案: 学年を除いたタブ名と行事予定の名前が近いもの (結び付けも
   // 対象外も無い行事予定・結び付けの無いタブだけ)。いちばん近いもの 1 つ
   for (const t of (project.tabs || [])) {
-    if ((t.config.courseEventNames || []).length > 0) continue;
+    if ((t.config.courseEventNames || []).some(n => windowKeys.has(normalizeEventName(n)))) continue;
     const topic = tabTopic(t.name);
     if (topic.length < 2) continue;
     let best: { row: CourseEventRow; score: number } | null = null;
@@ -326,5 +372,5 @@ export function checkCourseEvents({
     }
     if (best) best.row.suggestedTabIds.push(t.id);
   }
-  return { events: inWindow, findings, rows };
+  return { events: inWindow, findings, rows, staleLinks };
 }
