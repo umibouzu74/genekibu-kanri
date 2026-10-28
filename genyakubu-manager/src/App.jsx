@@ -13,7 +13,7 @@ import { DAY_BG as DB, DAY_COLOR as DC, DAYS } from "./data";
 import { VIEWS } from "./constants/views";
 import { VIEW_CHORDS, CHORD_TIMEOUT_MS } from "./constants/chords";
 import { useBuilderProjects } from "./hooks/useBuilderProjects";
-import { useTeacherGroups } from "./hooks/useTeacherGroups";
+import { SENIOR_KOSHU_GROUP_KEY, useTeacherGroups } from "./hooks/useTeacherGroups";
 import { STAFF_GROUP_KEY } from "./utils/groupTeacherNames";
 import { useToasts } from "./hooks/useToasts";
 import { useConfirm } from "./hooks/useConfirm";
@@ -1120,6 +1120,13 @@ export default function App() {
       ),
     [allTeacherGroups, teacherKana]
   );
+  // 時間割・講師管理に出てくる講師 (高校・予備校の講習だけの先生を除く)。高校・予備校の
+  // 講習の画面で、名前の打ち間違いを知らせるのに使う (講習の登録から並べた名前を
+  // 「知っている名前」に数えると、打ち間違いのまま保存した名前に気付けない)
+  const knownTeacherNames = useMemo(() => {
+    const seniorOnly = new Set(allTeacherGroups.find((g) => g.key === SENIOR_KOSHU_GROUP_KEY)?.teachers || []);
+    return allTeacherNames.filter((n) => !seniorOnly.has(n));
+  }, [allTeacherGroups, allTeacherNames]);
   // 一括印刷ダイアログに出す「バイト以外の講師」(常勤講師) の教科別グループ
   const fulltimeGroups = useMemo(
     () => allTeacherGroups.filter((g) => g.key !== STAFF_GROUP_KEY),
@@ -1904,6 +1911,7 @@ export default function App() {
               onSave={saveSeniorKoshu}
               isAdmin={isAdmin}
               teacherNames={allTeacherNames}
+              knownTeacherNames={knownTeacherNames}
               teacherKana={teacherKana}
               onSelectTeacher={selectTeacher}
             />

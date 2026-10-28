@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useToasts } from "../../hooks/useToasts";
 import { useConfirm } from "../../hooks/useConfirm";
 import { useRemoveWithUndo } from "../../hooks/useCrudResource";
@@ -61,7 +61,9 @@ const wd = (d) => WEEKDAYS[parseLocalDate(d)?.getDay() ?? 0];
  * @param {import("../../types").SeniorKoshuData} props.data
  * @param {(next: any) => void} props.onSave (値 か updater)
  * @param {boolean} props.isAdmin
- * @param {string[]} [props.teacherNames] 本体の講師名 (入力候補・知らない名前の注意)
+ * @param {string[]} [props.teacherNames] 本体の講師名 (入力候補)
+ * @param {string[]} [props.knownTeacherNames] 時間割・講師管理に出てくる講師名 (打ち間違いの
+ *   注意に使う。高校・予備校の講習だけの先生は入れない)
  * @param {Record<string, string>} [props.teacherKana]
  * @param {(teacher: string) => void} [props.onSelectTeacher] 講師名 → その人の月間
  */
@@ -70,6 +72,7 @@ export function SeniorKoshuView({
   onSave,
   isAdmin,
   teacherNames = [],
+  knownTeacherNames = teacherNames,
   teacherKana = {},
   onSelectTeacher,
 }) {
@@ -84,10 +87,24 @@ export function SeniorKoshuView({
   const [openDaysId, setOpenDaysId] = useState(null);
   const [editLessonId, setEditLessonId] = useState(null);
 
-  const saveLessons = (lessons) => onSave((prev) => ({ ...prev, lessons }));
+  // 新しい id は、この画面を開いてから見た最大の id より後にする。消した直後に足すと
+  // 消した id を使い回し、6 秒の「元に戻す」が「同じ id がある」として何もしなくなるため
+  const idFloorsRef = useRef({ terms: 0, periods: 0, lessons: 0 });
+  for (const k of ["terms", "periods", "lessons"]) {
+    for (const x of data[k]) if (x.id > idFloorsRef.current[k]) idFloorsRef.current[k] = x.id;
+  }
+  const idFloors = idFloorsRef.current;
+  // 元に戻すとき、その間に期・時限を消していたら戻さない (無い期を指す担当を残さない)
+  const saveLessons = (lessons) =>
+    onSave((prev) => ({
+      ...prev,
+      lessons: lessons.filter(
+        (l) => prev.terms.some((t) => t.id === l.termId) && prev.periods.some((p) => p.id === l.periodId)
+      ),
+    }));
   const removeLessonWithUndo = useRemoveWithUndo({ list: data.lessons, save: saveLessons });
   const cmpTeacher = useMemo(() => compareTeacherNames(teacherKana), [teacherKana]);
-  const knownTeachers = useMemo(() => new Set(teacherNames), [teacherNames]);
+  const knownTeachers = useMemo(() => new Set(knownTeacherNames), [knownTeacherNames]);
 
   // 期の絞り込み: これから (最後の日が今日以降) / すべて / 期ごと
   const visibleTerms = useMemo(() => {
@@ -135,9 +152,9 @@ export function SeniorKoshuView({
       <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 12 }}>
         <p style={{ margin: 0, fontSize: 12, color: colors.inkMuted, lineHeight: 1.7, flex: "1 1 320px" }}>
           高校部 (高1・高2 / 高3) と予備校の講習の担当です。登録すると、その講師の月間の予定に「講」で出ます
-          (時間割にコマの無い先生もサイドバーに並びます)。講習時間割作成 (中学の講習) では ⚙ 設定 → 講師不在・NG の
-          「🎓 本体の高校・予備校の講習を取り込む」で講師の不在 (自動NG) になります。期 (日程) と時限 (時刻) を作ってから
-          担当を入れます。パンフレットの担当表は「📋 表でまとめて登録」で貼れます。
+          (時間割にコマの無い先生もサイドバーに並びます)。講習時間割作成 (中学の講習) では、⚙ 設定 → 📅 講師不在・NG の
+          「🎓 本体の『高校・予備校の講習』を取り込む」を押すと、講師の不在 (自動NG) として入ります。期 (日程) と時限 (時刻) を
+          作ってから担当を入れます。パンフレットの担当表は「📋 表でまとめて登録」で貼れます。
         </p>
         <PrintButton />
       </div>
@@ -162,21 +179,16 @@ export function SeniorKoshuView({
       )}
 
       {isAdmin && panel === "import" && (
-        <ImportPanel data={data} onSave={onSave} today={today} onDone={() => setPanel(null)} knownTeachers={knownTeachers} />
+        <ImportPanel data={data} onSave={onSave} today={today} onDone={() => setPanel(null)} knownTeachers={knownTeachers} idFloors={idFloors} />
       )}
       {isAdmin && panel === "term" && (
-        <TermEditor
-          data={data}
-          onSave={onSave}
-          today={today}
-          onDone={() => setPanel(null)}
-        />
+        <TermEditor data={data} onSave={onSave} today={today} onDone={() => setPanel(null)} idFloors={idFloors} />
       )}
       {isAdmin && panel === "period" && (
-        <PeriodEditor data={data} onSave={onSave} onDone={() => setPanel(null)} />
+        <PeriodEditor data={data} onSave={onSave} onDone={() => setPanel(null)} idFloors={idFloors} />
       )}
       {isAdmin && panel === "lesson" && (
-        <LessonForm data={data} onSave={onSave} onDone={() => setPanel(null)} teacherNames={teacherNames} />
+        <LessonForm data={data} onSave={onSave} onDone={() => setPanel(null)} teacherNames={teacherNames} idFloors={idFloors} />
       )}
 
       {/* 期・時限 */}
@@ -259,7 +271,7 @@ export function SeniorKoshuView({
         </div>
         {unknownTeachers.length > 0 && (
           <div style={{ ...hint, color: "#9a5b00", marginBottom: 6 }} className="no-print">
-            時間割・講師管理に出てこない講師: {unknownTeachers.join("・")} (月間の予定はサイドバーの講師一覧から開けます。名前の打ち間違いがないか確かめてください)
+            時間割・講師管理に出てこない講師: {unknownTeachers.join("・")} (高校・予備校の講習だけの先生です。月間の予定はサイドバーの講師一覧から開けます。名前の打ち間違いがないか確かめてください)
           </div>
         )}
         {visibleTerms.length === 0 && <div style={hint}>表示する期がありません。</div>}
@@ -389,7 +401,7 @@ export function SeniorKoshuView({
 }
 
 // 期を作る / 直す: 名前 + 日 (期間で足す・カレンダーで 1 日ずつ)
-function TermEditor({ data, onSave, today, term = null, onDone }) {
+function TermEditor({ data, onSave, today, term = null, onDone, idFloors }) {
   const toasts = useToasts();
   const [name, setName] = useState(term?.name || "");
   const [dates, setDates] = useState(term?.dates || []);
@@ -416,7 +428,7 @@ function TermEditor({ data, onSave, today, term = null, onDone }) {
       setError("期の日を 1 日以上選んでください");
       return;
     }
-    onSave((prev) => upsertTerm(prev, { id: term?.id ?? null, name, dates }).data || prev);
+    onSave((prev) => upsertTerm(prev, { id: term?.id ?? null, name, dates }, { idFloor: idFloors?.terms }).data || prev);
     toasts.success(term ? `期「${name.trim()}」を直しました` : `期「${name.trim()}」を作りました`);
     onDone();
   };
@@ -453,7 +465,7 @@ function TermEditor({ data, onSave, today, term = null, onDone }) {
 }
 
 // 時限を作る / 直す: 名前 + 時刻
-function PeriodEditor({ data, onSave, period = null, onDone }) {
+function PeriodEditor({ data, onSave, period = null, onDone, idFloors }) {
   const toasts = useToasts();
   const [name, setName] = useState(period?.name || "");
   const [time, setTime] = useState(period?.time || "");
@@ -464,7 +476,7 @@ function PeriodEditor({ data, onSave, period = null, onDone }) {
       setError(r.error);
       return;
     }
-    onSave((prev) => upsertPeriod(prev, { id: period?.id ?? null, name, time }).data || prev);
+    onSave((prev) => upsertPeriod(prev, { id: period?.id ?? null, name, time }, { idFloor: idFloors?.periods }).data || prev);
     toasts.success(period ? `時限「${name.trim()}」を直しました` : `時限「${name.trim()}」を作りました`);
     onDone();
   };
@@ -488,7 +500,7 @@ function PeriodEditor({ data, onSave, period = null, onDone }) {
 }
 
 // 担当を足す: 期・時限・学年・講座名・講師 (「・」で何人でも)・メモ
-function LessonForm({ data, onSave, onDone, teacherNames }) {
+function LessonForm({ data, onSave, onDone, teacherNames, idFloors }) {
   const toasts = useToasts();
   const [termId, setTermId] = useState(data.terms[0]?.id ?? "");
   const [periodId, setPeriodId] = useState(data.periods[0]?.id ?? "");
@@ -511,8 +523,11 @@ function LessonForm({ data, onSave, onDone, teacherNames }) {
     const drafts = names.map((teacher) => ({ teacher, termId: Number(termId), periodId: Number(periodId), grade, course, memo }));
     const r = addSeniorLessons(data, drafts);
     if (r.added.length === 0) return setError("同じ担当がもうあります");
-    onSave((prev) => addSeniorLessons(prev, drafts).data);
-    toasts.success(`担当を ${r.added.length} 件足しました (${names.join("・")}: ${course.trim()})${r.skipped ? ` 登録済み ${r.skipped} 件は飛ばしました` : ""}`);
+    onSave((prev) => addSeniorLessons(prev, drafts, { idFloor: idFloors?.lessons }).data);
+    toasts.success(
+      `担当を ${r.added.length} 件足しました (${r.added.map((l) => l.teacher).join("・")}: ${course.trim()})。` +
+        (r.skipped ? `登録済みの ${r.skipped} 件は飛ばしました` : "")
+    );
     setTeachers("");
     setError(null);
   };
@@ -568,9 +583,14 @@ function LessonEditCells({ lesson, onSave, onDone }) {
   const [course, setCourse] = useState(lesson.course || "");
   const [teacher, setTeacher] = useState(lesson.teacher);
   const [memo, setMemo] = useState(lesson.memo || "");
+  const [error, setError] = useState(null);
   const save = () => {
-    if (!teacher.trim() || !course.trim()) return;
-    onSave((prev) => updateSeniorLesson(prev, lesson.id, { grade, course, teacher, memo }));
+    const name = teacher.normalize("NFKC").trim();
+    if (!name) return setError("講師を入れてください");
+    // 1 件 = 講師 1 人 (講師名に中黒は使わない決まり。ほかの講師は「＋ 担当」で足す)
+    if (/[・·･、,/]/.test(name)) return setError("講師は 1 人ずつです (ほかの講師は「＋ 担当」で足します)");
+    if (!course.trim()) return setError("講座名を入れてください");
+    onSave((prev) => updateSeniorLesson(prev, lesson.id, { grade, course, teacher: name, memo }));
     onDone();
   };
   const inp = { ...S.input, padding: "3px 6px", fontSize: 12 };
@@ -585,13 +605,14 @@ function LessonEditCells({ lesson, onSave, onDone }) {
       <td style={{ ...td, whiteSpace: "nowrap" }} className="no-print">
         <button type="button" style={smallBtn} onClick={save}>保存</button>{" "}
         <button type="button" style={smallBtn} onClick={onDone}>やめる</button>
+        {error && <div role="alert" style={{ color: "#c03030", fontSize: 11, marginTop: 2, whiteSpace: "normal" }}>{error}</div>}
       </td>
     </>
   );
 }
 
 // 📋 表でまとめて登録
-function ImportPanel({ data, onSave, today, onDone, knownTeachers }) {
+function ImportPanel({ data, onSave, today, onDone, knownTeachers, idFloors }) {
   const toasts = useToasts();
   const [text, setText] = useState("");
   const [fiscalYear, setFiscalYear] = useState(() => fiscalYearOf(today));
@@ -599,16 +620,22 @@ function ImportPanel({ data, onSave, today, onDone, knownTeachers }) {
     () => (text.trim() ? parseSeniorKoshuImport(text, { data, fiscalYear: Number(fiscalYear) }) : null),
     [text, data, fiscalYear]
   );
-  const preview = useMemo(() => (parsed ? applySeniorKoshuImport(data, parsed) : null), [parsed, data]);
+  const preview = useMemo(() => (parsed ? applySeniorKoshuImport(data, parsed, { idFloors }) : null), [parsed, data, idFloors]);
   const unknown = parsed ? [...new Set(parsed.drafts.map((d) => d.teacher))].filter((n) => !knownTeachers.has(n)) : [];
   const submit = () => {
     if (!parsed || !preview || (preview.added.length === 0 && preview.createdTerms === 0 && preview.createdPeriods === 0)) return;
-    onSave((prev) => applySeniorKoshuImport(prev, parsed).data);
-    toasts.success(
-      `担当 ${preview.added.length} 件を登録しました` +
-      (preview.createdTerms || preview.createdPeriods ? ` (期 ${preview.createdTerms}・時限 ${preview.createdPeriods} を作りました)` : "") +
-      (preview.skipped ? ` 登録済み ${preview.skipped} 件は飛ばしました` : "")
-    );
+    onSave((prev) => applySeniorKoshuImport(prev, parsed, { idFloors }).data);
+    // 0 の部分は書かない (「時限 0」「担当 0 件を登録」にしない)
+    const made = [
+      preview.createdTerms ? `期を ${preview.createdTerms} つ` : "",
+      preview.createdPeriods ? `時限を ${preview.createdPeriods} つ` : "",
+    ].filter(Boolean).join("・");
+    const parts = [
+      preview.added.length ? `担当を ${preview.added.length} 件登録しました` : "",
+      made ? `${made}作りました` : "",
+      preview.skipped ? `登録済みの ${preview.skipped} 件は飛ばしました` : "",
+    ].filter(Boolean);
+    toasts.success(`${parts.join("。")}`);
     setText("");
     onDone();
   };
@@ -616,12 +643,12 @@ function ImportPanel({ data, onSave, today, onDone, knownTeachers }) {
     <div className="no-print" style={{ ...box, borderColor: ACCENT }}>
       <div style={{ fontSize: 13, marginBottom: 6 }}>
         1 行目は見出し: <code>講師 期 時限 学年 講座名 外す日 メモ 日付 時刻</code> (タブ区切り。Excel・スプレッドシートからそのまま貼れます。カンマ区切りでも可。列の順は自由)。
-        講師は「・」で何人でも。期・時限は名前で今あるものに合わせ、無ければ「日付」(例: 12/24〜12/27) と「時刻」(例: 12:25-13:35) の列から作ります。
-        外す日はその講師が担当しない日です。
+        講師は「・」で何人でも。期・時限は名前で今あるものに合わせ、無ければ「日付」(例: 12/24〜12/26) と「時刻」(例: 12:25-13:35) の列から作ります。
+        期間 (〜) は日曜を除きます (日曜も入れるときは 12/24・25・26・27 のように並べます)。外す日はその講師が担当しない日です。
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
         <label style={{ fontSize: 12 }}>
-          年度 (月日だけの日付の年){" "}
+          年度 (月日だけの日付はこの年度の日として読みます){" "}
           <input type="number" value={fiscalYear} onChange={(e) => setFiscalYear(e.target.value)} style={{ ...S.input, width: 90, padding: "3px 6px" }} aria-label="年度" />
         </label>
         <button type="button" style={smallBtn} onClick={() => setText(SENIOR_KOSHU_TEMPLATE)}>見本を入れる</button>

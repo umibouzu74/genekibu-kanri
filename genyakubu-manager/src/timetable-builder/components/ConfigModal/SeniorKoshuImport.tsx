@@ -22,7 +22,10 @@ export default function SeniorKoshuImport() {
     () => planSeniorKoshuImport(project, seniorKoshuItems, { todayYmd: todayYmd() }),
     [project, seniorKoshuItems],
   );
-  if (!seniorKoshuItems || seniorKoshuItems.length === 0) return null;
+  // 本体に登録が無くても、前に取り込んだものが残っていれば出す (本体で全部消したとき、
+  // ここから消せるように。消すのは「本体に無くなった」として staleIds)
+  const hasImported = (project.externalSessions || []).some(s => s.source === 'seniorKoshu');
+  if ((!seniorKoshuItems || seniorKoshuItems.length === 0) && !hasImported) return null;
 
   const removeIds = [
     ...plan.staleIds,
@@ -108,7 +111,11 @@ export default function SeniorKoshuImport() {
         disabled={nothingToDo}
         className="px-3 py-1 rounded bg-builder-primary text-white text-xs font-bold disabled:opacity-40"
       >
-        {nothingToDo ? '取り込むものはありません (本体と同じです)' : '取り込む'}
+        {nothingToDo
+          ? plan.planned.length === 0
+            ? '取り込むものはありません (この講習の日に当たる予定がありません)'
+            : '取り込むものはありません (取り込み済みです)'
+          : '取り込む'}
       </button>
     </div>
   );

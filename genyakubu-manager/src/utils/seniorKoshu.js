@@ -156,10 +156,8 @@ export function expandSeniorKoshu(data) {
     }
   }
   const startOf = (t) => offsiteTimeRange(t)?.start ?? 24 * 60;
-  return out.sort(
-    (a, b) =>
-      a.date.localeCompare(b.date) || startOf(a.time) - startOf(b.time) || a.teacher.localeCompare(b.teacher, "ja")
-  );
+  // 同じ日・同じ時刻は登録順 (講師名の並びは画面がよみ順で決める)
+  return out.sort((a, b) => a.date.localeCompare(b.date) || startOf(a.time) - startOf(b.time) || a.lessonId - b.lessonId);
 }
 
 /** 日付 → その講師の予定 (teacher = null なら全員) */
@@ -193,7 +191,9 @@ export function sameAsSeniorKoshu(item, { teacher, date, time }) {
   if (item.teacher !== teacher || item.date !== date) return false;
   const a = offsiteTimeRange(item.time);
   const b = offsiteTimeRange(time);
-  return !!a && !!b && a.start === b.start && (a.end ?? null) === (b.end ?? null);
+  // 開始が同じなら同じ予定 (終わりは片方に無ければ比べない。手で入れた「12:25」と本体の
+  // 「12:25-13:35」を別の予定として二重に出さない)
+  return !!a && !!b && a.start === b.start && (a.end == null || b.end == null || a.end === b.end);
 }
 
 /**
@@ -219,12 +219,14 @@ export function dropLessonsCoveredBySeniorKoshu(koshuLessons, items) {
 
 // ─── 直す (純関数) ─────────────────────────────────────────────────
 
-export function nextSeniorId(list) {
-  return (list || []).reduce((m, x) => Math.max(m, x?.id || 0), 0) + 1;
+/** 次の id。idFloor = この画面を開いてから見た最大の id (消した id を使い回すと 6 秒の
+ * 「元に戻す」が効かなくなるので、それより後にする) */
+export function nextSeniorId(list, idFloor = 0) {
+  return Math.max((list || []).reduce((m, x) => Math.max(m, x?.id || 0), 0), idFloor || 0) + 1;
 }
 
 /** 期を作る / 直す。名前が重なる (別の期と同じ) ときは { error } */
-export function upsertTerm(data, { id = null, name, dates }) {
+export function upsertTerm(data, { id = null, name, dates }, { idFloor = 0 } = {}) {
   const n = str(name);
   if (!n) return { error: "期の名前を入れてください" };
   if (data.terms.some((t) => t.id !== id && nameKey(t.name) === nameKey(n))) {
@@ -232,7 +234,7 @@ export function upsertTerm(data, { id = null, name, dates }) {
   }
   const list = sortedDates(dates);
   if (id == null) {
-    const term = { id: nextSeniorId(data.terms), name: n, dates: list };
+    const term = { id: nextSeniorId(data.terms, idFloor), name: n, dates: list };
     return { data: { ...data, terms: [...data.terms, term] }, term };
   }
   const terms = data.terms.map((t) => (t.id === id ? { ...t, name: n, dates: list } : t));
@@ -257,7 +259,7 @@ export function removeTerm(data, id) {
 }
 
 /** 時限を作る / 直す。時刻は「12:25-13:35」(全角・「〜」も可) */
-export function upsertPeriod(data, { id = null, name, time }) {
+export function upsertPeriod(data, { id = null, name, time }, { idFloor = 0 } = {}) {
   const n = str(name);
   if (!n) return { error: "時限の名前を入れてください" };
   if (data.periods.some((p) => p.id !== id && nameKey(p.name) === nameKey(n))) {
@@ -266,7 +268,7 @@ export function upsertPeriod(data, { id = null, name, time }) {
   const t = normalizeOffsiteTime(time);
   if (!t.ok) return { error: t.error };
   if (id == null) {
-    const period = { id: nextSeniorId(data.periods), name: n, time: t.time };
+    const period = { id: nextSeniorId(data.periods, idFloor), name: n, time: t.time };
     return { data: { ...data, periods: [...data.periods, period] }, period };
   }
   return { data: { ...data, periods: data.periods.map((p) => (p.id === id ? { ...p, name: n, time: t.time } : p)) } };
@@ -285,9 +287,9 @@ const lessonKey = (l) =>
   JSON.stringify([l.teacher, l.termId, l.periodId, nameKey(l.grade || ""), nameKey(l.course || "")]);
 
 /** 担当を足す (講師 × 期 × 時限 × 学年 × 講座名が同じものは飛ばす)。{ data, added, skipped } */
-export function addSeniorLessons(data, drafts) {
+export function addSeniorLessons(data, drafts, { idFloor = 0 } = {}) {
   const seen = new Set(data.lessons.map(lessonKey));
-  let id = nextSeniorId(data.lessons);
+  let id = nextSeniorId(data.lessons, idFloor);
   const added = [];
   let skipped = 0;
   for (const d of drafts || []) {
@@ -346,24 +348,36 @@ export function toggleLessonSkip(data, id, date) {
 
 // ─── 日付の並び・期間 ───────────────────────────────────────────────
 
+const shiftYear = (ymd, n) => `${Number(ymd.slice(0, 4)) + n}${ymd.slice(4)}`;
+
 /**
  * 「12/24〜12/27」「12/24・25・26」「2026-12-24」を YYYY-MM-DD の並びに。期間は
- * 日曜を除く (日曜も入れるときは日付を並べて書く)。年は年度から補う。
+ * 日曜を除く (日曜も入れるときは日付を並べて書く)。年は年度から補い (4〜12 月は
+ * その年度の年、1〜3 月は翌年)、月日だけの日付が前の日付より前になったら次の年として
+ * 読む (春期の「3/26〜4/3」「3/30・3/31・4/1」が 1 年ずれないように)。
  * @returns {{ dates: string[], unknown: string[] }}
  */
 export function parseDateListYmd(raw, fiscalYear) {
   const dates = [];
   const unknown = [];
   let prevMonth = null;
+  let prev = null;
   const one = (token) => {
     let t = token.trim();
     if (/^\d{1,2}(日)?(\([日月火水木金土]\))?$/.test(t) && prevMonth != null) t = `${prevMonth}/${t.replace(/日|\(.\)/g, "")}`;
-    const ymd = parseFlexibleDate(t, fiscalYear);
-    if (ymd) prevMonth = Number(ymd.slice(5, 7));
+    let ymd = parseFlexibleDate(t, fiscalYear);
+    // 年を書いていない日付は、前の日付より前なら次の年
+    if (ymd && prev && ymd < prev && !/\d{4}/.test(t)) ymd = shiftYear(ymd, 1);
+    if (ymd) {
+      prevMonth = Number(ymd.slice(5, 7));
+      prev = ymd;
+    }
     return ymd;
   };
   String(raw ?? "")
     .normalize("NFKC")
+    // 「12/24 (木)」の曜日 (前の空白ごと) を落としてから区切る
+    .replace(/\s*\(\s*[日月火水木金土]\s*\)/g, "")
     .replace(/\s*[〜~～]\s*/g, "〜")
     .split(/[・･·、,;\s]+/)
     .map((s) => s.trim())
@@ -389,6 +403,23 @@ export function parseDateListYmd(raw, fiscalYear) {
   return { dates: sortedDates(dates), unknown };
 }
 
+/**
+ * 担当しない日を期の日にそろえる (月日だけの日付の年を、期の日に当たる方へ ±1 年)。
+ * 期の日に無い日はそのまま返す (呼び出し側で「期の日ではありません」と出す)
+ */
+export function alignDatesToTerm(dates, termDates) {
+  const inTerm = new Set(termDates || []);
+  return sortedDates(
+    (dates || []).map((d) => {
+      if (inTerm.has(d)) return d;
+      const next = shiftYear(d, 1);
+      if (inTerm.has(next)) return next;
+      const before = shiftYear(d, -1);
+      return inTerm.has(before) ? before : d;
+    })
+  );
+}
+
 // ─── 表でまとめて登録 ───────────────────────────────────────────────
 
 /** 表の列 (1 行目の見出し。列の順は自由) */
@@ -404,10 +435,35 @@ export const SENIOR_KOSHU_COLUMNS = {
   time: ["時刻", "時間", "time"],
 };
 
+/** CSV の 1 行をタブ区切りに (引用符の中のカンマ・"" はそのまま、タブは空白に) */
+export function csvLineToTsv(line) {
+  const cells = [];
+  let cur = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quoted) {
+      if (ch === '"' && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else if (ch === '"') quoted = false;
+      else cur += ch;
+    } else if (ch === '"' && cur.trim() === "") {
+      quoted = true;
+      cur = "";
+    } else if (ch === ",") {
+      cells.push(cur);
+      cur = "";
+    } else cur += ch;
+  }
+  cells.push(cur);
+  return cells.map((c) => c.replace(/\t/g, " ")).join("\t");
+}
+
 /** 表の雛形 (見出し + 例) */
 export const SENIOR_KOSHU_TEMPLATE = [
   ["講師", "期", "時限", "学年", "講座名", "外す日", "日付", "時刻"].join("\t"),
-  ["伊藤", "高3 Ⅰ期", "予備校３限", "高3", "共通テスト理科基礎(物理基礎)", "12/26・12/27", "12/24〜12/27", "12:25-13:35"].join("\t"),
+  ["伊藤", "高3 Ⅰ期", "予備校３限", "高3", "共通テスト理科基礎(物理基礎)", "12/26", "12/24〜12/26", "12:25-13:35"].join("\t"),
   ["藤本・本澤", "高3 Ⅰ期", "予備校１限", "高3", "共通テスト英語", "", "", "9:00-10:10"].join("\t"),
 ].join("\n");
 
@@ -421,8 +477,11 @@ export const SENIOR_KOSHU_TEMPLATE = [
 export function parseSeniorKoshuImport(text, { data, fiscalYear }) {
   const src = String(text ?? "");
   const firstLine = src.split(/\r?\n/).find((l) => l.trim()) || "";
-  // CSV (タブの無い見出し) はカンマをタブに読み替える (講座名にカンマは使わない前提)
-  const tsv = !firstLine.includes("\t") && firstLine.includes(",") ? src.replace(/,/g, "\t") : src;
+  // CSV (タブの無い見出し) はタブ区切りに読み替える ("藤本,本澤" のような引用符の中の
+  // カンマは区切りにしない)
+  const tsv = !firstLine.includes("\t") && firstLine.includes(",")
+    ? src.split(/\r?\n/).map(csvLineToTsv).join("\n")
+    : src;
   const { rows, header } = parseTsvTable(tsv, SENIOR_KOSHU_COLUMNS);
   const errors = [];
   const newTerms = new Map(); // nameKey → { name, dates }
@@ -447,13 +506,15 @@ export function parseSeniorKoshuImport(text, { data, fiscalYear }) {
       errors.push({ line, message: !cells.term ? "期が空です" : "時限が空です" });
       continue;
     }
-    if (!cells.course && !cells.grade) {
+    if (!cells.course) {
       errors.push({ line, message: "講座名が空です" });
       continue;
     }
-    // 期
+    // 期 (新しく作る期・時限は、行がぜんぶ読めてから足す)
     const tk = nameKey(cells.term);
     let termDates = termByKey.get(tk)?.dates;
+    let addTerm = null;
+    let addPeriod = null;
     if (cells.dates) {
       const { dates, unknown } = parseDateListYmd(cells.dates, fiscalYear);
       if (unknown.length > 0 || dates.length === 0) {
@@ -469,8 +530,8 @@ export function parseSeniorKoshuImport(text, { data, fiscalYear }) {
       } else if (newTerms.has(tk) && JSON.stringify(newTerms.get(tk).dates) !== JSON.stringify(dates)) {
         errors.push({ line, message: `期「${cells.term}」の日付が前の行と違います` });
         continue;
-      } else {
-        newTerms.set(tk, { name: cells.term.trim(), dates });
+      } else if (!newTerms.has(tk)) {
+        addTerm = { name: cells.term.trim(), dates };
       }
       termDates = dates;
     } else if (!termDates) {
@@ -499,7 +560,7 @@ export function parseSeniorKoshuImport(text, { data, fiscalYear }) {
           errors.push({ line, message: `時限「${cells.period}」の時刻が前の行と違います` });
           continue;
         }
-        newPeriods.set(pk, { name: cells.period.trim(), time: t.time });
+        if (!pending) addPeriod = { name: cells.period.trim(), time: t.time };
       }
     } else if (!periodByKey.has(pk) && !newPeriods.has(pk)) {
       errors.push({ line, message: `時限「${cells.period}」がありません (先に時限を作るか、時刻の列を入れてください)` });
@@ -508,7 +569,9 @@ export function parseSeniorKoshuImport(text, { data, fiscalYear }) {
     // 外す日 (期の日だけ)
     let skipDates = [];
     if (cells.skip) {
-      const { dates, unknown } = parseDateListYmd(cells.skip, fiscalYear);
+      const parsedSkip = parseDateListYmd(cells.skip, fiscalYear);
+      const unknown = parsedSkip.unknown;
+      const dates = alignDatesToTerm(parsedSkip.dates, termDates);
       const outside = dates.filter((d) => !termDates.includes(d));
       if (unknown.length > 0 || outside.length > 0) {
         errors.push({
@@ -521,6 +584,8 @@ export function parseSeniorKoshuImport(text, { data, fiscalYear }) {
       }
       skipDates = dates;
     }
+    if (addTerm) newTerms.set(tk, addTerm);
+    if (addPeriod) newPeriods.set(pk, addPeriod);
     for (const teacher of teachers) {
       drafts.push({
         line,
@@ -540,14 +605,14 @@ export function parseSeniorKoshuImport(text, { data, fiscalYear }) {
 /**
  * 読んだ表を当てる: 期・時限を作ってから担当を足す。{ data, added, skipped, createdTerms, createdPeriods }
  */
-export function applySeniorKoshuImport(data, parsed) {
+export function applySeniorKoshuImport(data, parsed, { idFloors = {} } = {}) {
   let next = data;
   for (const t of parsed.newTerms) {
-    const r = upsertTerm(next, { name: t.name, dates: t.dates });
+    const r = upsertTerm(next, { name: t.name, dates: t.dates }, { idFloor: idFloors.terms });
     if (r.data) next = r.data;
   }
   for (const p of parsed.newPeriods) {
-    const r = upsertPeriod(next, { name: p.name, time: p.time });
+    const r = upsertPeriod(next, { name: p.name, time: p.time }, { idFloor: idFloors.periods });
     if (r.data) next = r.data;
   }
   const termByKey = new Map(next.terms.map((t) => [nameKey(t.name), t.id]));
@@ -555,7 +620,7 @@ export function applySeniorKoshuImport(data, parsed) {
   const drafts = parsed.drafts
     .map((d) => ({ ...d, termId: termByKey.get(d.termKey), periodId: periodByKey.get(d.periodKey) }))
     .filter((d) => d.termId && d.periodId);
-  const r = addSeniorLessons(next, drafts);
+  const r = addSeniorLessons(next, drafts, { idFloor: idFloors.lessons });
   return {
     data: r.data,
     added: r.added,

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   EMPTY_SENIOR_KOSHU,
   addSeniorLessons,
+  SENIOR_KOSHU_TEMPLATE,
+  alignDatesToTerm,
   applySeniorKoshuImport,
+  csvLineToTsv,
   dropLessonsCoveredBySeniorKoshu,
   expandSeniorKoshu,
   formatTermDates,
@@ -104,7 +107,62 @@ describe("高校・予備校の講習 (seniorKoshu)", () => {
   it("講習時間割作成の他学年セッションと同じ予定か (講師・日・時刻)", () => {
     const item = expandSeniorKoshu(data())[0];
     expect(sameAsSeniorKoshu(item, { teacher: "伊藤", date: "2026-12-24", time: "12:25-13:35" })).toBe(true);
-    expect(sameAsSeniorKoshu(item, { teacher: "伊藤", date: "2026-12-24", time: "12:25" })).toBe(false);
+    // 終わりが片方に無ければ開始だけで比べる (手で入れた「12:25」も同じ予定)
+    expect(sameAsSeniorKoshu(item, { teacher: "伊藤", date: "2026-12-24", time: "12:25" })).toBe(true);
+    expect(sameAsSeniorKoshu(item, { teacher: "伊藤", date: "2026-12-24", time: "12:25-13:00" })).toBe(false);
+    expect(sameAsSeniorKoshu(item, { teacher: "伊藤", date: "2026-12-24", time: "09:00" })).toBe(false);
+  });
+});
+
+describe("校正 (2026-10-28)", () => {
+  it("春期の 3 月 → 4 月は続けて読む (年を書いていない日付が前より前なら次の年)", () => {
+    expect(parseDateListYmd("3/26〜4/3", 2026).dates).toEqual([
+      "2027-03-26", "2027-03-27", "2027-03-29", "2027-03-30", "2027-03-31", "2027-04-01", "2027-04-02", "2027-04-03",
+    ]);
+    expect(parseDateListYmd("3/30・3/31・4/1・4/2", 2026).dates).toEqual(["2027-03-30", "2027-03-31", "2027-04-01", "2027-04-02"]);
+    // 曜日の前に空白があっても読む
+    expect(parseDateListYmd("12/24 (木)・12/25 (金)", 2026)).toEqual({ dates: ["2026-12-24", "2026-12-25"], unknown: [] });
+  });
+
+  it("見出しは完全に一致するものを先に当てる (「担当しない日」を講師の列にしない)", () => {
+    const text = [
+      "講師\t期\t時限\t講座名\t担当しない日\t期の日\t時刻",
+      "伊藤\t高3 Ⅰ期\t3限\t理科基礎\t12/26\t12/24〜12/26\t12:25-13:35",
+    ].join("\n");
+    const parsed = parseSeniorKoshuImport(text, { data: EMPTY_SENIOR_KOSHU, fiscalYear: 2026 });
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.drafts.map((d) => [d.teacher, d.skipDates])).toEqual([["伊藤", ["2026-12-26"]]]);
+  });
+
+  it("読めなかった行で期・時限を作らない。見本はそのまま登録できる", () => {
+    const bad = [
+      "講師\t期\t時限\t講座名\t外す日\t日付\t時刻",
+      "伊藤\t高3 Ⅰ期\t3限\t理科基礎\t1/5\t12/24〜12/26\t12:25-13:35",
+    ].join("\n");
+    const parsed = parseSeniorKoshuImport(bad, { data: EMPTY_SENIOR_KOSHU, fiscalYear: 2026 });
+    expect(parsed.errors).toHaveLength(1);
+    expect([parsed.newTerms, parsed.newPeriods]).toEqual([[], []]);
+    const sample = parseSeniorKoshuImport(SENIOR_KOSHU_TEMPLATE, { data: EMPTY_SENIOR_KOSHU, fiscalYear: 2026 });
+    expect(sample.errors).toEqual([]);
+    expect(sample.drafts.map((d) => d.teacher)).toEqual(["伊藤", "藤本", "本澤"]);
+  });
+
+  it("CSV の引用符の中のカンマは区切りにしない", () => {
+    expect(csvLineToTsv('"藤本,本澤",Ⅰ期,"a ""b""",x')).toBe('藤本,本澤\tⅠ期\ta "b"\tx');
+    const csv = ["講師,期,時限,講座名,日付,時刻", '"藤本,本澤",Ⅰ期,1限,英語,12/24〜12/26,9:00-10:10'].join("\n");
+    const parsed = parseSeniorKoshuImport(csv, { data: EMPTY_SENIOR_KOSHU, fiscalYear: 2026 });
+    expect(parsed.errors).toEqual([]);
+    expect(parsed.drafts.map((d) => d.teacher)).toEqual(["藤本", "本澤"]);
+  });
+
+  it("外す日は期の日の年にそろえる (春期の 4/1)", () => {
+    expect(alignDatesToTerm(["2026-04-01"], ["2027-03-31", "2027-04-01"])).toEqual(["2027-04-01"]);
+  });
+
+  it("消した id を使い回さない (idFloor)", () => {
+    const d = { terms: [{ id: 1, name: "Ⅰ期", dates: ["2026-12-24"] }], periods: [{ id: 1, name: "1限", time: "09:00-10:10" }], lessons: [] };
+    const r = addSeniorLessons(d, [{ teacher: "伊藤", termId: 1, periodId: 1, course: "英語" }], { idFloor: 5 });
+    expect(r.added.map((l) => l.id)).toEqual([6]);
   });
 });
 

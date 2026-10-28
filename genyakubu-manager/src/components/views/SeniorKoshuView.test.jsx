@@ -93,7 +93,7 @@ describe("SeniorKoshuView", () => {
       ["藤本", "共通テスト英語", []],
       ["本澤", "共通テスト英語", []],
     ]);
-    expect(screen.getByTestId("toasts").textContent).toContain("担当 3 件を登録しました");
+    expect(screen.getByTestId("toasts").textContent).toContain("担当を 3 件登録しました。期を 1 つ・時限を 2 つ作りました");
     // 一覧: 時限の早い順 (予備校１限 → ３限)
     const rows = screen.getAllByRole("row").slice(1).map((r) => within(r).getAllByRole("cell")[2].textContent);
     expect(rows).toEqual(["共通テスト英語", "共通テスト英語", "共通テスト理科基礎(物理基礎)"]);
@@ -137,7 +137,39 @@ describe("SeniorKoshuView", () => {
     fireEvent.change(screen.getByLabelText("担当の講師"), { target: { value: "伊藤・堀上" } });
     fireEvent.click(screen.getByRole("button", { name: "足す" }));
     expect(latest.lessons.map((l) => l.teacher)).toEqual(["伊藤", "堀上"]);
-    expect(screen.getByTestId("toasts").textContent).toContain("登録済み 1 件は飛ばしました");
+    expect(screen.getByTestId("toasts").textContent).toContain("担当を 1 件足しました (堀上: 共通テスト理科基礎(物理基礎))。登録済みの 1 件は飛ばしました");
+  });
+
+  it("消した直後に足しても、消した担当は「元に戻す」で戻る (id を使い回さない)", () => {
+    renderView({ initial: DATA });
+    fireEvent.click(screen.getByRole("button", { name: "伊藤 共通テスト理科基礎(物理基礎) を消す" }));
+    fireEvent.click(screen.getByRole("button", { name: "＋ 担当" }));
+    fireEvent.change(screen.getByLabelText("担当の講座名"), { target: { value: "共通テスト英語" } });
+    fireEvent.change(screen.getByLabelText("担当の講師"), { target: { value: "堀上" } });
+    fireEvent.click(screen.getByRole("button", { name: "足す" }));
+    expect(latest.lessons.map((l) => [l.id, l.teacher])).toEqual([[2, "堀上"]]);
+    fireEvent.click(screen.getByRole("button", { name: "元に戻す" }));
+    expect(latest.lessons.map((l) => l.teacher).sort()).toEqual(["伊藤", "堀上"]);
+  });
+
+  it("担当を消した後に期を消したら、担当の「元に戻す」は戻さない (無い期を指す担当を残さない)", async () => {
+    renderView({ initial: DATA });
+    fireEvent.click(screen.getByRole("button", { name: "伊藤 共通テスト理科基礎(物理基礎) を消す" }));
+    fireEvent.click(screen.getByRole("button", { name: "期「高3 Ⅰ期」を消す" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "消す" }));
+    });
+    fireEvent.click(screen.getByRole("button", { name: "元に戻す" }));
+    expect(latest.lessons).toEqual([]);
+  });
+
+  it("行の直しで講師を 2 人入れたら止める", () => {
+    renderView({ initial: DATA });
+    fireEvent.click(screen.getByRole("button", { name: "伊藤 共通テスト理科基礎(物理基礎) を直す" }));
+    fireEvent.change(screen.getByLabelText("講師"), { target: { value: "伊藤・藤本" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(screen.getByRole("alert").textContent).toContain("講師は 1 人ずつです");
+    expect(latest.lessons[0].teacher).toBe("伊藤");
   });
 
   it("講師名から月間の予定を開ける。閲覧者には書き換えのボタンを出さない", () => {

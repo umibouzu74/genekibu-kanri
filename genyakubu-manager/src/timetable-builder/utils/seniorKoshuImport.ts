@@ -88,8 +88,9 @@ export function seniorKoshuSessionDraft(item: SeniorKoshuItemLike, dateLabel: st
   };
 }
 
+// 開始が同じなら同じ予定 (終わりは片方に無ければ比べない。本体の seniorKoshu.sameAsSeniorKoshu と同じ)
 const sameTime = (a: Pick<ExternalSession, 'startTime' | 'endTime'>, b: Pick<ExternalSession, 'startTime' | 'endTime'>) =>
-  !!a.startTime && a.startTime === b.startTime && (a.endTime || '') === (b.endTime || '');
+  !!a.startTime && a.startTime === b.startTime && (!a.endTime || !b.endTime || a.endTime === b.endTime);
 
 export function planSeniorKoshuImport(
   project: Project,
@@ -180,7 +181,8 @@ export function planSeniorKoshuImport(
     if (cands.some(p => sameTime(s, p))) plan.manualDuplicateIds.push(s.id);
   }
 
-  plan.unknownTeachers = [...unknown].sort((a, b) => a.localeCompare(b, 'ja'));
+  // 本体の並び (日付 → 時刻) で最初に出てきた順 (講師名を漢字の並びで並べない)
+  plan.unknownTeachers = [...unknown];
   plan.missingDates = [...missing.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([ymd, count]) => ({ ymd, label: ymdToLabel(ymd) || ymd, count }));
