@@ -1,6 +1,7 @@
 // effectiveConfigForTab はこのファイル内の従来名 effectiveConfig で使う
 // (呼び出し 6 箇所の命名統一。alias 定数を挟むと同一関数が 2 名で混在する)。
 import { makeKey, parseKey, makeNgKey, makeExternalKey, effectiveConfigForTab as effectiveConfig, nextId } from '../utils/scheduleKey';
+import { usedDateLabels } from '../utils/courseDates';
 import {
   cleanupOldCombined,
   propagateAssignment,
@@ -318,11 +319,34 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
       return { ...state, project: { ...state.project, activeTabId: action.payload.id } };
     }
     default: {
-      const newProject = applyAction(state.project, action);
+      let newProject = applyAction(state.project, action);
       if (newProject === state.project) return state;
+      // タブの使う日・時限を変える操作の後で、どのタブも使わなくなった日に他学年セッションが
+      // 残っていれば外部授業だけの日の印を付け直す (印が外れたままだと、その日の予定が
+      // 本体の月間・講師別 Excel から消え、「未使用の日を一括削除」で予定ごと消える)
+      if (/^(tabDates|tabPeriods|frame)\//.test(action.type) || action.type === 'tab/delete') {
+        newProject = keepExternalSessionDates(state.project, newProject);
+      }
       return pushToHistory(state, newProject);
     }
   }
+}
+
+// 授業の日でなくなった日 (前は使っていて、今はどのタブも使わない日) に他学年セッションが
+// あれば、外部授業だけの日の印を付ける
+function keepExternalSessionDates(before: Project, after: Project): Project {
+  const sessions = after.externalSessions || [];
+  if (sessions.length === 0) return after;
+  const sessionDates = new Set(sessions.map(s => s.date));
+  const usedBefore = usedDateLabels(before);
+  const usedAfter = usedDateLabels(after);
+  const flag = new Set(
+    (after.dates || [])
+      .filter(d => !isExternalOnlyDate(d) && sessionDates.has(d.label) && usedBefore.has(d.label) && !usedAfter.has(d.label))
+      .map(d => d.id),
+  );
+  if (flag.size === 0) return after;
+  return { ...after, dates: (after.dates || []).map(d => (flag.has(d.id) ? { ...d, externalOnly: true } : d)) };
 }
 
 // 履歴に新 project を積む (updatedAt 自動付与、MAX_HISTORY 超は古い順に切る)
@@ -2195,18 +2219,26 @@ function applyAction(project: Project, action: ProjectAction): Project {
       if (!target || !name || target.name === name || frames.some(f => f.name === name)) return project;
       return { ...project, frames: frames.map(f => (f.id === target.id ? { ...f, name } : f)) };
     }
-    // 枠を消す (タブは枠なしに戻り、使う時限はそのまま。時限・コマは消さない)
+    // 枠を消す (タブは枠なしに戻り、使う時限はそのまま。時限・コマは消さない)。
+    // 枠なしのタブは project の状態になる。最後の枠で、ほかに枠に入っていないタブも
+    // 無ければ、枠の状態を project に移す (全部を入れた枠を消しただけで月間の予定から
+    // 消えたり出たりしないように)。それ以外で状態が変わるときは画面で確かめる
     case 'frame/remove': {
       const frames = project.frames || [];
-      if (!frames.some(f => f.id === action.payload.id)) return project;
+      const removed = frames.find(f => f.id === action.payload.id);
+      if (!removed) return project;
       const rest = frames.filter(f => f.id !== action.payload.id);
+      const hadUnframed = project.tabs.some(t => !frames.some(f => f.id === t.config.frameId));
       const tabs = project.tabs.map(t => {
         if (t.config.frameId !== action.payload.id) return t;
         const { frameId: _frameId, ...config } = t.config;
         return { ...t, config };
       });
-      const next = { ...project, tabs, frames: rest };
-      if (rest.length === 0) delete next.frames;
+      const next: Project = { ...project, tabs, frames: rest };
+      if (rest.length === 0) {
+        delete next.frames;
+        if (!hadUnframed) next.publishState = framePublishState(project, removed);
+      }
       return next;
     }
     // タブを枠に入れる / 外す。入れるときの使う時限は、今の時限のうち枠にあるもの
@@ -2223,11 +2255,22 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const frame = (project.frames || []).find(f => f.id === frameId);
       if (!frame) return project;
       const allowed = new Set(frame.periodIds);
-      let active = effectiveConfig(project, tab).periods.map(p => p.id).filter(id => allowed.has(id));
-      if (active.length === 0) active = [...frame.periodIds];
+      const current = effectiveConfig(project, tab).periods.map(p => p.id);
+      const active = current.filter(id => allowed.has(id));
+      // 枠の時限が 1 つも重ならないタブは、タブの時限を枠に足して入れる (枠の時限に
+      // 置き換えると、タブのコマが時間割・Excel・本体の月間から見えなくなる)
+      if (active.length === 0 && current.length > 0) {
+        const merged = new Set([...frame.periodIds, ...current]);
+        const periodIds = (project.periods || []).map(p => p.id).filter(id => merged.has(id));
+        return {
+          ...project,
+          frames: (project.frames || []).map(f => (f.id === frameId ? { ...f, periodIds } : f)),
+          tabs: project.tabs.map(t => (t.id === tabId ? { ...t, config: { ...t.config, frameId, activePeriodIds: current } } : t)),
+        };
+      }
       return {
         ...project,
-        tabs: project.tabs.map(t => (t.id === tabId ? { ...t, config: { ...t.config, frameId, activePeriodIds: active } } : t)),
+        tabs: project.tabs.map(t => (t.id === tabId ? { ...t, config: { ...t.config, frameId, activePeriodIds: active.length > 0 ? active : [...frame.periodIds] } } : t)),
       };
     }
     // 枠の時限をカンマ区切りで直す。名前の同じ時限はプールの時限をそのまま使い (枠を
@@ -2259,14 +2302,30 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const newIdSet = new Set(newIds);
       const added = newIds.filter(pid => !oldIds.includes(pid));
       const removed = oldIds.filter(pid => !newIdSet.has(pid));
-      // プールの並び: この枠の時限を、最初の時限があった位置に枠の並びでまとめる
-      const allEntities = [...pool, ...created];
-      const entById = new Map(allEntities.map(p => [p.id, p] as const));
-      const firstIdx = pool.findIndex(p => newIdSet.has(p.id) || oldIds.includes(p.id));
-      const without = pool.filter(p => !newIdSet.has(p.id));
-      const insertAt = firstIdx < 0 ? without.length : without.filter(p => pool.indexOf(p) < firstIdx).length;
-      const periods = [...without.slice(0, insertAt), ...newIds.map(pid => entById.get(pid)!), ...without.slice(insertAt)];
-      const tabs = project.tabs.map(t => {
+      // 枠に入っていないタブで「全時限」のものは、今のプールの時限を明示しておく (足した
+      // 時限がそのタブの行にまで増えないように)
+      const isUnframed = (t: typeof project.tabs[number]) => !frames.some(f => f.id === t.config.frameId);
+      const tabs0 = created.length > 0
+        ? project.tabs.map(t => (isUnframed(t) && !t.config.activePeriodIds ? { ...t, config: { ...t.config, activePeriodIds: pool.map(p => p.id) } } : t))
+        : project.tabs;
+      // プールの並び: この枠だけが使う時限を枠の並びにそろえる (ほかの枠・枠に入っていない
+      // タブも使う時限は動かさない = そのタブの行の順を変えない)。新しい時限は、この枠の
+      // 時限のうちいちばん後ろの位置の次に入れる
+      const usedElsewhere = new Set<number>([
+        ...frames.filter(f => f.id !== id).flatMap(f => f.periodIds),
+        ...tabs0.filter(isUnframed).flatMap(t => t.config.activePeriodIds || pool.map(p => p.id)),
+      ]);
+      const createdIds = new Set(created.map(c => c.id));
+      const exclusiveInOrder = newIds.filter(pid => !createdIds.has(pid) && !usedElsewhere.has(pid));
+      const exclusiveSet = new Set(exclusiveInOrder);
+      let k = 0;
+      const reordered = pool.map(p => (exclusiveSet.has(p.id) ? pool.find(x => x.id === exclusiveInOrder[k++])! : p));
+      let lastIdx = -1;
+      reordered.forEach((p, i) => { if (newIdSet.has(p.id)) lastIdx = i; });
+      const insertAt = lastIdx < 0 ? reordered.length : lastIdx + 1;
+      const createdInOrder = newIds.filter(pid => createdIds.has(pid)).map(pid => created.find(c => c.id === pid)!);
+      const periods = [...reordered.slice(0, insertAt), ...createdInOrder, ...reordered.slice(insertAt)];
+      const tabs = tabs0.map(t => {
         if (t.config.frameId !== id) return t;
         const current = t.config.activePeriodIds || [];
         const active = [...current.filter(pid => newIdSet.has(pid)), ...added.filter(pid => !current.includes(pid))];

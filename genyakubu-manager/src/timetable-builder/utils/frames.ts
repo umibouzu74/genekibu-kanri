@@ -78,27 +78,33 @@ export function frameIdsUsingDate(project: FrameProject, dateLabel: string): Arr
 
 /**
  * 日付の属する枠 (他学年セッションの表示・講師別 Excel を枠ごとに分けるとき)。
- * 1. その日を授業に使う枠 (いくつもあれば先の枠)
+ * 1. その日を授業に使う枠。いくつもあれば、いちばん本体に出している枠 (月間に出すかの
+ *    判定 publishStateForSessionDate と同じ枠の名前を出す)。同じなら先の枠
  * 2. 外部授業だけの日などタブが使わない日は、期間 (最初〜最後の授業の日) がその日を
- *    含む枠、無ければカレンダーの上でいちばん近い枠 (12/24 → 12/25 から始まる冬期講習)
- * 枠が無い project・枠に入っていないタブだけが使う日は null
+ *    含む枠、無ければカレンダーの上でいちばん近い枠 (12/24 → 12/25 から始まる冬期講習)。
+ *    枠に入っていないタブもひとまとまりとして比べる (null)
+ * 枠が無い project・枠に入っていないタブの日は null
  */
 export function frameIdForDate(project: FrameProject, dateLabel: string): number | null {
   const frames = projectFrames(project);
   if (frames.length === 0) return null;
+  const stateOf = (id: number | null) => (id == null ? projectPublishState(project) : framePublishState(project, frameById(project, id)));
   const using = frameIdsUsingDate(project, dateLabel);
-  if (using.length > 0) return using[0];
+  if (using.length > 0) {
+    const best = mostPublished(using.map(stateOf));
+    return using.find(id => stateOf(id) === best) ?? using[0];
+  }
   const order = new Map(sortPoolDatesByCalendar(project.dates || []).map((d, i) => [d.label, i] as const));
   const at = order.get(dateLabel);
   if (at == null) return null;
-  let best: { id: number; dist: number } | null = null;
-  for (const f of frames) {
-    const idx = frameLessonDates(project, f.id).map(d => order.get(d.label)).filter((i): i is number => i != null);
+  let best: { id: number | null; dist: number } | null = null;
+  for (const id of [...frames.map(f => f.id), null]) {
+    const idx = frameLessonDates(project, id).map(d => order.get(d.label)).filter((i): i is number => i != null);
     if (idx.length === 0) continue;
     const lo = Math.min(...idx);
     const hi = Math.max(...idx);
     const dist = at < lo ? lo - at : at > hi ? at - hi : 0;
-    if (!best || dist < best.dist) best = { id: f.id, dist };
+    if (!best || dist < best.dist) best = { id, dist };
   }
   return best ? best.id : null;
 }

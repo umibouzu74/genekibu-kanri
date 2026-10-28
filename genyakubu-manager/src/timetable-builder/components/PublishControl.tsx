@@ -1,28 +1,13 @@
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { PUBLISH_STATES, framePublishState, projectPublishState, publishStateDef } from '../utils/publishState';
-import { projectBaseYmd, resolveDateLabelsYmd, usedDateLabels } from '../utils/courseDates';
-import { frameLessonDates, frameOfTab } from '../utils/frames';
-import type { Project, PublishState } from '../types';
+import { frameOfTab, tabsOfFrame } from '../utils/frames';
+import { publishChangeMessage, publishChangesFor } from '../utils/publishChange';
+import type { PublishState } from '../types';
 
 function todayYmd(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-// 今日より前に授業の日がある (済んだ講習を作成中に戻すと、授業時間の集計からも消える)。
-// 枠を選んでいればその枠の日だけ見る (年は季節の日付でまとめて決める)
-function hasPastLessonDays(project: Project, today: string, frameId: number | null): boolean {
-  const base = projectBaseYmd(project, today);
-  if (!base) return false;
-  const ymdByLabel = resolveDateLabelsYmd(usedDateLabels(project), base);
-  const labels = frameId != null
-    ? frameLessonDates(project, frameId).map(d => d.label)
-    : [...ymdByLabel.keys()];
-  return labels.some(l => {
-    const ymd = ymdByLabel.get(l);
-    return !!ymd && ymd < today;
-  });
 }
 
 // 本体の月間の予定へ出すか (作成中 / 仮確定 / 確定、2026-10-27)。決まりは
@@ -36,18 +21,23 @@ export default function PublishControl() {
 
   const choose = async (next: PublishState) => {
     if (next === state) return;
-    const today = todayYmd();
-    if (next === 'draft' && hasPastLessonDays(project, today, frame?.id ?? null)) {
-      const ok = await showConfirm(
-        `${frame ? `「${frame.name}」` : 'この時間割'}には今日より前の授業の日があります。作成中に戻すと、本体の講師の月間の予定と授業時間の集計 (済んだ日の分も) から消えます。作成中に戻しますか?`,
-        { title: '作成中に戻す', confirmLabel: '作成中に戻す' },
-      );
+    // 変わるタブ: 枠ならその枠のタブ、そうでなければ project の状態に従うタブ (枠に
+    // 入っていないタブと、状態を持たない枠のタブ)
+    const affected = frame
+      ? tabsOfFrame(project, frame.id)
+      : project.tabs.filter(t => {
+        const f = frameOfTab(project, t);
+        return !f || f.publishState == null;
+      });
+    const message = publishChangeMessage(project, publishChangesFor(project, affected, next), todayYmd());
+    if (message) {
+      const ok = await showConfirm(message, { title: '作成中に戻す', confirmLabel: '作成中に戻す' });
       if (!ok) return;
     }
     if (frame) setFramePublishState(frame.id, next);
     else setPublishState(next);
     const def = publishStateDef(next);
-    showToast(`${frame ? `「${frame.name}」を` : ''}「${def.label}」にしました。${def.note} (Undo で戻せます)`, 'success', 5000);
+    showToast(`${frame ? `「${frame.name}」の` : ''}月間の予定を「${def.label}」にしました。${def.note} (Undo で戻せます)`, 'success', 5000);
   };
 
   return (

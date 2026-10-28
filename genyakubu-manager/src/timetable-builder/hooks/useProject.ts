@@ -6,6 +6,7 @@ import { useSubjectActions } from './useSubjectActions';
 import { useTeacherActions } from './useTeacherActions';
 import { makeKey, migrateProject, effectiveConfigForTab } from '../utils/scheduleKey';
 import { cleanSchedule } from '../utils/constants';
+import { withCurrentPublishStates } from '../utils/publishState';
 import type { CombinedGroup, DayStatus, GenerationParamKey, Project, PublishState } from '../types';
 
 // 講習時間割プロジェクトの一元状態管理フック。
@@ -263,14 +264,16 @@ export function useProject(options: HistoryStackOptions) {
   // payload (保存済みプロジェクト) を migrate + cleanSchedule してから
   // project 全体を差し替える (Undo 可能)。JSON 読込と同じ apply 経路。
   // 月間の予定へ出すか (publishState) は今の project のまま (テンプレートを当てた
-  // だけで作成中の時間割が月間に出たり、確定した時間割が消えたりしないように)
+  // だけで作成中の時間割が月間に出たり、確定した時間割が消えたりしないように)。
+  // 枠の状態も、今の枠 (同じ id、無ければ同じ名前) の状態を引き継ぐ。今の project に無い
+  // 枠は作成中から (出すかは人が決める)
   const currentPublishState = project.publishState;
+  const currentFrames = project.frames;
   const applyTemplateFull = useCallback((payload: unknown) => {
     if (!payload) return;
-    const { publishState: _templateState, ...migrated } = migrateProject(payload);
-    const next = currentPublishState ? { ...migrated, publishState: currentPublishState } : migrated;
+    const next = withCurrentPublishStates(migrateProject(payload), { publishState: currentPublishState, frames: currentFrames });
     dispatch({ type: 'project/replace', payload: { project: cleanSchedule(next) } });
-  }, [dispatch, currentPublishState]);
+  }, [dispatch, currentPublishState, currentFrames]);
 
   // --- 合同グループ管理 ---
   const addCombinedGroup = useCallback((group: Omit<CombinedGroup, 'id'>) => {

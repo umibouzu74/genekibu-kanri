@@ -95,10 +95,16 @@ export default function SeasonStartPanel({
         return;
       }
       const imported = mergeImportedTemplates(parsed.templates);
-      // 月間の予定へ出すか を持たない JSON (この項目ができる前に書き出したもの) は
-      // 作成中から (開いただけで本体の月間に出さない。出すときは仮確定・確定を押す)
+      // 季節を JSON から始めるときは、JSON の状態 (去年の確定など) によらず作成中から
+      // (開いただけで本体の月間に出さない。出すときは仮確定・確定を押す)。枠も同じ
       onStart(
-        parsed.project.publishState ? parsed.project : { ...parsed.project, publishState: NEW_PROJECT_PUBLISH_STATE },
+        {
+          ...parsed.project,
+          publishState: NEW_PROJECT_PUBLISH_STATE,
+          ...(Array.isArray(parsed.project.frames)
+            ? { frames: parsed.project.frames.map(f => ({ ...f, publishState: NEW_PROJECT_PUBLISH_STATE })) }
+            : {}),
+        },
         `「${f.name}」を${def.label}として開きました` + (imported > 0 ? ` (テンプレート ${imported} 件を取り込みました)` : ''),
       );
     };

@@ -91,7 +91,8 @@ export function computeCourseSplit(
   const exact = new Set(labels.map(p => p.label));
   const out: CourseSplitAssignment[] = [];
   for (const s of sessions || []) {
-    if (!s || normalizeSessionCourse(s.course)) continue;
+    // 本体の高校・予備校の講習から取り込んだものは本体が正なので分けない
+    if (!s || normalizeSessionCourse(s.course) || s.source === 'seniorKoshu') continue;
     const memo = typeof s.memo === 'string' ? s.memo.trim() : '';
     // 「Ⅰ期 予備校３限」を「Ⅰ期」+「予備校３限」にしない
     if (!memo || exact.has(memo)) continue;

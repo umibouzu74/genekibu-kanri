@@ -177,8 +177,11 @@ export default function BasicSettings() {
   };
 
   const removeFromPool = async (d) => {
+    const sessionCount = (project.externalSessions || []).filter(x => x.date === d.label).length;
     const ok = await showConfirm(
-      `「${d.label}」を日付プールから完全に削除します。\n全タブ・講師不在/NG から消え、この日付に入っているコマも削除されます。\nよろしいですか?`,
+      `「${d.label}」を日付プールから完全に削除します。\n全タブ・講師不在/NG から消え、この日付に入っているコマも削除されます。` +
+        (sessionCount > 0 ? `\nこの日の他学年セッション ${sessionCount} 件も消えます。` : '') +
+        '\nよろしいですか？',
       { title: '日付の完全削除', danger: true, confirmLabel: '削除する' },
     );
     if (ok) {

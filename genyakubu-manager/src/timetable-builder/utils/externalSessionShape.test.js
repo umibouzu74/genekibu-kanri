@@ -81,3 +81,14 @@ describe('他学年セッションの講座名 (2026-10-27)', () => {
     expect(migrated.externalSessions.every(s => s.id !== 1 || !('course' in s))).toBe(true);
   });
 });
+
+describe('取り込んだセッション (校正, 2026-10-28)', () => {
+  it('本体の高校・予備校の講習から取り込んだものはメモと講座名に分けない', () => {
+    const presets = [{ id: 1, name: 'Ⅰ期' }];
+    const sessions = [
+      { id: 1, date: '12/25(金)', teacherName: '滝澤', memo: 'Ⅰ期 3限' },
+      { id: 2, date: '12/25(金)', teacherName: '滝澤', memo: 'Ⅰ期 3限', source: 'seniorKoshu', sourceKey: '1:2026-12-25' },
+    ];
+    expect(computeCourseSplit(sessions, presets).map(a => a.sessionId)).toEqual([1]);
+  });
+});

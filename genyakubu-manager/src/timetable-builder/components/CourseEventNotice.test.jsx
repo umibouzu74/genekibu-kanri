@@ -68,7 +68,7 @@ describe('CourseEventLinks (行事予定との対応)', () => {
         </UIContext.Provider>
       </HostDataContext.Provider>,
     );
-    fireEvent.click(screen.getByRole('button', { name: '名前から結び付ける (1 件)' }));
+    fireEvent.click(screen.getByRole('button', { name: '名前から結び付ける (1 タブ)' }));
     expect(linkCourseEvents).toHaveBeenCalledWith([{ tabId: 2, name: '直前ポイント 火木' }]);
     const group = screen.getByRole('group', { name: '「冬期講習」と比べるタブ' });
     fireEvent.click(within(group).getByRole('button', { name: '中３' }));

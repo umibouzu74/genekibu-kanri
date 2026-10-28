@@ -4,6 +4,7 @@ import { activeDatesForTab, effectiveConfigForTab, migrateProject } from './sche
 import { sessionDateLabels, usedDateLabels } from './courseDates';
 import { projectReducer } from '../hooks/projectReducer';
 import { buildTeacherRows } from './excelExport';
+import { computeSurveyDays } from './availability';
 
 const tab = (over = {}) => ({ id: 1, name: '中3', config: { classes: [{ id: 1, label: '3S' }], subjectCounts: {}, ...over }, schedule: {} });
 const base = (over = {}) => ({
@@ -32,6 +33,27 @@ const base = (over = {}) => ({
 const reduce = (project, action) => projectReducer({ project, history: [project], historyIndex: 0, loadError: null }, action).project;
 
 describe('外部授業だけの日', () => {
+  it('出勤可能調査の対象にしない (全日を使うタブがあっても)', () => {
+    const p = base();
+    const days = computeSurveyDays(p);
+    expect(days.find(d => d.date.label === '12/24(木)').periods).toEqual([]);
+    expect(days.find(d => d.date.label === '12/25(金)').periods).toHaveLength(1);
+  });
+
+  it('タブが使わなくなった日に他学年セッションが残っていれば、印を付け直す (予定を月間から消さない・一括削除で消さない)', () => {
+    const session = { id: 1, date: '12/24(木)', teacherName: '滝澤', label: '12:25-13:35', memo: 'Ⅰ期', startTime: '12:25', endTime: '13:35' };
+    let p = base({ tabs: [tab({ activeDateIds: [2, 3] })], externalSessions: [session] });
+    // 12/24〜12/26 で作り直す → 印が外れる
+    p = reduce(p, { type: 'tabDates/setByLabels', payload: { labels: ['12/24(木)', '12/25(金)', '12/26(土)'] } });
+    expect(p.dates.find(d => d.id === 1).externalOnly).toBeUndefined();
+    // 12/25〜12/26 に直す → 12/24 は外部授業だけの日に戻る
+    p = reduce(p, { type: 'tabDates/setByLabels', payload: { labels: ['12/25(金)', '12/26(土)'] } });
+    expect(p.dates.find(d => d.id === 1)).toEqual({ id: 1, label: '12/24(木)', externalOnly: true });
+    expect([...sessionDateLabels(p)]).toContain('12/24(木)');
+    // 一括削除でも消えない
+    expect(reduce(p, { type: 'dates/removeUnusedFromPool' }).externalSessions).toHaveLength(1);
+  });
+
   it('どのタブの時間割にも出さない (全日使うタブでも・使う日に入っていても)', () => {
     const p = base();
     expect(activeDatesForTab(p.dates, p.tabs[0]).map(d => d.id)).toEqual([2, 3]);

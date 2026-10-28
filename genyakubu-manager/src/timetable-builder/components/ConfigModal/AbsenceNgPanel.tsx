@@ -469,8 +469,14 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
 
   const handleApplyNg = async (value) => {
     if (!canApplyNg) return;
+    // 外部授業だけの日には NG を付けない (講習のコマが無く、NG の表も出ないので見えない)
+    const ngDateLabels = dateLabelsInRange.filter(l => !isExternalOnlyDate(poolDates.find(d => d.label === l)));
+    if (ngDateLabels.length === 0) {
+      showToast('期間の日がすべて外部授業だけの日なので、NG は付けません', 'warning', 3000);
+      return;
+    }
     const teacherCount = selectedTeacherIdxs.length;
-    const dayCount = dateLabelsInRange.length;
+    const dayCount = ngDateLabels.length;
     const periodCount = periodLabelsSelected.length;
     // OK解除は destructive (既にある NG を消す方向) なので明示確認 —
     // 同じ teachers/dates/periods が selected のまま再クリックで silent に
@@ -482,7 +488,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
       );
       if (!ok) return;
     }
-    setNgBatch(selectedTeacherIdxs, dateLabelsInRange, periodLabelsSelected, value);
+    setNgBatch(selectedTeacherIdxs, ngDateLabels, periodLabelsSelected, value);
     showToast(
       value
         ? `${teacherCount}名 × ${dayCount}日 × ${periodCount}時限 を NG にしました`

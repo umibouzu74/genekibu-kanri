@@ -1,11 +1,17 @@
 import { useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
-import { PUBLISH_STATES, framePublishState } from '../../utils/publishState';
+import { PUBLISH_STATES, framePublishState, projectPublishState } from '../../utils/publishState';
 import { framePeriods, frameRangeLabel, projectFrames, tabsOfFrame } from '../../utils/frames';
+import { publishChangeMessage, publishChangesFor } from '../../utils/publishChange';
 import DraftLineInput from './DraftLineInput';
 import DraftListTextarea from './DraftListTextarea';
 import type { PublishState } from '../../types';
+
+function todayYmd(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 // 季節の中の「枠」(2026-10-27)。冬期講習 / 直前ポイント演習 / 弱点補強演習 のように、
 // 1 つの季節の中の別の講習を分ける。枠ごとに名前・時限・月間の予定 (作成中 / 仮確定 /
@@ -54,14 +60,44 @@ export default function FrameSettings() {
     showToast(`枠「${name}」を作りました。時限と「月間の予定」は枠ごとに直せます`, 'success', 4000);
   };
 
+  // 枠を消すと、その枠のタブは project の状態になる (最後の枠で、ほかに枠に入っていない
+  // タブも無ければ、枠の状態を project に移すので変わらない。projectReducer の frame/remove)
   const handleRemove = async (id: number, name: string) => {
+    const frame = frames.find(f => f.id === id);
+    const tabs = tabsOfFrame(project, id);
+    const keepsState = frames.length === 1 && unframedTabs.length === 0;
+    const to = keepsState && frame ? framePublishState(project, frame) : projectPublishState(project);
+    const change = publishChangeMessage(project, publishChangesFor(project, tabs, to), todayYmd(), { askAlways: true });
     const ok = await showConfirm(
-      `枠「${name}」を消します。この枠のタブは枠なしに戻ります (タブ・時限・コマは消えません)。よろしいですか?`,
+      `枠「${name}」を消します。この枠のタブは枠なしに戻ります (タブ・時限・コマは消えません)。` +
+        (change ? `\n${change}` : 'よろしいですか？'),
       { title: '枠の削除', confirmLabel: '消す' },
     );
     if (!ok) return;
     removeFrame(id);
     showToast(`枠「${name}」を消しました (Undo で戻せます)`, 'success', 3000);
+  };
+
+  // 開いているタブを枠に入れる / 外す。入る枠 (外すなら project) の状態になるので、変わるなら確かめる
+  const handleSetTabFrame = async (frameId: number | null) => {
+    const target = frameId != null ? frames.find(f => f.id === frameId) : null;
+    const to = target ? framePublishState(project, target) : projectPublishState(project);
+    const message = publishChangeMessage(project, publishChangesFor(project, [activeTab], to), todayYmd(), { askAlways: true });
+    if (message) {
+      const ok = await showConfirm(message, { title: target ? `「${target.name}」に入れる` : '枠から外す', confirmLabel: target ? '入れる' : '外す' });
+      if (!ok) return;
+    }
+    setTabFrame(activeTab.id, frameId);
+  };
+
+  // 枠の「月間の予定」を選ぶ (済んだ日のあるタブを作成中にするときは確かめる。ヘッダの切替と同じ)
+  const handleFrameState = async (id: number, next: PublishState) => {
+    const message = publishChangeMessage(project, publishChangesFor(project, tabsOfFrame(project, id), next), todayYmd());
+    if (message) {
+      const ok = await showConfirm(message, { title: '作成中に戻す', confirmLabel: '作成中に戻す' });
+      if (!ok) return;
+    }
+    setFramePublishState(id, next);
   };
 
   const commitPeriods = (id: number, value: string) => {
@@ -101,7 +137,7 @@ export default function FrameSettings() {
             id="builder-active-tab-frame"
             className={inputCls}
             value={activeTab.config.frameId ?? ''}
-            onChange={(e) => setTabFrame(activeTab.id, e.target.value === '' ? null : Number(e.target.value))}
+            onChange={(e) => { void handleSetTabFrame(e.target.value === '' ? null : Number(e.target.value)); }}
           >
             <option value="">枠に入れない</option>
             {frames.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
@@ -142,7 +178,7 @@ export default function FrameSettings() {
                       className={inputCls}
                       value={state}
                       aria-label={`枠「${f.name}」の月間の予定`}
-                      onChange={(e) => setFramePublishState(f.id, e.target.value as PublishState)}
+                      onChange={(e) => { void handleFrameState(f.id, e.target.value as PublishState); }}
                     >
                       {PUBLISH_STATES.map(s => <option key={s.key} value={s.key}>{s.icon} {s.label}</option>)}
                     </select>
@@ -155,7 +191,7 @@ export default function FrameSettings() {
                   >消す</button>
                 </div>
                 <div className="text-xs text-builder-ink">
-                  タブ: {tabs.length > 0 ? tabs.map(t => t.name).join('・') : <span className="text-builder-ink-muted">(まだありません。上の「枠」で選ぶと入ります)</span>}
+                  タブ: {tabs.length > 0 ? tabs.map(t => t.name).join('・') : <span className="text-builder-ink-muted">(まだありません。タブを開いて、上の「(タブ名) の枠」で選ぶと入ります)</span>}
                 </div>
                 <label className="block text-xs">
                   <span className="font-bold text-builder-ink-muted">時限 (カンマ区切り・この枠のタブ共通)</span>
@@ -202,7 +238,7 @@ export default function FrameSettings() {
             </div>
           </fieldset>
           <p className="text-[11px] text-builder-ink-muted">
-            「月間の予定」は今の状態から始まります (作成中なら作成中のまま)。
+            「月間の予定」は入れるタブの今の状態から始まります (どれかが作成中なら作成中)。
           </p>
           <div className="flex gap-2">
             <button type="button" onClick={create} className="px-3 py-1 rounded bg-builder-blue text-white font-bold hover:bg-builder-blue-hover">作る</button>

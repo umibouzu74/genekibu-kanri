@@ -5,6 +5,7 @@ import {
   isPublished,
   projectPublishState,
   publishStateDef,
+  withCurrentPublishStates,
 } from './publishState';
 import { migrateProject } from './scheduleKey';
 import { createNewProject } from '../hooks/projectFactory';
@@ -59,5 +60,20 @@ describe('publishState (作成中 / 仮確定 / 確定)', () => {
     expect(projectReducer(next, { type: 'project/setPublishState', payload: { state: 'nope' } })).toBe(next);
     const undone = projectReducer(next, { type: 'history/undo' });
     expect(undone.project.publishState).toBe('draft');
+  });
+});
+
+describe('テンプレートを当てるときの状態 (校正, 2026-10-28)', () => {
+  it('project と、同じ id・名前の枠は今の状態のまま。今の時間割に無い枠は作成中', () => {
+    const current = { publishState: 'final', frames: [{ id: 1, name: '冬期講習', periodIds: [], publishState: 'final' }, { id: 2, name: '直前', periodIds: [], publishState: 'draft' }] };
+    const template = {
+      publishState: 'draft',
+      frames: [{ id: 1, name: '冬期講習', periodIds: [] }, { id: 7, name: '直前', periodIds: [] }, { id: 8, name: '弱点', periodIds: [] }],
+    };
+    const next = withCurrentPublishStates(template, current);
+    expect(next.publishState).toBe('final');
+    expect(next.frames.map(f => [f.name, f.publishState])).toEqual([['冬期講習', 'final'], ['直前', 'draft'], ['弱点', 'draft']]);
+    // 今の時間割に状態が無ければ持たない (未設定 = 確定のまま)
+    expect('publishState' in withCurrentPublishStates({ publishState: 'draft' }, {})).toBe(false);
   });
 });

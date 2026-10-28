@@ -61,7 +61,54 @@ const withFrames = (project = base()) => {
   return p;
 };
 
+describe('日付の属する枠 (校正, 2026-10-28)', () => {
+  it('外部授業だけの日は、枠に入っていないタブも含めていちばん近いまとまりの状態で出す', () => {
+    // 中３ (12/25・26) は枠なし (確定)、直前 (1/12・14) は作成中の枠。12/24 は中３に近い
+    let p = reduce(base(), { type: 'frame/add', payload: { name: '直前ポイント演習', tabIds: [2] } });
+    p = reduce(p, { type: 'frame/setPublishState', payload: { id: 1, state: 'draft' } });
+    expect(frameIdForDate(p, '12/24(木)')).toBe(null);
+    expect(publishStateForSessionDate(p, '12/24(木)')).toBe('final');
+  });
+
+  it('同じ日を使う枠がいくつもあれば、いちばん出している枠の名前にする', () => {
+    let p = reduce(base({ publishState: 'draft' }), { type: 'frame/add', payload: { name: 'A', tabIds: [1] } });
+    p = reduce(p, { type: 'frame/add', payload: { name: 'B', tabIds: [2] } });
+    // B のタブも 12/25 を使う
+    p = { ...p, tabs: p.tabs.map(t => (t.id === 2 ? { ...t, config: { ...t.config, activeDateIds: [1, 4, 5] } } : t)) };
+    p = reduce(p, { type: 'frame/setPublishState', payload: { id: 2, state: 'final' } });
+    expect(frameIdForDate(p, '12/25(金)')).toBe(2);
+  });
+});
+
 describe('枠を作る・直す (reducer)', () => {
+  it('作るときの状態は入れるタブのうち出していない方 (作成中と確定のタブ → 作成中)', () => {
+    let p = reduce(base({ publishState: 'draft' }), { type: 'frame/add', payload: { name: '冬期講習', tabIds: [1] } });
+    p = reduce(p, { type: 'frame/setPublishState', payload: { id: 1, state: 'final' } });
+    // 冬期講習の枠 (確定) のタブ 1 と、枠なし (project = 作成中) のタブ 2 を入れる
+    p = reduce(p, { type: 'frame/add', payload: { name: 'まとめ', tabIds: [1, 2] } });
+    expect(p.frames.find(f => f.name === 'まとめ').publishState).toBe('draft');
+  });
+
+  it('最後の枠を消すと、ほかに枠なしのタブが無ければ枠の状態を project に移す (月間から消えない)', () => {
+    let p = reduce(base({ publishState: 'draft' }), { type: 'frame/add', payload: { name: '冬期講習', tabIds: [1, 2, 3] } });
+    p = reduce(p, { type: 'frame/setPublishState', payload: { id: 1, state: 'final' } });
+    p = reduce(p, { type: 'frame/remove', payload: { id: 1 } });
+    expect('frames' in p).toBe(false);
+    expect(p.publishState).toBe('final');
+    expect(p.tabs.map(t => publishStateForTab(p, t))).toEqual(['final', 'final', 'final']);
+  });
+
+  it('枠の時限に新しい時限を足しても、枠に入っていない「全時限」のタブの行は増えない。共有の時限の並びは動かさない', () => {
+    let p = reduce(base(), { type: 'frame/add', payload: { name: '直前ポイント演習', tabIds: [2] } });
+    // タブ 1 (中３) を「全時限」に
+    p = { ...p, tabs: p.tabs.map(t => (t.id === 1 ? { ...t, config: { ...t.config, activePeriodIds: undefined } } : t)) };
+    const before = effectiveConfigForTab(p, p.tabs[0]).periods.map(x => x.label);
+    p = reduce(p, { type: 'frame/setPeriods', payload: { id: 1, value: '1限 (13:00~14:20), 1限 (18:00~19:20), 2限 (19:30~20:50)' } });
+    expect(effectiveConfigForTab(p, p.tabs[0]).periods.map(x => x.label)).toEqual(before);
+    // 直前の枠のタブには足した時限が入る
+    expect(effectiveConfigForTab(p, p.tabs[1]).periods.map(x => x.label)).toEqual(['1限 (13:00~14:20)', '1限 (18:00~19:20)', '2限 (19:30~20:50)']);
+  });
+
   it('作る: タブを入れ、枠の時限はそのタブの今の時限。状態は入れるタブの状態から', () => {
     const p = withFrames(base({ publishState: 'draft' }));
     expect(p.frames).toEqual([
@@ -74,17 +121,21 @@ describe('枠を作る・直す (reducer)', () => {
     expect(reduce(p, { type: 'frame/add', payload: { name: '冬期講習' } })).toBe(p);
   });
 
-  it('タブを枠に入れる: 今の時限のうち枠にあるもの (無ければ枠の全時限)。外すと今の時限のまま', () => {
+  it('タブを枠に入れる: 今の時限のうち枠にあるもの。1 つも重ならなければタブの時限を枠に足す。外すと今の時限のまま', () => {
     let p = withFrames();
     p = reduce(p, { type: 'tab/add', payload: { name: '中３直前 水金' } }); // 開いているタブ (中３) を写す → 冬期講習
     const added = p.tabs.find(t => t.name === '中３直前 水金');
     expect(added.config.frameId).toBe(1);
+    const before = added.config.activePeriodIds;
     p = reduce(p, { type: 'frame/setTab', payload: { tabId: added.id, frameId: 2 } });
-    expect(p.tabs.find(t => t.id === added.id).config).toMatchObject({ frameId: 2, activePeriodIds: [3] });
+    // 枠の時限に置き換えると、タブのコマが見えなくなるので、タブの時限を枠に足す
+    expect(p.tabs.find(t => t.id === added.id).config).toMatchObject({ frameId: 2, activePeriodIds: before });
+    const frame2 = p.frames.find(f => f.id === 2);
+    expect(frame2.periodIds).toEqual(p.periods.map(x => x.id).filter(id => [...before, 3].includes(id)));
     p = reduce(p, { type: 'frame/setTab', payload: { tabId: added.id, frameId: null } });
     const out = p.tabs.find(t => t.id === added.id).config;
     expect('frameId' in out).toBe(false);
-    expect(out.activePeriodIds).toEqual([3]);
+    expect(out.activePeriodIds).toEqual(before);
   });
 
   it('枠の時限を直す: 同じ名前は同じ時限、無い名前は足してタブにも足す。外した時限はどこも使わなければ消す (NG も)', () => {

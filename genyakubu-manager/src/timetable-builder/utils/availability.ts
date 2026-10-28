@@ -19,6 +19,7 @@
 //   (answeredTeacherNames)。前の季節の日付に残った回答だけの講師は未回答
 
 import { makeNgKey, activePeriodsForTab } from './scheduleKey';
+import { isExternalOnlyDate } from './externalSessionShape';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { resolveDateLabelsYmd } from './courseDates';
 import { formatHHmm, getPeriodTimeRange } from './timeRange';
@@ -138,6 +139,8 @@ export function computeSurveyDays(project: Pick<Project, 'dates' | 'periods' | '
   return sortPoolDatesByCalendar(project.dates || []).map(date => {
     const ids = new Set<number>();
     const tabNames: string[] = [];
+    // 外部授業だけの日は講習の日ではないので調査しない (全日を使うタブがあっても)
+    if (isExternalOnlyDate(date)) return { date, periods: [], tabNames };
     tabs.forEach(t => {
       if (t.dateIds && !t.dateIds.has(date.id)) return;
       if (t.periods.length === 0) return;

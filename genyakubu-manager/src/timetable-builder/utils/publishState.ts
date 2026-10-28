@@ -85,3 +85,25 @@ export function leastPublished(states: PublishState[]): PublishState {
   for (const s of states) if (best == null || RANK[s] < RANK[best]) best = s;
   return best ?? 'final';
 }
+
+/**
+ * テンプレートを当てるとき、月間の予定へ出すかは今の時間割のまま (テンプレートを当てた
+ * だけで作成中の時間割が月間に出たり、確定した時間割が消えたりしないように)。枠は今の
+ * 枠 (同じ id、無ければ同じ名前) の状態を引き継ぎ、今の時間割に無い枠は作成中から
+ */
+export function withCurrentPublishStates<P extends Pick<Project, 'publishState' | 'frames'>>(
+  template: P,
+  current: Pick<Project, 'publishState' | 'frames'>,
+): P {
+  const { publishState: _templateState, ...rest } = template;
+  const next = { ...rest } as P;
+  if (current.publishState) next.publishState = current.publishState;
+  if (Array.isArray(next.frames) && next.frames.length > 0) {
+    const frames = current.frames || [];
+    next.frames = next.frames.map(f => {
+      const same = frames.find(c => c.id === f.id) || frames.find(c => c.name === f.name);
+      return { ...f, publishState: same ? framePublishState(current, same) : NEW_PROJECT_PUBLISH_STATE };
+    });
+  }
+  return next;
+}
