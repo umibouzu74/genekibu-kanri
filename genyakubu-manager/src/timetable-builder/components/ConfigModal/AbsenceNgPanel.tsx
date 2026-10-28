@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
-import { makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
+import { effectiveConfigForTab, makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
 import { autoNgSourceLabel, computeAutoNgEntries } from '../../utils/autoNg';
 import { computePresetMemoBackfill } from '../../utils/presetMemoBackfill';
 import { computePresetRenameSyncIds, presetSessionLabel } from '../../utils/presetRenameSync';
@@ -15,7 +15,11 @@ import { useJumpToCell } from '../../hooks/useJumpToCell';
 import type { NgViolationItem } from '../../utils/ngViolations';
 import SessionCsvImport from './SessionCsvImport';
 import OffsiteImport from './OffsiteImport';
+import SeniorKoshuImport from './SeniorKoshuImport';
 import DraftNumberInput from './DraftNumberInput';
+import DraftLineInput from './DraftLineInput';
+import { computeCourseSplit, externalSessionContentKey, isExternalOnlyDate, sessionDisplayLabel } from '../../utils/externalSessionShape';
+import { framePeriods, projectFrames } from '../../utils/frames';
 
 // 時刻 <input type="time"> のスピナー刻み (秒)。講習の時刻は 5 分単位が前提
 // なので 1 分刻み (= 既定 60) だと『分を合わせづらい』。300 = 5 分にして
@@ -43,6 +47,8 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
     handleExternalCountChange,
     addExternalSessions,
     removeExternalSession,
+    updateExternalSession,
+    splitSessionCourses,
     addExternalSessionPreset,
     updateExternalSessionPreset,
     removeExternalSessionPreset,
@@ -115,6 +121,8 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
   // periodIds も同様に『動的全選択』モードを持つ (code-review P2)。
   const [formPeriods, setFormPeriods] = useState(() => ({ allMode: true, ids: new Set<number>() }));
   const [formMemo, setFormMemo] = useState('');
+  // 講座名 (任意、2026-10-27)。メモ (プリセットの名前) とは分けて持つ
+  const [formCourse, setFormCourse] = useState('');
   // 他学年モード用 (時刻)
   const [formStartTime, setFormStartTime] = useState('');
   const [formEndTime, setFormEndTime] = useState('');
@@ -221,14 +229,54 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
     return map;
   }, [sessions]);
 
-  // 日付ヘッダの NG 件数 (手動 + 自動 両方)
+  // 日付ごとの NG マトリクスに出す時限 (2026-10-27): その日を使うタブの時限 + 手動NG の
+  // ある時限。季節の中の枠 (冬期講習の昼・直前の夜・弱点補強の朝) で時限が 14 個に
+  // なると、どの日にも全部の列が並んで読めなかった。その日を使うタブが無い日は全時限
+  const periodsByDate = useMemo(() => {
+    const m = new Map<number, typeof poolPeriods>();
+    const tabCfgs = (project.tabs || []).map(t => effectiveConfigForTab(project, t));
+    poolDates.forEach(d => {
+      const ids = new Set<number>();
+      tabCfgs.forEach(cfg => {
+        if (cfg.dates.some(x => x.id === d.id)) cfg.periods.forEach(p => ids.add(p.id));
+      });
+      if (ids.size > 0) {
+        project.teachers.forEach(t => {
+          poolPeriods.forEach(p => {
+            if (t.ngSlots?.includes(makeNgKey(d.label, p.label))) ids.add(p.id);
+          });
+        });
+      }
+      m.set(d.id, ids.size > 0 ? poolPeriods.filter(p => ids.has(p.id)) : poolPeriods);
+    });
+    return m;
+  }, [project, poolDates, poolPeriods]);
+
+  // NG モードの時限の選択肢: 季節の中の枠があれば枠ごとにまとめる
+  const periodGroups = useMemo(() => {
+    const frames = projectFrames(project);
+    if (frames.length === 0) return [{ key: 'all', label: '', periods: poolPeriods }];
+    const seen = new Set<number>();
+    const groups = frames.map(f => {
+      const periods = framePeriods(project, f).filter(p => !seen.has(p.id));
+      periods.forEach(p => seen.add(p.id));
+      return { key: `f${f.id}`, label: f.name, periods };
+    });
+    const rest = poolPeriods.filter(p => !seen.has(p.id));
+    if (rest.length > 0) groups.push({ key: 'rest', label: '枠なし', periods: rest });
+    return groups.filter(g => g.periods.length > 0);
+  }, [project, poolPeriods]);
+
+  // 日付ヘッダの NG 件数 (手動 + 自動 両方。その日の NG マトリクスに出す時限で数える)
   const ngCountByDate = useMemo(() => {
     const out = {};
     poolDates.forEach(d => {
       let count = 0;
+      // 外部授業だけの日は講習のコマが無い (NG マトリクスも出さない) ので数えない
+      if (isExternalOnlyDate(d)) { out[d.id] = 0; return; }
       project.teachers.forEach(t => {
         const autoEntries = autoNgByTeacher?.get(t.name);
-        poolPeriods.forEach(p => {
+        (periodsByDate.get(d.id) || poolPeriods).forEach(p => {
           const k = makeNgKey(d.label, p.label);
           if (t.ngSlots?.includes(k) || autoEntries?.has(k)) count++;
         });
@@ -236,7 +284,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
       out[d.id] = count;
     });
     return out;
-  }, [poolDates, poolPeriods, project.teachers, autoNgByTeacher]);
+  }, [poolDates, poolPeriods, periodsByDate, project.teachers, autoNgByTeacher]);
 
   // 期間内の date ラベル配列
   const rangeDateLabels = useMemo(() => {
@@ -381,7 +429,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
     for (const teacherName of selectedTeacherNames) {
       for (const dl of dateLabelsInRange) {
         items.push({
-          date: dl, teacherName, label: autoLabel, memo: formMemo.trim(),
+          date: dl, teacherName, label: autoLabel, memo: formMemo.trim(), course: formCourse.trim(),
           startTime: formStartTime || undefined,
           endTime: formEndTime || undefined,
         });
@@ -389,8 +437,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
     }
     // N1i: reducer は内容が完全一致する既存セッションをスキップするので、
     // toast も実際の登録件数と重複スキップ件数を分けて出す (キーは reducer と同形)。
-    const contentKey = (s) =>
-      JSON.stringify([s.date, s.teacherName, s.label || '', s.memo || '', s.startTime || '', s.endTime || '']);
+    const contentKey = externalSessionContentKey;
     const seen = new Set((project.externalSessions || []).map(contentKey));
     let added = 0;
     for (const it of items) {
@@ -417,12 +464,19 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
     setFormStartTime('');
     setFormEndTime('');
     setFormMemo('');
+    setFormCourse('');
   };
 
   const handleApplyNg = async (value) => {
     if (!canApplyNg) return;
+    // 外部授業だけの日には NG を付けない (講習のコマが無く、NG の表も出ないので見えない)
+    const ngDateLabels = dateLabelsInRange.filter(l => !isExternalOnlyDate(poolDates.find(d => d.label === l)));
+    if (ngDateLabels.length === 0) {
+      showToast('期間の日がすべて外部授業だけの日なので、NG は付けません', 'warning', 3000);
+      return;
+    }
     const teacherCount = selectedTeacherIdxs.length;
-    const dayCount = dateLabelsInRange.length;
+    const dayCount = ngDateLabels.length;
     const periodCount = periodLabelsSelected.length;
     // OK解除は destructive (既にある NG を消す方向) なので明示確認 —
     // 同じ teachers/dates/periods が selected のまま再クリックで silent に
@@ -434,7 +488,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
       );
       if (!ok) return;
     }
-    setNgBatch(selectedTeacherIdxs, dateLabelsInRange, periodLabelsSelected, value);
+    setNgBatch(selectedTeacherIdxs, ngDateLabels, periodLabelsSelected, value);
     showToast(
       value
         ? `${teacherCount}名 × ${dayCount}日 × ${periodCount}時限 を NG にしました`
@@ -543,6 +597,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
       setFormStartTime('');
       setFormEndTime('');
       setFormMemo('');
+      setFormCourse('');
     }
   };
 
@@ -570,6 +625,15 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
     () => computePresetMemoBackfill(sessions, presets, project.dates || []),
     [sessions, presets, project.dates],
   );
+  // メモに「プリセットの名前 + 講座名」を入れていたセッション (講座名の欄ができる前の
+  // 登録) を、メモと講座名に分ける。分けるとプリセットの改名がメモに追従する
+  const courseSplit = useMemo(() => computeCourseSplit(sessions, presets), [sessions, presets]);
+  const handleSplitCourses = () => {
+    const n = courseSplit.length;
+    if (n === 0) return;
+    splitSessionCourses();
+    showToast(`${n} 件のセッションのメモを「プリセットの名前」と「講座名」に分けました (Undo で戻せます)`, 'success', 4000);
+  };
   const handleApplyPresetMemos = () => {
     const n = memoBackfill.assignments.length;
     if (n === 0) return;
@@ -592,7 +656,8 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
         重複時限が自動でNG扱いになります。<br />
         <strong>手動NG</strong> は時限指定で直接登録します (時刻不要)。<br />
         どちらも下の「📋 プリセット」「📅 日付ごとの設定」セクションで一覧・編集できます。<br />
-        バイト等の「出られない時間」は <strong>🙋 出勤可能調査</strong> で、調査票の出力から回答の入力までまとめて扱えます (× が自動で NG になり、下のマトリクスに「調」で出ます)。
+        バイト等の「出られない時間」は <strong>🙋 出勤可能調査</strong> で、調査票の出力から回答の入力までまとめて扱えます (× が自動で NG になり、下のマトリクスに「調」で出ます)。<br />
+        中学の講習が無い日の他学年セッション (12/24 の高3 Ⅰ期の初日など) は、⚙ 基本設定 の <strong>🏫 外部授業だけの日</strong> でその日を足してから登録します (本体の月間の予定・講師別 Excel に出ます)。
       </div>
 
       {/* NG に当たっている割当 (全タブ)。あるときだけ出す */}
@@ -612,7 +677,8 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
         </section>
       )}
 
-      {/* 本体の「他校舎の授業」から講師不在を取り込む (予定があるときだけ出る) */}
+      {/* 本体の「高校・予備校の講習」「他校舎の授業」から講師不在を取り込む (予定があるときだけ出る) */}
+      <SeniorKoshuImport />
       <OffsiteImport />
 
       {/* 表での一括登録: 他学年セッション (時刻つき) と NG 日時 (時限指定, E2a) */}
@@ -632,6 +698,21 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
         selectedTeacherNames={selectedTeacherNames}
         showToast={showToast}
       />
+
+      {/* メモに入れていた講座名を分ける (当てはまるセッションがあるときだけ) */}
+      {courseSplit.length > 0 && (
+        <div className="border border-builder-info-border bg-builder-info-soft rounded p-3 mb-4 text-xs text-builder-ink">
+          <div className="mb-2">
+            ✂ メモが「プリセットの名前 + 講座名」になっている他学年セッションが <strong>{courseSplit.length} 件</strong> あります
+            (例:「{courseSplit[0].memo} {courseSplit[0].course}」)。メモと講座名に分けると、プリセットの名前を直したときにメモも追従します。
+          </div>
+          <button
+            type="button"
+            onClick={handleSplitCourses}
+            className="px-3 py-1 bg-builder-blue text-white rounded text-xs font-bold hover:opacity-90"
+          >メモと講座名に分ける ({courseSplit.length}件)</button>
+        </div>
+      )}
 
       {/* プリセット名のメモ後付け (メモ未設定の既存セッションがあるときだけ表示) */}
       {(memoBackfill.assignments.length > 0 || memoBackfill.ambiguousCount > 0) && (
@@ -852,16 +933,28 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
                 />
               </div>
             </div>
-            <label className="flex flex-col gap-1 text-xs mb-3 max-w-md">
-              <span className="text-builder-ink-muted">メモ (任意)</span>
-              <input
-                type="text"
-                value={formMemo}
-                onChange={(e) => setFormMemo(e.target.value)}
-                placeholder="予備校 / 高2 英語 等"
-                className="border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
-              />
-            </label>
+            <div className="flex flex-wrap gap-2 mb-3 max-w-2xl">
+              <label className="flex flex-col gap-1 text-xs flex-1 min-w-[12rem]">
+                <span className="text-builder-ink-muted">メモ (任意・プリセットの名前が入ります)</span>
+                <input
+                  type="text"
+                  value={formMemo}
+                  onChange={(e) => setFormMemo(e.target.value)}
+                  placeholder="予備校 / Ⅰ期 予備校３限 等"
+                  className="border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs flex-1 min-w-[12rem]">
+                <span className="text-builder-ink-muted">講座名 (任意・月間の予定にメモと並べて、講師別 Excel の科目の欄に出ます)</span>
+                <input
+                  type="text"
+                  value={formCourse}
+                  onChange={(e) => setFormCourse(e.target.value)}
+                  placeholder="高3 共通テスト理科基礎(物理基礎) 等"
+                  className="border border-builder-ink-ghost rounded px-2 py-1 bg-builder-surface text-builder-ink"
+                />
+              </label>
+            </div>
           </>
         ) : (
           <div className="flex flex-col gap-1 text-xs mb-3">
@@ -883,19 +976,23 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
                 </button>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {poolPeriods.map(p => (
-                <label key={p.id}
-                  className={`flex items-center gap-1 px-2 py-1 border rounded cursor-pointer text-xs ${isPeriodSelected(p.id) ? 'bg-builder-info-soft border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border-builder-ink-ghost text-builder-ink hover:bg-builder-bg'}`}>
-                  <input
-                    type="checkbox"
-                    checked={isPeriodSelected(p.id)}
-                    onChange={() => togglePeriod(p.id)}
-                  />
-                  <span>{p.label}</span>
-                </label>
-              ))}
-            </div>
+            {/* 季節の中の枠があれば枠ごとにまとめる (同じ時限は最初の枠に) */}
+            {periodGroups.map(group => (
+              <div key={group.key} className="flex flex-wrap items-center gap-2">
+                {group.label && <span className="text-[11px] font-bold text-builder-ink-muted">{group.label}:</span>}
+                {group.periods.map(p => (
+                  <label key={p.id}
+                    className={`flex items-center gap-1 px-2 py-1 border rounded cursor-pointer text-xs ${isPeriodSelected(p.id) ? 'bg-builder-info-soft border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border-builder-ink-ghost text-builder-ink hover:bg-builder-bg'}`}>
+                    <input
+                      type="checkbox"
+                      checked={isPeriodSelected(p.id)}
+                      onChange={() => togglePeriod(p.id)}
+                    />
+                    <span>{p.label}</span>
+                  </label>
+                ))}
+              </div>
+            ))}
           </div>
         )}
 
@@ -1003,12 +1100,13 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
             date={d}
             expanded={expandedDates[d.id] !== false}
             onToggle={() => toggleDate(d.id)}
-            periods={poolPeriods}
+            periods={periodsByDate.get(d.id) || poolPeriods}
             teacherGroups={teacherGroups}
             teacherIdxByName={teacherIdxByName}
             autoNgByTeacher={autoNgByTeacher}
             sessions={sessionsByDate.get(d.label) || []}
             removeExternalSession={removeExternalSession}
+            updateExternalSession={updateExternalSession}
             toggleTeacherNg={toggleTeacherNg}
             ngCount={ngCountByDate[d.id] || 0}
           />
@@ -1099,7 +1197,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
 function DateSection({
   date, expanded, onToggle,
   periods, teacherGroups, teacherIdxByName, autoNgByTeacher,
-  sessions, removeExternalSession,
+  sessions, removeExternalSession, updateExternalSession,
   toggleTeacherNg, ngCount,
 }) {
   return (
@@ -1111,6 +1209,9 @@ function DateSection({
         <span>
           <span className="mr-1">{expanded ? '▼' : '▶'}</span>
           {date.label}
+          {isExternalOnlyDate(date) && (
+            <span className="ml-2 text-[11px] font-normal text-builder-ink-muted">🏫 外部授業だけの日</span>
+          )}
         </span>
         <span className="flex items-center gap-2 text-xs font-normal">
           {sessions.length > 0 && (
@@ -1140,6 +1241,7 @@ function DateSection({
                       <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink text-left">講師</th>
                       <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">時刻</th>
                       <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">メモ</th>
+                      <th className="border border-builder-ink-ghost p-1 bg-builder-bg text-builder-ink">講座名</th>
                       <th className="border border-builder-ink-ghost p-1 bg-builder-bg w-8"></th>
                     </tr>
                   </thead>
@@ -1150,9 +1252,32 @@ function DateSection({
                         : (s.label || '-');
                       return (
                         <tr key={s.id}>
-                          <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink font-bold">{s.teacherName}</td>
+                          <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink font-bold">
+                            {s.teacherName}
+                            {/* 本体の高校・予備校の講習から取り込んだもの。直すのは本体の画面 */}
+                            {s.source === 'seniorKoshu' && (
+                              <span
+                                className="ml-1 px-1 rounded bg-builder-info-soft text-[10px] font-normal text-builder-ink"
+                                title="本体の「🎓 高校・予備校の講習」から取り込んだものです。講座名・時刻は本体で直してから取り込み直してください"
+                              >🎓本体</span>
+                            )}
+                          </td>
                           <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{timeText}</td>
                           <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{s.memo || '-'}</td>
+                          <td className="border border-builder-ink-ghost p-0.5 bg-builder-surface text-builder-ink">
+                            {s.source === 'seniorKoshu' ? (
+                              <span className="px-1">{s.course || '-'}</span>
+                            ) : (
+                              /* 講座名はその場で直せる (欄を離れる / Enter で確定、Esc で取り消し) */
+                              <DraftLineInput
+                                value={s.course || ''}
+                                ariaLabel={`${s.date} ${s.teacherName} の講座名`}
+                                placeholder="-"
+                                className="w-full min-w-[8rem] px-1 py-0.5 bg-transparent text-builder-ink focus:bg-builder-info-soft focus:outline-none"
+                                onCommit={(v) => updateExternalSession(s.id, { course: v })}
+                              />
+                            )}
+                          </td>
                           <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-center">
                             <button
                               type="button"
@@ -1170,7 +1295,12 @@ function DateSection({
             )}
           </div>
 
-          {/* NG マトリクス (講師×時限) */}
+          {/* NG マトリクス (講師×時限)。外部授業だけの日は講習のコマが無いので出さない */}
+          {isExternalOnlyDate(date) ? (
+            <div className="px-3 py-2 text-[11px] text-builder-ink-muted">
+              外部授業だけの日なので講習のコマはありません (NG の設定は要りません)。
+            </div>
+          ) : (
           <div className="px-3 py-2">
             <div className="text-xs font-bold text-builder-ink-muted mb-1">
               🚫 NG マトリクス — クリックで切替 (NG=赤 / 自=他学年セッションの自動NG / 調=出勤可能調査の × / 空=OK)
@@ -1229,7 +1359,7 @@ function DateSection({
                                     const timeText = s.startTime
                                       ? (s.endTime ? `${s.startTime}〜${s.endTime}` : `${s.startTime}〜`)
                                       : (s.label || '');
-                                    return s.memo ? `${s.memo} (${timeText})` : timeText;
+                                    return s.memo || s.course ? `${sessionDisplayLabel(s)} (${timeText})` : timeText;
                                   })
                                   .filter(Boolean)
                                   .join(', ');
@@ -1272,6 +1402,7 @@ function DateSection({
               </table>
             </div>
           </div>
+          )}
         </div>
       )}
     </div>

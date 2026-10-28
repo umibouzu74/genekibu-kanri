@@ -287,7 +287,7 @@ describe("Sidebar のカテゴリ", () => {
     expect(screen.queryByRole("button", { name: /コースマスター管理/ })).toBeNull();
     expect(
       screen.getByRole("button", { name: /時間割/, expanded: false })
-    ).toHaveTextContent(/4$/);
+    ).toHaveTextContent(/5$/);
   });
 
   it("今いる画面のカテゴリは自動で開く (閉じればその画面にいる間は閉じたまま)", () => {

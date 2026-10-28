@@ -39,6 +39,7 @@
       "genyakubu-day-schedules": { ".validate": "newData.hasChildren()" },
       "genyakubu-fuzoku-plan": { ".validate": "newData.hasChildren()" },
       "genyakubu-offsite-lessons": { ".validate": "newData.hasChildren()" },
+      "genyakubu-senior-koshu": { ".validate": "newData.hasChildren()" },
       "genyakubu-yobiko-events": { ".validate": "newData.hasChildren()" },
       "genyakubu-teacher-affiliations": { ".validate": "newData.hasChildren()" },
       "genyakubu-yoteihyo-course-mapping": { ".validate": "newData.hasChildren()" },

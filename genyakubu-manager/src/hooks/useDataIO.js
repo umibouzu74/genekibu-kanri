@@ -25,6 +25,7 @@ import { sanitizeKanaMap } from "../utils/teacherKana";
 import { migrateHandoverNotes } from "../utils/handoverNotes";
 import { migrateOffsiteLessons } from "../utils/offsiteLessons";
 import { migrateYobikoEvents } from "../utils/yobikoEvents";
+import { EMPTY_SENIOR_KOSHU, migrateSeniorKoshu } from "../utils/seniorKoshu";
 import { migrateTeacherAffiliations } from "../utils/teacherAffiliations";
 import { migrateStaffLeave } from "../utils/staffLeave";
 import { migrateCourseMapping } from "../utils/yoteihyo/courseMapping";
@@ -60,6 +61,7 @@ export function useDataIO({
   daySchedules,
   fuzokuPlan,
   offsiteLessons,
+  seniorKoshu,
   yobikoEvents,
   handoverNotes,
   handoverEnabled,
@@ -91,6 +93,7 @@ export function useDataIO({
   saveDaySchedules,
   saveFuzokuPlan,
   saveOffsiteLessons,
+  saveSeniorKoshu,
   saveYobikoEvents,
   saveHandoverNotes,
   saveTeacherAffiliations,
@@ -138,6 +141,8 @@ export function useDataIO({
           daySchedules,
           fuzokuPlan,
           offsiteLessons,
+          // 高校部・予備校の講習 (期・時限・担当)
+          seniorKoshu,
           // 予備校部の予定 (年間カレンダーの上半分)
           yobikoEvents,
           // 引継ぎメモは読める人 (管理者) が書き出すときだけ含める。閲覧者の
@@ -169,7 +174,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, specialEventDisplay, extraLessons, daySchedules, fuzokuPlan, offsiteLessons, yobikoEvents, handoverNotes, handoverEnabled, teacherAffiliations, staffLeave, yoteihyoCourseMapping, yoteihyoConfirmed, cardForgets, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, specialEventDisplay, extraLessons, daySchedules, fuzokuPlan, offsiteLessons, seniorKoshu, yobikoEvents, handoverNotes, handoverEnabled, teacherAffiliations, staffLeave, yoteihyoCourseMapping, yoteihyoConfirmed, cardForgets, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -261,6 +266,11 @@ export function useDataIO({
           // ときは現状維持 — 空で上書きしない
           if (Array.isArray(d.offsiteLessons) && saveOffsiteLessons) {
             saveOffsiteLessons(migrateOffsiteLessons(d.offsiteLessons));
+          }
+          // 高校部・予備校の講習も旧バックアップには無い (v28 より前) ので、欠けて
+          // いるときは現状維持 — 空で上書きしない
+          if (d.seniorKoshu && typeof d.seniorKoshu === "object" && !Array.isArray(d.seniorKoshu) && saveSeniorKoshu) {
+            saveSeniorKoshu(migrateSeniorKoshu(d.seniorKoshu));
           }
           // 予備校部の予定も旧バックアップには無い (v25 より前) ので、欠けている
           // ときは現状維持 — 空で上書きしない
@@ -370,6 +380,7 @@ export function useDataIO({
       saveDaySchedules,
       saveFuzokuPlan,
       saveOffsiteLessons,
+      saveSeniorKoshu,
       saveYobikoEvents,
       saveHandoverNotes,
       saveTeacherAffiliations,
@@ -426,6 +437,7 @@ export function useDataIO({
     if (saveDaySchedules) saveDaySchedules([]);
     if (saveFuzokuPlan) saveFuzokuPlan({ notes: {}, tests: {} });
     if (saveOffsiteLessons) saveOffsiteLessons([]);
+    if (saveSeniorKoshu) saveSeniorKoshu(EMPTY_SENIOR_KOSHU);
     if (saveYobikoEvents) saveYobikoEvents([]);
     // localStorage キーの removeItem だけでは React state と Firebase 側が
     // 残り、リロード / 他端末同期で復活してしまうので save で明示的に空にする
@@ -467,6 +479,7 @@ export function useDataIO({
     saveDaySchedules,
     saveFuzokuPlan,
     saveOffsiteLessons,
+    saveSeniorKoshu,
     saveYobikoEvents,
     saveTeacherAffiliations,
     saveYoteihyoCourseMapping,

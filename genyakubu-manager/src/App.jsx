@@ -13,7 +13,7 @@ import { DAY_BG as DB, DAY_COLOR as DC, DAYS } from "./data";
 import { VIEWS } from "./constants/views";
 import { VIEW_CHORDS, CHORD_TIMEOUT_MS } from "./constants/chords";
 import { useBuilderProjects } from "./hooks/useBuilderProjects";
-import { useTeacherGroups } from "./hooks/useTeacherGroups";
+import { SENIOR_KOSHU_GROUP_KEY, useTeacherGroups } from "./hooks/useTeacherGroups";
 import { STAFF_GROUP_KEY } from "./utils/groupTeacherNames";
 import { useToasts } from "./hooks/useToasts";
 import { useConfirm } from "./hooks/useConfirm";
@@ -48,6 +48,11 @@ import { useToday } from "./hooks/useToday";
 import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
 import { visibilityForTeacher } from "./utils/teacherTags";
 import { buildKoshuLessonsForSeasons } from "./utils/builderLessons";
+import {
+  dropLessonsCoveredBySeniorKoshu,
+  expandSeniorKoshu,
+  seniorKoshuTeachersFrom,
+} from "./utils/seniorKoshu";
 import { colors, font, S } from "./styles/common";
 import { LS, SS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
@@ -179,6 +184,9 @@ const HandoverView = lazy(() =>
 const OffsiteLessonView = lazy(() =>
   import("./components/views/OffsiteLessonView").then((m) => ({ default: m.OffsiteLessonView }))
 );
+const SeniorKoshuView = lazy(() =>
+  import("./components/views/SeniorKoshuView").then((m) => ({ default: m.SeniorKoshuView }))
+);
 const YoteihyoCheckView = lazy(() =>
   import("./components/views/YoteihyoCheckView").then((m) => ({ default: m.YoteihyoCheckView }))
 );
@@ -247,6 +255,7 @@ const VIEW_TITLES = {
   [VIEWS.FUZOKU_PLAN]: "附属の授業予定",
   [VIEWS.HANDOVER]: "引継ぎメモ",
   [VIEWS.OFFSITE]: "他校舎の授業",
+  [VIEWS.SENIOR_KOSHU]: "高校・予備校の講習",
   [VIEWS.YOTEIHYO]: "予定表チェック",
   [VIEWS.LEAVE]: "有給・半休",
 };
@@ -308,6 +317,8 @@ export default function App() {
     saveFuzokuPlan,
     offsiteLessons,
     saveOffsiteLessons,
+    seniorKoshu,
+    saveSeniorKoshu,
     yobikoEvents,
     saveYobikoEvents,
     handoverNotes,
@@ -337,6 +348,16 @@ export default function App() {
   const koshuLessons = useMemo(
     () => buildKoshuLessonsForSeasons(builderSeasonProjects, { todayYmd: fmtDate(new Date()) }),
     [builderSeasonProjects]
+  );
+  // 高校部・予備校の講習 (本体に登録。utils/seniorKoshu) を日付ごとの予定に広げたもの。
+  // 講師の月間の「講」カードと、講習時間割作成の取り込みに使う
+  const seniorKoshuItems = useMemo(() => expandSeniorKoshu(seniorKoshu), [seniorKoshu]);
+  // 講師の月間に出す講習時間割作成のコマ: 講習時間割作成に手で入れた他学年セッション
+  // (「外」) のうち、本体の高校・予備校の講習と同じ講師・日・時刻のものは出さない
+  // (本体の登録の「講」カードと二重になる)
+  const monthKoshuLessons = useMemo(
+    () => dropLessonsCoveredBySeniorKoshu(koshuLessons, seniorKoshuItems),
+    [koshuLessons, seniorKoshuItems]
   );
 
   // 講習時間割作成の出勤可能調査で「バイトのみ」に絞るための名前 (読み取り専用)
@@ -1075,6 +1096,12 @@ export default function App() {
   // 1 打鍵ごとに App 全体 (ダッシュボード・月間カレンダー…) が再描画されていた
   // 講師の所属 (今年度) で分けている端末では、現役部 常勤 → 現役部 非常勤 →
   // バイト → 予備校部 (教科別) の順に並べる
+  // 時間割にコマの無い、高校・予備校の講習だけの講師も、先月以降の講習があれば並べる
+  const seniorKoshuTeachers = useMemo(() => {
+    const d = new Date(`${todayStr}T00:00:00`);
+    d.setMonth(d.getMonth() - 1, 1);
+    return [...seniorKoshuTeachersFrom(seniorKoshuItems, fmtDate(d))];
+  }, [seniorKoshuItems, todayStr]);
   const allTeacherGroups = useTeacherGroups({
     slots: rosterSlots,
     partTimeStaff,
@@ -1082,6 +1109,7 @@ export default function App() {
     teacherKana,
     affiliations: teacherAffiliations,
     year: fiscalYearOf(todayStr),
+    extraTeachers: seniorKoshuTeachers,
   });
   // 講師名の入力候補 (他校舎の授業)。グループを平らにしてよみ順に並べ直す
   const allTeacherNames = useMemo(
@@ -1092,6 +1120,13 @@ export default function App() {
       ),
     [allTeacherGroups, teacherKana]
   );
+  // 時間割・講師管理に出てくる講師 (高校・予備校の講習だけの先生を除く)。高校・予備校の
+  // 講習の画面で、名前の打ち間違いを知らせるのに使う (講習の登録から並べた名前を
+  // 「知っている名前」に数えると、打ち間違いのまま保存した名前に気付けない)
+  const knownTeacherNames = useMemo(() => {
+    const seniorOnly = new Set(allTeacherGroups.find((g) => g.key === SENIOR_KOSHU_GROUP_KEY)?.teachers || []);
+    return allTeacherNames.filter((n) => !seniorOnly.has(n));
+  }, [allTeacherGroups, allTeacherNames]);
   // 一括印刷ダイアログに出す「バイト以外の講師」(常勤講師) の教科別グループ
   const fulltimeGroups = useMemo(
     () => allTeacherGroups.filter((g) => g.key !== STAFF_GROUP_KEY),
@@ -1870,6 +1905,17 @@ export default function App() {
               onSelectTeacher={selectTeacher}
             />
           )}
+          {view === VIEWS.SENIOR_KOSHU && !selected && (
+            <SeniorKoshuView
+              data={seniorKoshu}
+              onSave={saveSeniorKoshu}
+              isAdmin={isAdmin}
+              teacherNames={allTeacherNames}
+              knownTeacherNames={knownTeacherNames}
+              teacherKana={teacherKana}
+              onSelectTeacher={selectTeacher}
+            />
+          )}
           {view === VIEWS.YOTEIHYO && !selected && (
             // 日付ベースの突き合わせなので今の時間割では絞らない
             <YoteihyoCheckView
@@ -1961,6 +2007,7 @@ export default function App() {
               onSeasonChange={setKoshuSeason}
               seasonProjects={builderSeasonProjects}
               offsiteLessons={offsiteLessons}
+              seniorKoshuItems={seniorKoshuItems}
               holidays={holidays}
               partTimeStaffNames={partTimeStaffNames}
               retiredTeacherNames={retiredTeacherNames}
@@ -2162,7 +2209,9 @@ export default function App() {
               specialEvents={specialEvents}
               specialEventDisplay={specialEventDisplay}
               extraLessons={extraLessons}
-              koshuLessons={koshuLessons}
+              koshuLessons={monthKoshuLessons}
+              seniorKoshuLessons={seniorKoshuItems}
+              onOpenSeniorKoshu={() => selectView(VIEWS.SENIOR_KOSHU)}
               daySchedules={daySchedules}
               onEditExtraLesson={openExtraLessonEditor}
               offsiteLessons={offsiteLessons}

@@ -12,6 +12,8 @@ import SubjectManager from './SubjectManager';
 import CombinedGroupSettings from './CombinedGroupSettings';
 import GenerationSettings from './GenerationSettings';
 import TemplateManager from './TemplateManager';
+import FrameSettings from './FrameSettings';
+import CourseEventLinks from '../CourseEventLinks';
 import { KOSHU_SEASONS, koshuSeasonDef, suggestSeasonProjectName, type KoshuSeason } from '../../utils/seasons';
 import { buildFreshSeasonProject } from '../../utils/seasonStart';
 import SeasonCopyDialog, { type SeasonCopyChoice } from '../SeasonCopyDialog';
@@ -213,6 +215,13 @@ export default function ConfigModal({ onClose, season }: { onClose: () => void; 
                   </span>
                 </div>
               </div>
+              {/* 季節の中の枠 (冬期講習 / 直前ポイント演習…) */}
+              <FrameSettings />
+              {/* 本体の行事予定 (講習) とタブの結び付け (食い違いの確認に使う) */}
+              <section aria-labelledby="builder-course-events-title" className="mb-6 p-4 border border-builder-border rounded bg-builder-surface space-y-2">
+                <h3 id="builder-course-events-title" className="font-bold text-builder-ink">📚 本体の行事予定 (講習) との対応</h3>
+                <CourseEventLinks />
+              </section>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <BasicSettings />
                 <TeacherManager />

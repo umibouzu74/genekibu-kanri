@@ -23,6 +23,11 @@ describe('presetSessionLabel', () => {
 });
 
 describe('computePresetRenameSyncIds', () => {
+  it('本体の高校・予備校の講習から取り込んだものは対象外 (本体が正)', () => {
+    const sessions = [session({ id: 1 }), session({ id: 2, source: 'seniorKoshu', sourceKey: '1:2026-12-25' })];
+    expect(computePresetRenameSyncIds(sessions, PRESET)).toEqual([1]);
+  });
+
   it('旧ラベル + 時刻が一致するセッションの id を返す', () => {
     const sessions = [
       session({ id: 1 }),

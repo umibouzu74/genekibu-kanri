@@ -1519,3 +1519,19 @@ describe("v23 → v24: 特別イベントの表示設定", () => {
     expect(isSpecialEvent({ ...base, source: 1 })).toBe(false);
   });
 });
+
+describe("v27 → v28: 高校部・予備校の講習 (seniorKoshu)", () => {
+  it("既定値で埋めない (無ければ現状維持)", () => {
+    const out = migrateExportBundle({ schemaVersion: 27 }) as Record<string, unknown>;
+    expect(out.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(out).not.toHaveProperty("seniorKoshu");
+  });
+
+  it("validateExportBundle は形の崩れたものを弾く", () => {
+    const ok = { terms: [{ id: 1, name: "高3 Ⅰ期", dates: ["2026-12-24"] }], periods: [], lessons: [] };
+    expect(validateExportBundle({ seniorKoshu: ok }).ok).toBe(true);
+    expect(validateExportBundle({ seniorKoshu: { terms: [], periods: [], lessons: [] } }).ok).toBe(true);
+    expect(validateExportBundle({ seniorKoshu: [] }).ok).toBe(false);
+    expect(validateExportBundle({ seniorKoshu: { terms: "x" } }).ok).toBe(false);
+  });
+});

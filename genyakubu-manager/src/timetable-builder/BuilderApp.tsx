@@ -32,6 +32,7 @@ import { computeRectKeys } from './utils/cellSelection';
 import { useTabPresence } from './hooks/useTabPresence';
 import type { GeneratorHandle } from './logic/runGenerator';
 import type { GenerationResult } from './logic/autoGenerator';
+import { isExternalOnlyDate } from './utils/externalSessionShape';
 import type { GeneratedPattern } from './components/SummaryPanel';
 import type { BuilderContextMenuState, CellClipboard } from './components/ContextMenu';
 import type { Project } from './types';
@@ -552,7 +553,8 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
         {currentConfig.dates.length === 0 && (
           <div className="flex flex-wrap items-center gap-2 mb-2 px-3 py-2 bg-builder-warning-soft border border-builder-warning-border rounded no-print text-sm text-builder-ink">
             <span role="status">
-              {(project.dates || []).length === 0
+              {/* 外部授業だけの日は講習の日ではないので数えない (作り直した直後に外部授業だけの日しか無い) */}
+              {(project.dates || []).filter(d => !isExternalOnlyDate(d)).length === 0
                 ? <>📅 まだ講習の日付がありません。⚙️ 設定 &gt; 基本設定 の「⚡ 期間から自動生成」で日付を作ってください。</>
                 : <>📅 「{activeTabForPrint?.name}」で使う日が選ばれていません。⚙️ 設定 &gt; 基本設定 の「使う日」で選んでください。</>}
             </span>
@@ -759,6 +761,7 @@ export default function BuilderApp({
   partTimeStaffNames = EMPTY_HOST_NAMES,
   retiredTeacherNames = EMPTY_HOST_NAMES,
   specialEvents = EMPTY_HOST_LIST,
+  seniorKoshuItems = EMPTY_HOST_LIST,
 }: Partial<HostData> & {
   season?: KoshuSeason;
   onSeasonChange?: (season: KoshuSeason) => void;
@@ -768,8 +771,8 @@ export default function BuilderApp({
   const season = seasonProp ?? ownSeason;
   const changeSeason = onSeasonChange ?? setOwnSeason;
   const hostData = useMemo(
-    () => ({ offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents }),
-    [offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents],
+    () => ({ offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents, seniorKoshuItems }),
+    [offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents, seniorKoshuItems],
   );
   // 季節ごとに作り直すのは作業領域だけ (key)。UIProvider も中に入れて作り直すので、
   // 開いたままの確認ダイアログが、季節を切り替えた後に前の季節の操作 (リセット・

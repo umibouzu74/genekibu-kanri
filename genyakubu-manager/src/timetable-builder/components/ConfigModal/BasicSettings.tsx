@@ -2,73 +2,10 @@ import { useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
 import { expandExcludeInput, generateDateLabels, sortPoolDatesByCalendar, WEEKDAY_LABELS, ymdToLabel } from '../../utils/dateGenerate';
-
-// カンマ区切りリスト編集用の textarea。編集中は draft をローカルに持ち、
-// フォーカスを外した時にだけ onCommit で確定する。
-// keystroke ごとに commit すると (a) ラベルの編集途中の中間状態が
-// 「entity 削除 + 新規追加」として reducer に届き、全タブの該当セルが
-// cleanSchedule で即消える、(b) 末尾に打ったカンマが state 再導出で即消えて
-// 項目を追加できない、(c) 1 打鍵 = 1 Undo 履歴で MAX_HISTORY を食い潰す、
-// という 3 重の実害があるため、必ず確定タイミングを blur に寄せること。
-function DraftListTextarea({ value, onCommit }) {
-  const [draft, setDraft] = useState(null); // null = 非編集 (canonical を表示)
-  // aria-label は付けない (ラップする <label> の文言が accessible name になる)
-  return (
-    <textarea
-      className="w-full border border-builder-border p-2 text-sm h-16 rounded"
-      value={draft ?? value}
-      onChange={(e) => setDraft(e.target.value)}
-      onFocus={() => setDraft((d) => d ?? value)}
-      onBlur={() => {
-        if (draft != null && draft !== value) onCommit(draft);
-        setDraft(null);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          // IME 変換中の Esc は「変換のキャンセル」であって編集の取り消しでは
-          // ない (Chrome は composition 中も key='Escape' の keydown を配信する)。
-          // ここで draft を破棄すると未確定の編集内容が丸ごと消える。
-          if (e.nativeEvent?.isComposing) return;
-          // 編集の取り消し。stopPropagation しないと ConfigModal の
-          // focus trap まで届いてモーダルごと閉じてしまう。
-          e.stopPropagation();
-          setDraft(null);
-        }
-      }}
-    />
-  );
-}
-
-// 1 行の入力欄 (教室・クラス名)。DraftListTextarea と同じく、確定は欄を離れた
-// とき / Enter (IME の確定の Enter は除く)。Esc で編集を取り消す
-function DraftLineInput({ value, onCommit, ariaLabel, placeholder = '', className }) {
-  const [draft, setDraft] = useState(null);
-  const commit = () => {
-    if (draft != null && draft !== value) onCommit(draft);
-    setDraft(null);
-  };
-  return (
-    <input
-      type="text"
-      aria-label={ariaLabel}
-      placeholder={placeholder}
-      className={className}
-      value={draft ?? value}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && !e.nativeEvent?.isComposing) {
-          e.preventDefault();
-          commit();
-        } else if (e.key === 'Escape') {
-          if (e.nativeEvent?.isComposing) return;
-          e.stopPropagation();
-          setDraft(null);
-        }
-      }}
-    />
-  );
-}
+import DraftLineInput from './DraftLineInput';
+import DraftListTextarea from './DraftListTextarea';
+import { isExternalOnlyDate } from '../../utils/externalSessionShape';
+import { framePeriods, frameOfTab } from '../../utils/frames';
 
 export default function BasicSettings() {
   const {
@@ -82,18 +19,27 @@ export default function BasicSettings() {
     handleSetAllTabDates,
     handleRemoveDateFromPool,
     handleRemoveUnusedDatesFromPool,
+    handleAddExternalOnlyDates,
     handleCopyTabDatesToOthers,
     handleCopyTabPeriodsToOthers,
     handleToggleTabPeriod,
     handleSetAllTabPeriods,
     handleSetClassRoom,
     handleRenameHeader,
+    setFramePeriods,
   } = useProjectContext();
   const { showConfirm, showToast } = useUI();
 
   // v4(Y): project.dates は全タブ共通の『日付プール』。activeTab.config.activeDateIds
   // で「この学年が使う日」を選ぶ (未指定=全日)。NG はプール全日に設定できる。
-  const poolDates = useMemo(() => project.dates || [], [project.dates]);
+  // 外部授業だけの日 (DateEntity.externalOnly) はどのタブにも出さないので、使う日の
+  // 一覧・件数には入れず、下の「外部授業だけの日」に分けて出す
+  const allPoolDates = useMemo(() => project.dates || [], [project.dates]);
+  const poolDates = useMemo(() => allPoolDates.filter(d => !isExternalOnlyDate(d)), [allPoolDates]);
+  const externalOnlyDates = useMemo(
+    () => sortPoolDatesByCalendar(allPoolDates.filter(d => isExternalOnlyDate(d))),
+    [allPoolDates],
+  );
   const activeDateIds = activeTab.config.activeDateIds; // undefined = 全日
   const isActive = (id) => !activeDateIds || activeDateIds.includes(id);
   const activeCount = poolDates.filter(d => isActive(d.id)).length;
@@ -109,12 +55,24 @@ export default function BasicSettings() {
   // currentConfig.periods を使うと「今のタブが使う時限だけ」が表示され、
   // 保存すると他タブの時限がプールごと消えてしまうため誤り (AbsenceNgPanel と同じ注意点)。
   const poolPeriods = useMemo(() => project.periods || [], [project.periods]);
+  // 季節の中の枠 (utils/frames) に入ったタブは、枠の時限から使う時限を選ぶ。時限の
+  // テキストエリアも枠の時限を直す (全タブ共通のプール全体は出さない)
+  const activeFrame = frameOfTab(project, activeTab);
+  const choicePeriods = useMemo(
+    () => (activeFrame ? framePeriods(project, activeFrame) : poolPeriods),
+    [activeFrame, project, poolPeriods],
+  );
   const activePeriodIds = activeTab.config.activePeriodIds; // undefined = 全時限
   const isPeriodActive = (id) => !activePeriodIds || activePeriodIds.includes(id);
-  const activePeriodCount = poolPeriods.filter(p => isPeriodActive(p.id)).length;
+  const activePeriodCount = choicePeriods.filter(p => isPeriodActive(p.id)).length;
   const isPeriodActiveForTab = (tab, periodId) => {
     const ids = tab.config.activePeriodIds;
     return !ids || ids.includes(periodId);
+  };
+  // 全タブまとめて表示: 枠に入ったタブは枠の時限だけ選べる
+  const periodChoosableForTab = (tab, periodId) => {
+    const f = frameOfTab(project, tab);
+    return !f || f.periodIds.includes(periodId);
   };
 
   // ── 日付ジェネレータ form state ──
@@ -126,6 +84,7 @@ export default function BasicSettings() {
   // 赤字が点滅し、読み上げも毎打鍵になる)。欄を離れたら出す
   const [genExcludeEditing, setGenExcludeEditing] = useState(false);
   const [manualDate, setManualDate] = useState('');
+  const [externalOnlyDate, setExternalOnlyDate] = useState('');
   // 全タブまとめて表示 (行=プールの日付・列=各タブ) トグル
   const [showAllTabs, setShowAllTabs] = useState(false);
   // 時限版の同トグル (日付とは独立)
@@ -193,9 +152,36 @@ export default function BasicSettings() {
     showToast(`「${label}」を「${activeTab.name}」に追加しました`, 'success', 2000);
   };
 
+  // 外部授業だけの日を足す。タブが使っている日 (講習の日) はそのまま知らせる
+  const addExternalOnly = () => {
+    const label = ymdToLabel(externalOnlyDate);
+    if (!label) {
+      showToast('日付を選択してください', 'error', 2000);
+      return;
+    }
+    if (externalOnlyDates.some(d => d.label === label)) {
+      showToast(`「${label}」はもう外部授業だけの日です`, 'warning', 2500);
+      return;
+    }
+    const lessonTabs = project.tabs.filter(t => {
+      const d = poolDates.find(x => x.label === label);
+      return d && (!t.config.activeDateIds || t.config.activeDateIds.includes(d.id));
+    });
+    if (lessonTabs.length > 0) {
+      showToast(`「${label}」は「${lessonTabs.map(t => t.name).join('・')}」の講習の日です (そのまま他学年セッションを登録できます)`, 'warning', 4000);
+      return;
+    }
+    handleAddExternalOnlyDates([label]);
+    setExternalOnlyDate('');
+    showToast(`「${label}」を外部授業だけの日にしました。📅 講師不在・NG で他学年セッションを登録できます`, 'success', 3500);
+  };
+
   const removeFromPool = async (d) => {
+    const sessionCount = (project.externalSessions || []).filter(x => x.date === d.label).length;
     const ok = await showConfirm(
-      `「${d.label}」を日付プールから完全に削除します。\n全タブ・講師不在/NG から消え、この日付に入っているコマも削除されます。\nよろしいですか?`,
+      `「${d.label}」を日付プールから完全に削除します。\n全タブ・講師不在/NG から消え、この日付に入っているコマも削除されます。` +
+        (sessionCount > 0 ? `\nこの日の他学年セッション ${sessionCount} 件も消えます。` : '') +
+        '\nよろしいですか？',
       { title: '日付の完全削除', danger: true, confirmLabel: '削除する' },
     );
     if (ok) {
@@ -206,6 +192,7 @@ export default function BasicSettings() {
 
   // L4b: どのタブも使っていない日 (プールのゴミ)。activeDateIds 未指定の
   // タブは「全日使う」なので、1 つでもあれば未使用日は存在しない。
+  // 外部授業だけの日は人が残すと決めた日なので含めない (poolDates に入っていない)
   const unusedPoolDates = useMemo(() => {
     if ((project.tabs || []).some(t => !t.config.activeDateIds)) return [];
     return poolDates.filter(d => project.tabs.every(t => !t.config.activeDateIds.includes(d.id)));
@@ -225,23 +212,30 @@ export default function BasicSettings() {
   };
 
   // L4g: 使う日 / 使う時限の選択を他の全タブへコピー
+  // 季節の中の枠があれば、写す先は同じ枠のタブだけ (reducer も同じ)
+  const copyTargetText = (tab) => {
+    const f = frameOfTab(project, tab);
+    return (project.frames || []).length > 0
+      ? (f ? `枠「${f.name}」の他のタブ` : '枠に入っていない他のタブ')
+      : '他の全タブ';
+  };
   const copyDatesSelection = async (tab) => {
     const ok = await showConfirm(
-      `「${tab.name}」の使う日の選択を他の全タブへコピーしますか？\n他タブの選択は上書きされます (Undo で戻せます)。`,
+      `「${tab.name}」の使う日の選択を${copyTargetText(tab)}へコピーしますか？\n他タブの選択は上書きされます (Undo で戻せます)。`,
       { title: '使う日の選択をコピー', confirmLabel: 'コピーする' },
     );
     if (!ok) return;
     handleCopyTabDatesToOthers(tab.id);
-    showToast(`「${tab.name}」の使う日の選択を他のタブへコピーしました`, 'success', 2500);
+    showToast(`「${tab.name}」の使う日の選択を${copyTargetText(tab)}へコピーしました`, 'success', 2500);
   };
   const copyPeriodsSelection = async (tab) => {
     const ok = await showConfirm(
-      `「${tab.name}」の使う時限の選択を他の全タブへコピーしますか？\n他タブの選択は上書きされます (Undo で戻せます)。`,
+      `「${tab.name}」の使う時限の選択を${copyTargetText(tab)}へコピーしますか？\n他タブの選択は上書きされます (Undo で戻せます)。`,
       { title: '使う時限の選択をコピー', confirmLabel: 'コピーする' },
     );
     if (!ok) return;
     handleCopyTabPeriodsToOthers(tab.id);
-    showToast(`「${tab.name}」の使う時限の選択を他のタブへコピーしました`, 'success', 2500);
+    showToast(`「${tab.name}」の使う時限の選択を${copyTargetText(tab)}へコピーしました`, 'success', 2500);
   };
 
   // 時限 / クラス用 (カンマ区切りテキスト)
@@ -467,24 +461,74 @@ export default function BasicSettings() {
         </div>
       </div>
 
+      {/* ── 外部授業だけの日 (2026-10-27) ── どのタブの時間割にも出さず、他学年セッション
+          (高校・予備校の講習) の登録・本体の月間・講師別 Excel の対象にだけする日 */}
+      <section aria-labelledby="builder-external-only-title" className="border border-builder-border rounded p-3 bg-builder-surface space-y-2">
+        <div id="builder-external-only-title" className="font-bold text-builder-ink text-sm">
+          🏫 外部授業だけの日
+          <span className="ml-2 text-xs font-normal text-builder-ink-muted">{externalOnlyDates.length} 日</span>
+        </div>
+        <p className="text-[11px] text-builder-ink-muted">
+          中学の講習は無いが、高校・予備校の講習 (他学年セッション) がある日 (12/24 の高3 Ⅰ期の初日など)。
+          どのタブの時間割にも行は出ず、📅 講師不在・NG でその日の他学年セッションを登録でき、本体の講師の月間の予定と講師別 Excel に出ます。
+          前の季節から残った日とは別の印なので、使っていない日をまとめて消すときにも消えません。
+        </p>
+        {externalOnlyDates.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {externalOnlyDates.map(d => (
+              <span key={d.id} className="inline-flex items-center gap-1 px-2 py-1 border border-builder-border rounded text-xs bg-builder-surface-alt text-builder-ink">
+                {d.label}
+                <button type="button" onClick={() => removeFromPool(d)} title="プールから完全削除 (この日の他学年セッションも消えます)" aria-label={`${d.label} をプールから削除`} className="text-builder-red hover:text-builder-red-hover font-bold leading-none">×</button>
+              </span>
+            ))}
+          </div>
+        )}
+        <div className="flex items-end gap-2 text-xs">
+          <label className="flex flex-col gap-0.5">
+            <span className="text-builder-ink-muted">外部授業だけの日を足す</span>
+            <input type="date" value={externalOnlyDate} onChange={(e) => setExternalOnlyDate(e.target.value)} className={inputCls} aria-label="外部授業だけの日として足す日付" />
+          </label>
+          <button type="button" onClick={addExternalOnly} disabled={!externalOnlyDate} className="px-3 py-1 border border-builder-border bg-builder-surface text-builder-ink rounded text-xs font-bold disabled:opacity-50 hover:bg-builder-bg">足す</button>
+        </div>
+      </section>
+
       {/* ── 時限 ── */}
       <div className="border border-builder-blue/40 rounded p-3 bg-builder-info-soft/30 space-y-3">
         <div className="font-bold text-builder-ink text-sm">
-          ⏰ 時限
+          ⏰ 時限{activeFrame && <span className="font-normal"> (枠「{activeFrame.name}」)</span>}
           <span className={`ml-2 text-xs ${activePeriodCount === 0 ? "font-bold text-builder-orange" : "font-normal text-builder-ink-muted"}`}>
-            選択 {activePeriodCount} / プール {poolPeriods.length} コマ
+            選択 {activePeriodCount} / {activeFrame ? '枠' : 'プール'} {choicePeriods.length} コマ
             {activePeriodCount === 0 && " — ⚠️ 0 件のためこのタブの時間割は空になります"}
           </span>
         </div>
 
-        <label className="block">
-          <span className="text-xs font-bold text-builder-ink-muted">時限プールを編集 (カンマ区切り・<span className="text-builder-blue">全タブ共通</span>)</span>
-          <DraftListTextarea
-            value={poolPeriods.map(e => e.label).join(', ')}
-            onCommit={(v) => handleConfigChange('periods', v)}
-          />
-          <span className="block text-[11px] text-builder-ink-muted">欄の外をクリックすると確定します (Esc で取り消し)</span>
-        </label>
+        {activeFrame ? (
+          <label className="block">
+            <span className="text-xs font-bold text-builder-ink-muted">「{activeFrame.name}」の時限を編集 (カンマ区切り・<span className="text-builder-blue">この枠のタブ共通</span>)</span>
+            <DraftListTextarea
+              value={choicePeriods.map(e => e.label).join(', ')}
+              onCommit={(v) => {
+                if (!String(v).split(',').some(x => x.trim())) {
+                  showToast('枠には時限が 1 つ以上要ります', 'error', 3000);
+                  return;
+                }
+                setFramePeriods(activeFrame.id, v);
+              }}
+            />
+            <span className="block text-[11px] text-builder-ink-muted">
+              欄の外をクリックすると確定します (Esc で取り消し)。ほかの枠の時限は上の「🧩 枠」で直します (季節の時限は全部で {poolPeriods.length} つ)
+            </span>
+          </label>
+        ) : (
+          <label className="block">
+            <span className="text-xs font-bold text-builder-ink-muted">時限プールを編集 (カンマ区切り・<span className="text-builder-blue">全タブ共通</span>)</span>
+            <DraftListTextarea
+              value={poolPeriods.map(e => e.label).join(', ')}
+              onCommit={(v) => handleConfigChange('periods', v)}
+            />
+            <span className="block text-[11px] text-builder-ink-muted">欄の外をクリックすると確定します (Esc で取り消し)</span>
+          </label>
+        )}
 
         {/* 使う時限チェックリスト */}
         <div className="space-y-1">
@@ -502,7 +546,7 @@ export default function BasicSettings() {
               </button>
             </div>
           </div>
-          {poolPeriods.length === 0 ? (
+          {choicePeriods.length === 0 ? (
             <div className="text-[11px] text-builder-ink-muted italic">まだ時限がありません。上のテキストエリアで追加してください。</div>
           ) : showAllTabsPeriods ? (
             <div className="overflow-x-auto border border-builder-border rounded">
@@ -531,12 +575,16 @@ export default function BasicSettings() {
                       <td className="px-2 py-1 border-b border-builder-border whitespace-nowrap sticky left-0 bg-inherit">{p.label}</td>
                       {project.tabs.map(tab => (
                         <td key={tab.id} className="px-2 py-1 border-b border-l border-builder-border text-center">
-                          <input
-                            type="checkbox"
-                            checked={isPeriodActiveForTab(tab, p.id)}
-                            onChange={() => handleToggleTabPeriod(p.id, tab.id)}
-                            aria-label={`${p.label} を「${tab.name}」で使う`}
-                          />
+                          {periodChoosableForTab(tab, p.id) ? (
+                            <input
+                              type="checkbox"
+                              checked={isPeriodActiveForTab(tab, p.id)}
+                              onChange={() => handleToggleTabPeriod(p.id, tab.id)}
+                              aria-label={`${p.label} を「${tab.name}」で使う`}
+                            />
+                          ) : (
+                            <span className="text-builder-ink-ghost" title="このタブの枠に無い時限">—</span>
+                          )}
                         </td>
                       ))}
                     </tr>
@@ -546,7 +594,7 @@ export default function BasicSettings() {
             </div>
           ) : (
             <div className="flex flex-wrap gap-1.5">
-              {poolPeriods.map(p => {
+              {choicePeriods.map(p => {
                 const on = isPeriodActive(p.id);
                 return (
                   <label key={p.id} className={`inline-flex items-center gap-1 px-2 py-1 border rounded text-xs cursor-pointer ${on ? 'bg-builder-info-soft border-builder-blue text-builder-ink font-bold' : 'bg-builder-surface border-builder-border text-builder-ink-muted'}`}>

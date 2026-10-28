@@ -42,6 +42,9 @@ export const LS = {
   // 他校舎の授業 (講師が他の校舎・学校で授業をする曜日・時刻・期間)。
   // 塾の授業ではないので slots / extraLessons とは別 (utils/offsiteLessons)
   offsiteLessons: "genyakubu-offsite-lessons",
+  // 高校部・予備校の講習 (期・時限・担当)。講師の月間に出し、講習時間割作成が
+  // 取り込んで自動NG にする (utils/seniorKoshu)
+  seniorKoshu: "genyakubu-senior-koshu",
   // 予備校部の予定 (年間カレンダーの上半分。休校日・出勤者休日・行事)。
   // 現役部の特別イベントとは別に持つ (混ぜると講師の月間などに漏れる)。
   // utils/yobikoEvents

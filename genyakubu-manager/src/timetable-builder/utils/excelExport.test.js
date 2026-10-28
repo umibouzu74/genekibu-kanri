@@ -1156,7 +1156,7 @@ describe('buildTeacherWorkbook — 外部授業 (他学年セッション) の�
     // タイトル + header + 12/25: 予備校(10:00) → 1限(13:00) / 12/26: 2限(14:00) → 外部(18:00)
     // + 空行 2 + S3 ブロック 3 行 (中3 / ３S / 2(テ1))
     expect(ws.rowCount).toBe(11);
-    // 外部授業は科目欄=空欄、学年(タブ) 列=種別 (メモ＝プリセット名)
+    // 外部授業は科目欄=講座名 (無ければ空欄)、学年(タブ) 列=種別 (メモ＝プリセット名)
     expect([ws.getCell(3, 1).value, ws.getCell(3, 2).value, ws.getCell(3, 4).value, ws.getCell(3, 5).value])
       .toEqual(['12/25(木)', '10:00〜11:00', '', '予備校（早朝）']);
     expect([ws.getCell(4, 1).value, ws.getCell(4, 2).value]).toEqual(['12/25(木)', '1限 (13:00~13:45)']);
@@ -1168,6 +1168,13 @@ describe('buildTeacherWorkbook — 外部授業 (他学年セッション) の�
     expect(ws.getCell(9, 1).value).toBe('中3');
     expect(ws.getCell(10, 1).value).toBe('３S');
     expect(ws.getCell(11, 1).value).toBe('2(テ1)');
+  });
+
+  it('講座名は科目欄に出す (2026-10-27。学年(タブ) 列はメモ = プリセットの名前のまま)', () => {
+    const project = makeProjectWithSessions();
+    project.externalSessions[0] = { ...project.externalSessions[0], memo: 'Ⅰ期 予備校１限', course: '高3 英語' };
+    const ws = buildTeacherWorkbook(project).getWorksheet('堀上');
+    expect([ws.getCell(3, 4).value, ws.getCell(3, 5).value]).toEqual(['高3 英語', 'Ⅰ期 予備校１限']);
   });
 
   it('メモ未設定でも時刻がプリセットに一致すれば学年(タブ) 列にプリセット名を表示する', () => {

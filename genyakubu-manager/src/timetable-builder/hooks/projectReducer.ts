@@ -1,6 +1,7 @@
 // effectiveConfigForTab はこのファイル内の従来名 effectiveConfig で使う
 // (呼び出し 6 箇所の命名統一。alias 定数を挟むと同一関数が 2 名で混在する)。
 import { makeKey, parseKey, makeNgKey, makeExternalKey, effectiveConfigForTab as effectiveConfig, nextId } from '../utils/scheduleKey';
+import { usedDateLabels } from '../utils/courseDates';
 import {
   cleanupOldCombined,
   propagateAssignment,
@@ -33,15 +34,21 @@ import {
 } from '../utils/availabilityShape';
 import { computePresetMemoBackfill } from '../utils/presetMemoBackfill';
 import { computePresetRenameSyncIds, presetSessionLabel } from '../utils/presetRenameSync';
+import { framePublishState, isPublishState, leastPublished, projectPublishState, publishStateForTab } from '../utils/publishState';
+import { computeCourseSplit, externalSessionContentKey, isExternalOnlyDate, normalizeSessionCourse } from '../utils/externalSessionShape';
+import { normalizeEventName } from '../utils/eventName';
 import type {
   AvailabilityMark,
   CombinedGroup,
   DayStatus,
   ExternalSession,
+  ExternalSessionDraft,
   ExternalSessionPreset,
+  Frame,
   GenerationParamKey,
   Project,
   ProjectState,
+  PublishState,
   Schedule,
   Teacher,
 } from '../types';
@@ -74,6 +81,7 @@ export type ProjectAction =
   | { type: 'tabDates/setAllActive'; payload: { tabId?: number; active: boolean } }
   | { type: 'dates/removeFromPool'; payload: { dateId: number } }
   | { type: 'dates/removeUnusedFromPool' }
+  | { type: 'dates/addExternalOnly'; payload: { labels: string[] } }
   | { type: 'tabDates/copyActiveToOthers'; payload: { sourceTabId: number } }
   | { type: 'tabPeriods/copyActiveToOthers'; payload: { sourceTabId: number } }
   | { type: 'tabPeriods/toggle'; payload: { tabId?: number; periodId: number } }
@@ -99,10 +107,13 @@ export type ProjectAction =
   | { type: 'teacher/setAvailabilityMemo'; payload: { name: string; memo: string } }
   | { type: 'teacher/toggleClassPriority'; payload: { idx: number; className: string } }
   | { type: 'teacher/setExternalCount'; payload: { date: string; teacherName: string; value: unknown } }
-  | { type: 'teacher/addExternalSession'; payload: { date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string } }
-  | { type: 'teacher/addExternalSessions'; payload: { items: Array<{ date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string }> } }
+  | { type: 'teacher/addExternalSession'; payload: { date: string; teacherName: string; label?: string; memo?: string; course?: string; startTime?: string; endTime?: string } }
+  | { type: 'teacher/addExternalSessions'; payload: { items: Array<{ date: string; teacherName: string; label?: string; memo?: string; course?: string; startTime?: string; endTime?: string }> } }
   | { type: 'teacher/removeExternalSession'; payload: { id: number } }
+  | { type: 'teacher/updateExternalSession'; payload: { id: number; updates: { memo?: string; course?: string } } }
   | { type: 'teacher/applyPresetMemos' }
+  | { type: 'teacher/splitSessionCourses' }
+  | { type: 'teacher/replaceExternalSessions'; payload: { removeIds: number[]; items: ExternalSessionDraft[] } }
   | { type: 'preset/add'; payload: { name: string; startTime?: string; endTime?: string; startDateLabel?: string; endDateLabel?: string; memo?: string; teachers?: string[] } }
   | { type: 'preset/update'; payload: { id: number; updates: Partial<Omit<ExternalSessionPreset, 'id'>>; syncSessionMemos?: boolean } }
   | { type: 'preset/remove'; payload: { id: number } }
@@ -129,6 +140,16 @@ export type ProjectAction =
   | { type: 'combinedGroup/update'; payload: { id: number; updates: Partial<Omit<CombinedGroup, 'id'>> } }
   | { type: 'combinedGroup/remove'; payload: { id: number } }
   | { type: 'project/updateName'; payload: { name: string } }
+  | { type: 'project/setPublishState'; payload: { state: PublishState } }
+  | { type: 'frame/add'; payload: { name: string; tabIds?: number[] } }
+  | { type: 'frame/rename'; payload: { id: number; name: string } }
+  | { type: 'frame/remove'; payload: { id: number } }
+  | { type: 'frame/setTab'; payload: { tabId: number; frameId: number | null } }
+  | { type: 'frame/setPeriods'; payload: { id: number; value: string } }
+  | { type: 'frame/setPublishState'; payload: { id: number; state: PublishState } }
+  | { type: 'courseEvents/setLink'; payload: { tabId: number; name: string; linked: boolean } }
+  | { type: 'courseEvents/linkMany'; payload: { links: Array<{ tabId: number; name: string }> } }
+  | { type: 'courseEvents/setIgnored'; payload: { name: string; ignored: boolean } }
   | { type: 'project/setGenerationParams'; payload: Partial<Record<GenerationParamKey, unknown>> }
   | { type: 'project/replace'; payload: { project: Project } };
 
@@ -235,6 +256,40 @@ export function removeDatesFromPool(project: Project, dateIds: number[]): Projec
   });
 }
 
+// 時限をプールから削除する共通処理 (枠の時限の編集 frame/setPeriods が使う)。
+// config/setList('periods') と同じ cascade: 全タブの使う時限・枠の時限から外し、
+// NG キー (`${date}-${period}`)・出勤可能調査の回答を掃除して cleanSchedule。
+export function removePeriodsFromPool(project: Project, periodIds: number[]): Project {
+  const pool = project.periods || [];
+  const idSet = new Set(periodIds);
+  const targets = pool.filter(p => idSet.has(p.id));
+  if (targets.length === 0) return project;
+  const removedLabels = targets.map(p => p.label);
+  const shouldDrop = makePeriodKeyDropMatcher(pool.map(p => p.label), removedLabels);
+  const teachers = mapTeachersAvailability(
+    (project.teachers || []).map(t => {
+      const ngSlots = t.ngSlots || [];
+      const filtered = ngSlots.filter(k => !shouldDrop(k));
+      return filtered.length === ngSlots.length ? t : { ...t, ngSlots: filtered };
+    }),
+    map => dropAvailabilityPeriods(map, removedLabels),
+  );
+  const tabs = project.tabs.map(t => {
+    const ids = t.config.activePeriodIds;
+    if (!ids || !ids.some(id => idSet.has(id))) return t;
+    return { ...t, config: { ...t.config, activePeriodIds: ids.filter(id => !idSet.has(id)) } };
+  });
+  const frames = project.frames?.map(f =>
+    f.periodIds.some(id => idSet.has(id)) ? { ...f, periodIds: f.periodIds.filter(id => !idSet.has(id)) } : f);
+  return cleanSchedule({
+    ...project,
+    periods: pool.filter(p => !idSet.has(p.id)),
+    tabs,
+    teachers,
+    ...(frames ? { frames } : {}),
+  });
+}
+
 export function projectReducer(state: ProjectState, action: ProjectAction): ProjectState {
   switch (action.type) {
     case 'history/undo': {
@@ -264,11 +319,34 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
       return { ...state, project: { ...state.project, activeTabId: action.payload.id } };
     }
     default: {
-      const newProject = applyAction(state.project, action);
+      let newProject = applyAction(state.project, action);
       if (newProject === state.project) return state;
+      // タブの使う日・時限を変える操作の後で、どのタブも使わなくなった日に他学年セッションが
+      // 残っていれば外部授業だけの日の印を付け直す (印が外れたままだと、その日の予定が
+      // 本体の月間・講師別 Excel から消え、「未使用の日を一括削除」で予定ごと消える)
+      if (/^(tabDates|tabPeriods|frame)\//.test(action.type) || action.type === 'tab/delete') {
+        newProject = keepExternalSessionDates(state.project, newProject);
+      }
       return pushToHistory(state, newProject);
     }
   }
+}
+
+// 授業の日でなくなった日 (前は使っていて、今はどのタブも使わない日) に他学年セッションが
+// あれば、外部授業だけの日の印を付ける
+function keepExternalSessionDates(before: Project, after: Project): Project {
+  const sessions = after.externalSessions || [];
+  if (sessions.length === 0) return after;
+  const sessionDates = new Set(sessions.map(s => s.date));
+  const usedBefore = usedDateLabels(before);
+  const usedAfter = usedDateLabels(after);
+  const flag = new Set(
+    (after.dates || [])
+      .filter(d => !isExternalOnlyDate(d) && sessionDates.has(d.label) && usedBefore.has(d.label) && !usedAfter.has(d.label))
+      .map(d => d.id),
+  );
+  if (flag.size === 0) return after;
+  return { ...after, dates: (after.dates || []).map(d => (flag.has(d.id) ? { ...d, externalOnly: true } : d)) };
 }
 
 // 履歴に新 project を積む (updatedAt 自動付与、MAX_HISTORY 超は古い順に切る)
@@ -337,6 +415,9 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const activeTab = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
       const newId = Math.max(...project.tabs.map(t => t.id)) + 1;
       const configToCopy = JSON.parse(JSON.stringify(activeTab.config));
+      // 行事予定との結び付けはタブの中身 (どの講習か) の話なので写さない。写すと新しい
+      // タブが前のタブの行事予定とだけ比べられ、名前からの提案も出ない
+      delete configToCopy.courseEventNames;
       const newTab = { id: newId, name, config: configToCopy, schedule: {} };
       return { ...project, tabs: [...project.tabs, newTab], activeTabId: newId };
     }
@@ -440,6 +521,11 @@ function applyAction(project: Project, action: ProjectAction): Project {
         ? {
             ...project,
             [key]: resultArr,
+            // 枠の時限からもプールから消えた時限を外す
+            ...(key === 'periods' && project.frames ? {
+              frames: project.frames.map(f =>
+                f.periodIds.every(id => resultIds.has(id)) ? f : { ...f, periodIds: f.periodIds.filter(id => resultIds.has(id)) }),
+            } : {}),
             ...(key === 'periods' ? {
               tabs: project.tabs.map(t => {
                 const ids = t.config.activePeriodIds;
@@ -705,7 +791,13 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const pool = project.dates || [];
       const poolByLabel = new Map(pool.map(d => [d.label, d] as const));
       let nextIdNum = nextId(pool);
-      const newPool = [...pool];
+      // 外部授業だけの日をタブが使い始めたら印を外す (時間割に出る日になる)
+      const usedLabels = new Set(cleanLabels);
+      const newPool = pool.map(d => {
+        if (!isExternalOnlyDate(d) || !usedLabels.has(d.label)) return d;
+        const { externalOnly: _flag, ...rest } = d;
+        return rest;
+      });
       const activeIds = [];
       cleanLabels.forEach(label => {
         let ent = poolByLabel.get(label);
@@ -732,14 +824,24 @@ function applyAction(project: Project, action: ProjectAction): Project {
       if (!target) return project;
       const pool = project.dates || [];
       if (!pool.some(d => d.id === dateId)) return project;
-      const current = target.config.activeDateIds ?? pool.map(d => d.id);
+      // 全日使う (null) タブの「今使っている日」に外部授業だけの日は入らない
+      const current = target.config.activeDateIds ?? pool.filter(d => !isExternalOnlyDate(d)).map(d => d.id);
       const set = new Set(current);
+      const turningOn = !set.has(dateId);
       if (set.has(dateId)) set.delete(dateId); else set.add(dateId);
       const activeIds = pool.map(d => d.id).filter(id => set.has(id));
       const newTabs = project.tabs.map(t =>
         t.id === target.id ? { ...t, config: { ...t.config, activeDateIds: activeIds } } : t
       );
-      return { ...project, tabs: newTabs };
+      // 外部授業だけの日をタブで使うことにしたら印を外す (時間割に出る日になる)
+      const dates = turningOn && pool.some(d => d.id === dateId && isExternalOnlyDate(d))
+        ? pool.map(d => {
+          if (d.id !== dateId) return d;
+          const { externalOnly: _flag, ...rest } = d;
+          return rest;
+        })
+        : pool;
+      return { ...project, tabs: newTabs, ...(dates !== pool ? { dates } : {}) };
     }
 
     // 全選択 (active=true → null = 全日) / 全解除 (active=false → []).
@@ -766,14 +868,47 @@ function applyAction(project: Project, action: ProjectAction): Project {
     // 「増える一方」(tabDates/setByLabels は追加のみ) なので、生成をやり直す
     // たびに溜まるゴミ日付の掃除経路。activeDateIds 未指定のタブは「全日
     // 使う」の意味なので、その場合は何も削除しない。
+    // 外部授業だけの日 (印の付いた日) は人が残すと決めた日なので消さない。
     case 'dates/removeUnusedFromPool': {
       const pool = project.dates || [];
       if (project.tabs.some(t => !t.config.activeDateIds)) return project;
       const unused = pool
-        .filter(d => project.tabs.every(t => !t.config.activeDateIds.includes(d.id)))
+        .filter(d => !isExternalOnlyDate(d) && project.tabs.every(t => !t.config.activeDateIds.includes(d.id)))
         .map(d => d.id);
       if (unused.length === 0) return project;
       return removeDatesFromPool(project, unused);
+    }
+
+    // 外部授業だけの日を足す (2026-10-27)。どのタブの時間割にも出さず、他学年セッション
+    // の登録・本体の月間・講師別 Excel の対象にだけする日 (12/24 の高3 Ⅰ期の初日など)。
+    // プールに無い日は印を付けて足す。プールにあってどのタブも使っていない日は印を
+    // 付ける (前の季節の残りと区別する)。タブが使っている日は講習の日なので触らない
+    case 'dates/addExternalOnly': {
+      const labels = [...new Set((action.payload.labels || []).map(l => String(l).trim()).filter(Boolean))];
+      if (labels.length === 0) return project;
+      const pool = project.dates || [];
+      const usedIds = new Set<number>();
+      let allDays = false;
+      project.tabs.forEach(t => {
+        if (!t.config.activeDateIds) allDays = true;
+        else t.config.activeDateIds.forEach(id => usedIds.add(id));
+      });
+      const byLabel = new Map(pool.map(d => [d.label, d] as const));
+      let nextIdNum = nextId(pool);
+      let changed = false;
+      const newPool = pool.map(d => {
+        if (!labels.includes(d.label) || isExternalOnlyDate(d)) return d;
+        // 全日使うタブがあると、印の無い日はどれも講習の日
+        if (allDays || usedIds.has(d.id)) return d;
+        changed = true;
+        return { ...d, externalOnly: true };
+      });
+      labels.forEach(label => {
+        if (byLabel.has(label)) return;
+        newPool.push({ id: nextIdNum++, label, externalOnly: true });
+        changed = true;
+      });
+      return changed ? { ...project, dates: newPool } : project;
     }
 
     // periods 版 tabDates/toggle・tabDates/setAllActive (E-3)。プールの追加/削除は
@@ -786,6 +921,9 @@ function applyAction(project: Project, action: ProjectAction): Project {
       if (!target) return project;
       const pool = project.periods || [];
       if (!pool.some(p => p.id === periodId)) return project;
+      // 枠に入ったタブは枠の時限からだけ選ぶ
+      const frame = (project.frames || []).find(f => f.id === target.config.frameId);
+      if (frame && !frame.periodIds.includes(periodId)) return project;
       const current = target.config.activePeriodIds ?? pool.map(p => p.id);
       const set = new Set(current);
       if (set.has(periodId)) set.delete(periodId); else set.add(periodId);
@@ -801,7 +939,9 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const targetId = tabId ?? project.activeTabId;
       const target = project.tabs.find(t => t.id === targetId) || project.tabs[0];
       if (!target) return project;
-      const activePeriodIds = active ? null : [];
+      // 枠に入ったタブの「全選択」は枠の全時限 (null = プールの全部にしない)
+      const frame = (project.frames || []).find(f => f.id === target.config.frameId);
+      const activePeriodIds = active ? (frame ? [...frame.periodIds] : null) : [];
       const newTabs = project.tabs.map(t =>
         t.id === target.id ? { ...t, config: { ...t.config, activePeriodIds } } : t
       );
@@ -819,9 +959,12 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const source = project.tabs.find(t => t.id === sourceTabId);
       if (!source || project.tabs.length < 2) return project;
       const src = source.config[key];
+      // 季節の中の枠があれば、写す先は同じ枠のタブだけ (冬期講習の日程を直前ポイント演習の
+      // タブへ写さない。時限も枠ごと)
+      const sameFrame = (t: typeof source) => (t.config.frameId ?? null) === (source.config.frameId ?? null);
       let changed = false;
       const newTabs = project.tabs.map(t => {
-        if (t.id === sourceTabId) return t;
+        if (t.id === sourceTabId || !sameFrame(t)) return t;
         const curr = t.config[key];
         // §M: 同値判定は Set 比較 (length + includes だと外部 JSON 由来の
         // 重複 id 入り配列を multiset として誤同一視しうる)
@@ -1288,11 +1431,13 @@ function applyAction(project: Project, action: ProjectAction): Project {
       // 落とす (orphan endTime を残すと getSessionTimeRange が start を
       // 復元できず、データだけが残って自動NGに反映されない silent failure
       // になるため)。
-      const { date, teacherName, label, memo, startTime, endTime } = action.payload;
+      const { date, teacherName, label, memo, course, startTime, endTime } = action.payload;
       if (!date || !teacherName) return project;
       const sessions = project.externalSessions || [];
       const newId = sessions.reduce((max, s) => Math.max(max, s.id), 0) + 1;
       const newSession: ExternalSession = { id: newId, date, teacherName, label: label || '', memo: memo || '' };
+      const courseText = normalizeSessionCourse(course);
+      if (courseText) newSession.course = courseText;
       if (startTime) {
         newSession.startTime = startTime;
         if (endTime) newSession.endTime = endTime;
@@ -1311,15 +1456,16 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const sessions = project.externalSessions || [];
       // N1i: 内容が完全一致する既存セッションはスキップする (NG CSV の
       // dedupe = F2h と同思想)。同条件の再登録で一覧に二重に溜まるのを防ぐ。
-      // バッチ内の重複も同じキーで弾く。
-      const contentKey = (s: { date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string }) =>
-        JSON.stringify([s.date, s.teacherName, s.label || '', s.memo || '', s.startTime || '', s.endTime || '']);
+      // バッチ内の重複も同じキーで弾く (キーは utils/externalSessionShape の 1 か所)。
+      const contentKey = externalSessionContentKey;
       const seen = new Set(sessions.map(contentKey));
       let nextId = sessions.reduce((max, s) => Math.max(max, s.id), 0) + 1;
       const newOnes: ExternalSession[] = [];
       for (const it of items) {
         if (!it?.date || !it?.teacherName) continue;
         const ns: ExternalSession = { id: nextId, date: it.date, teacherName: it.teacherName, label: it.label || '', memo: it.memo || '' };
+        const courseText = normalizeSessionCourse(it.course);
+        if (courseText) ns.course = courseText;
         if (it.startTime) {
           ns.startTime = it.startTime;
           if (it.endTime) ns.endTime = it.endTime;
@@ -1333,12 +1479,76 @@ function applyAction(project: Project, action: ProjectAction): Project {
       if (newOnes.length === 0) return project;
       return { ...project, externalSessions: [...sessions, ...newOnes] };
     }
+    // 本体の「高校・予備校の講習」の取り込み (ConfigModal/SeniorKoshuImport)。消すもの
+    // (前に取り込んで本体から無くなった / 変わったもの、置き換える手入力のもの) と足すものを
+    // 1 アクションで (Undo 1 回で戻る)。足すものは内容の重複を飛ばさない (計画の側で
+    // 決めてある。同じ内容の手入力を残すと決めた場合も、取り込んだ印のある方を持つ)
+    case 'teacher/replaceExternalSessions': {
+      const { removeIds, items } = action.payload;
+      const remove = new Set(removeIds || []);
+      const sessions = project.externalSessions || [];
+      const kept = sessions.filter(s => !remove.has(s.id));
+      let nextId = sessions.reduce((max, s) => Math.max(max, s.id), 0) + 1;
+      const added: ExternalSession[] = [];
+      for (const it of items || []) {
+        if (!it?.date || !it?.teacherName) continue;
+        const ns: ExternalSession = { id: nextId++, date: it.date, teacherName: it.teacherName, label: it.label || '', memo: it.memo || '' };
+        const courseText = normalizeSessionCourse(it.course);
+        if (courseText) ns.course = courseText;
+        if (it.startTime) {
+          ns.startTime = it.startTime;
+          if (it.endTime) ns.endTime = it.endTime;
+        }
+        if (it.source === 'seniorKoshu' && it.sourceKey) {
+          ns.source = 'seniorKoshu';
+          ns.sourceKey = it.sourceKey;
+        }
+        added.push(ns);
+      }
+      if (kept.length === sessions.length && added.length === 0) return project;
+      return { ...project, externalSessions: [...kept, ...added] };
+    }
     case 'teacher/removeExternalSession': {
       const { id } = action.payload;
       const sessions = project.externalSessions || [];
       const filtered = sessions.filter(s => s.id !== id);
       if (filtered.length === sessions.length) return project;
       return { ...project, externalSessions: filtered };
+    }
+
+    // 登録済みのセッションのメモ・講座名を直す (日付ごとの一覧から)。空にしたら
+    // 講座名は持たない。同じ値なら何もしない
+    case 'teacher/updateExternalSession': {
+      const { id, updates } = action.payload;
+      const sessions = project.externalSessions || [];
+      const target = sessions.find(s => s.id === id);
+      if (!target || !updates) return project;
+      const next: ExternalSession = { ...target };
+      if ('memo' in updates) next.memo = String(updates.memo ?? '').trim();
+      if ('course' in updates) {
+        const courseText = normalizeSessionCourse(updates.course);
+        if (courseText) next.course = courseText;
+        else delete next.course;
+      }
+      if ((next.memo || '') === (target.memo || '') && (next.course || '') === (target.course || '')) return project;
+      return { ...project, externalSessions: sessions.map(s => (s.id === id ? next : s)) };
+    }
+
+    // 講座名の欄ができる前に「プリセットの名前 + 講座名」をメモに入れていたセッションを、
+    // メモと講座名に分ける (utils/externalSessionShape.computeCourseSplit)。分けると
+    // プリセットの改名のメモ同期が効くようになる。Undo 1 回で戻せる
+    case 'teacher/splitSessionCourses': {
+      const sessions = project.externalSessions || [];
+      const assignments = computeCourseSplit(sessions, project.externalSessionPresets || []);
+      if (assignments.length === 0) return project;
+      const byId = new Map(assignments.map(a => [a.sessionId, a]));
+      return {
+        ...project,
+        externalSessions: sessions.map(s => {
+          const a = byId.get(s.id);
+          return a ? { ...s, memo: a.memo, course: a.course } : s;
+        }),
+      };
     }
 
     // メモ未設定のセッションへ、時刻が一致するプリセットの名前を一括適用する
@@ -1975,6 +2185,235 @@ function applyAction(project: Project, action: ProjectAction): Project {
       // F2d: 同名なら no-op (Header の blur 再 commit 対策)
       if (action.payload.name === project.name) return project;
       return { ...project, name: action.payload.name };
+    }
+    // ─── 季節の中の枠 (utils/frames) ─────
+    // 枠を作る。指定したタブを入れ、枠の時限はそのタブが今使っている時限 (和集合)。
+    // 新しい枠の「月間の予定」は入れるタブの今の状態から (作っただけで月間から消えない・出ない)
+    case 'frame/add': {
+      const name = String(action.payload.name ?? '').trim();
+      const frames = project.frames || [];
+      if (!name || frames.some(f => f.name === name)) return project;
+      const id = frames.reduce((m, f) => Math.max(m, f.id), 0) + 1;
+      const tabIds = new Set(action.payload.tabIds || []);
+      const used = new Set<number>();
+      project.tabs.forEach(t => {
+        if (tabIds.has(t.id)) effectiveConfig(project, t).periods.forEach(p => used.add(p.id));
+      });
+      const periodIds = (project.periods || []).map(p => p.id).filter(pid => used.has(pid));
+      // 入れるタブの今の状態のうち、いちばん出していないもの (作成中のタブを入れただけで
+      // 月間に出ないように)。タブを入れなければ project の状態
+      const tabStates = project.tabs.filter(t => tabIds.has(t.id)).map(t => publishStateForTab(project, t));
+      const initialState = tabStates.length > 0 ? leastPublished(tabStates) : projectPublishState(project);
+      const frame: Frame = { id, name, periodIds, publishState: initialState };
+      const tabs = project.tabs.map(t => {
+        if (!tabIds.has(t.id)) return t;
+        const active = effectiveConfig(project, t).periods.map(p => p.id);
+        return { ...t, config: { ...t.config, frameId: id, activePeriodIds: active } };
+      });
+      return { ...project, frames: [...frames, frame], tabs };
+    }
+    case 'frame/rename': {
+      const name = String(action.payload.name ?? '').trim();
+      const frames = project.frames || [];
+      const target = frames.find(f => f.id === action.payload.id);
+      if (!target || !name || target.name === name || frames.some(f => f.name === name)) return project;
+      return { ...project, frames: frames.map(f => (f.id === target.id ? { ...f, name } : f)) };
+    }
+    // 枠を消す (タブは枠なしに戻り、使う時限はそのまま。時限・コマは消さない)。
+    // 枠なしのタブは project の状態になる。最後の枠で、ほかに枠に入っていないタブも
+    // 無ければ、枠の状態を project に移す (全部を入れた枠を消しただけで月間の予定から
+    // 消えたり出たりしないように)。それ以外で状態が変わるときは画面で確かめる
+    case 'frame/remove': {
+      const frames = project.frames || [];
+      const removed = frames.find(f => f.id === action.payload.id);
+      if (!removed) return project;
+      const rest = frames.filter(f => f.id !== action.payload.id);
+      const hadUnframed = project.tabs.some(t => !frames.some(f => f.id === t.config.frameId));
+      const tabs = project.tabs.map(t => {
+        if (t.config.frameId !== action.payload.id) return t;
+        const { frameId: _frameId, ...config } = t.config;
+        return { ...t, config };
+      });
+      const next: Project = { ...project, tabs, frames: rest };
+      if (rest.length === 0) {
+        delete next.frames;
+        if (!hadUnframed) next.publishState = framePublishState(project, removed);
+      }
+      return next;
+    }
+    // タブを枠に入れる / 外す。入れるときの使う時限は、今の時限のうち枠にあるもの
+    // (1 つも無ければ枠の全時限)。外すときは今の時限のまま
+    case 'frame/setTab': {
+      const { tabId, frameId } = action.payload;
+      const tab = project.tabs.find(t => t.id === tabId);
+      if (!tab || (tab.config.frameId ?? null) === frameId) return project;
+      if (frameId == null) {
+        const { frameId: _frameId, ...config } = tab.config;
+        const active = effectiveConfig(project, tab).periods.map(p => p.id);
+        return { ...project, tabs: project.tabs.map(t => (t.id === tabId ? { ...t, config: { ...config, activePeriodIds: active } } : t)) };
+      }
+      const frame = (project.frames || []).find(f => f.id === frameId);
+      if (!frame) return project;
+      const allowed = new Set(frame.periodIds);
+      const current = effectiveConfig(project, tab).periods.map(p => p.id);
+      const active = current.filter(id => allowed.has(id));
+      // 枠の時限が 1 つも重ならないタブは、タブの時限を枠に足して入れる (枠の時限に
+      // 置き換えると、タブのコマが時間割・Excel・本体の月間から見えなくなる)
+      if (active.length === 0 && current.length > 0) {
+        const merged = new Set([...frame.periodIds, ...current]);
+        const periodIds = (project.periods || []).map(p => p.id).filter(id => merged.has(id));
+        return {
+          ...project,
+          frames: (project.frames || []).map(f => (f.id === frameId ? { ...f, periodIds } : f)),
+          tabs: project.tabs.map(t => (t.id === tabId ? { ...t, config: { ...t.config, frameId, activePeriodIds: current } } : t)),
+        };
+      }
+      return {
+        ...project,
+        tabs: project.tabs.map(t => (t.id === tabId ? { ...t, config: { ...t.config, frameId, activePeriodIds: active.length > 0 ? active : [...frame.periodIds] } } : t)),
+      };
+    }
+    // 枠の時限をカンマ区切りで直す。名前の同じ時限はプールの時限をそのまま使い (枠を
+    // またいで同じ時限)、無い名前は足す。枠から外した時限は、ほかの枠・枠に入っていない
+    // タブも使っていなければプールから消す (config/setList と同じ cascade)。足した時限は
+    // 枠のタブの使う時限にも足す。プールの並びは枠の並びにそろえる (時間割の行の順)
+    case 'frame/setPeriods': {
+      const { id, value } = action.payload;
+      const frames = project.frames || [];
+      const frame = frames.find(f => f.id === id);
+      if (!frame) return project;
+      const labels = [...new Set(String(value ?? '').split(',').map(s => s.trim()).filter(Boolean))];
+      if (labels.length === 0) return project;
+      const pool = project.periods || [];
+      const byLabel = new Map(pool.map(p => [p.label, p] as const));
+      let next = nextId(pool);
+      const created: Array<{ id: number; label: string }> = [];
+      const newIds = labels.map(label => {
+        const hit = byLabel.get(label);
+        if (hit) return hit.id;
+        const ent = { id: next++, label };
+        created.push(ent);
+        byLabel.set(label, ent);
+        return ent.id;
+      });
+      const oldIds = frame.periodIds;
+      const sameList = newIds.length === oldIds.length && newIds.every((v, i) => v === oldIds[i]);
+      if (sameList && created.length === 0) return project;
+      const newIdSet = new Set(newIds);
+      const added = newIds.filter(pid => !oldIds.includes(pid));
+      const removed = oldIds.filter(pid => !newIdSet.has(pid));
+      // 枠に入っていないタブで「全時限」のものは、今のプールの時限を明示しておく (足した
+      // 時限がそのタブの行にまで増えないように)
+      const isUnframed = (t: typeof project.tabs[number]) => !frames.some(f => f.id === t.config.frameId);
+      const tabs0 = created.length > 0
+        ? project.tabs.map(t => (isUnframed(t) && !t.config.activePeriodIds ? { ...t, config: { ...t.config, activePeriodIds: pool.map(p => p.id) } } : t))
+        : project.tabs;
+      // プールの並び: この枠だけが使う時限を枠の並びにそろえる (ほかの枠・枠に入っていない
+      // タブも使う時限は動かさない = そのタブの行の順を変えない)。新しい時限は、この枠の
+      // 時限のうちいちばん後ろの位置の次に入れる
+      const usedElsewhere = new Set<number>([
+        ...frames.filter(f => f.id !== id).flatMap(f => f.periodIds),
+        ...tabs0.filter(isUnframed).flatMap(t => t.config.activePeriodIds || pool.map(p => p.id)),
+      ]);
+      const createdIds = new Set(created.map(c => c.id));
+      const exclusiveInOrder = newIds.filter(pid => !createdIds.has(pid) && !usedElsewhere.has(pid));
+      const exclusiveSet = new Set(exclusiveInOrder);
+      let k = 0;
+      const reordered = pool.map(p => (exclusiveSet.has(p.id) ? pool.find(x => x.id === exclusiveInOrder[k++])! : p));
+      let lastIdx = -1;
+      reordered.forEach((p, i) => { if (newIdSet.has(p.id)) lastIdx = i; });
+      const insertAt = lastIdx < 0 ? reordered.length : lastIdx + 1;
+      const createdInOrder = newIds.filter(pid => createdIds.has(pid)).map(pid => created.find(c => c.id === pid)!);
+      const periods = [...reordered.slice(0, insertAt), ...createdInOrder, ...reordered.slice(insertAt)];
+      const tabs = tabs0.map(t => {
+        if (t.config.frameId !== id) return t;
+        const current = t.config.activePeriodIds || [];
+        const active = [...current.filter(pid => newIdSet.has(pid)), ...added.filter(pid => !current.includes(pid))];
+        return { ...t, config: { ...t.config, activePeriodIds: active } };
+      });
+      let result: Project = {
+        ...project,
+        periods,
+        tabs,
+        frames: frames.map(f => (f.id === id ? { ...f, periodIds: newIds } : f)),
+      };
+      // 外した時限のうち、どこも使っていないものはプールから消す
+      const otherFrameIds = new Set(frames.filter(f => f.id !== id).flatMap(f => f.periodIds));
+      const unframed = result.tabs.filter(t => !(result.frames || []).some(f => f.id === t.config.frameId));
+      const unframedAll = unframed.some(t => !t.config.activePeriodIds);
+      const unframedIds = new Set(unframed.flatMap(t => t.config.activePeriodIds || []));
+      const drop = removed.filter(pid => !otherFrameIds.has(pid) && !unframedAll && !unframedIds.has(pid));
+      if (drop.length > 0) result = removePeriodsFromPool(result, drop);
+      return result;
+    }
+    case 'frame/setPublishState': {
+      const { id, state } = action.payload;
+      const frames = project.frames || [];
+      const target = frames.find(f => f.id === id);
+      if (!target || !isPublishState(state) || framePublishState(project, target) === state) return project;
+      return { ...project, frames: frames.map(f => (f.id === id ? { ...f, publishState: state } : f)) };
+    }
+
+    // ─── 本体の行事予定 (講習) との結び付け (utils/courseEventCheck) ─────
+    // タブに行事予定の名前を結び付ける / 外す。名前は表記ゆれ (全角半角・空白) を
+    // 同じものとして扱う。対象外にした行事予定を結び付けたら対象外から外す
+    case 'courseEvents/setLink':
+    case 'courseEvents/linkMany': {
+      const links = action.type === 'courseEvents/setLink'
+        ? [{ tabId: action.payload.tabId, name: action.payload.name, linked: action.payload.linked }]
+        : action.payload.links.map(l => ({ ...l, linked: true }));
+      let tabs = project.tabs;
+      let ignored = project.ignoredCourseEvents || [];
+      for (const { tabId, name, linked } of links) {
+        const key = normalizeEventName(name);
+        const tab = tabs.find(t => t.id === tabId);
+        if (!key || !tab) continue;
+        const current = tab.config.courseEventNames || [];
+        const has = current.some(n => normalizeEventName(n) === key);
+        if (has === linked) continue;
+        const nextNames = linked ? [...current, String(name).trim()] : current.filter(n => normalizeEventName(n) !== key);
+        tabs = tabs.map(t => {
+          if (t.id !== tabId) return t;
+          const { courseEventNames: _old, ...config } = t.config;
+          return { ...t, config: nextNames.length > 0 ? { ...config, courseEventNames: nextNames } : config };
+        });
+        if (linked) ignored = ignored.filter(n => normalizeEventName(n) !== key);
+      }
+      if (tabs === project.tabs) return project;
+      const next: Project = { ...project, tabs };
+      if (ignored.length > 0) next.ignoredCourseEvents = ignored;
+      else delete next.ignoredCourseEvents;
+      return next;
+    }
+    // 行事予定を「この講習の対象外」にする / 戻す (対象外にしたらタブの結び付けも外す)
+    case 'courseEvents/setIgnored': {
+      const { name, ignored: value } = action.payload;
+      const key = normalizeEventName(name);
+      if (!key) return project;
+      const current = project.ignoredCourseEvents || [];
+      const has = current.some(n => normalizeEventName(n) === key);
+      if (has === value) return project;
+      const names = value ? [...current, String(name).trim()] : current.filter(n => normalizeEventName(n) !== key);
+      const tabs = value
+        ? project.tabs.map(t => {
+          const list = t.config.courseEventNames || [];
+          if (!list.some(n => normalizeEventName(n) === key)) return t;
+          const rest = list.filter(n => normalizeEventName(n) !== key);
+          const { courseEventNames: _old, ...config } = t.config;
+          return { ...t, config: rest.length > 0 ? { ...config, courseEventNames: rest } : config };
+        })
+        : project.tabs;
+      const next: Project = { ...project, tabs };
+      if (names.length > 0) next.ignoredCourseEvents = names;
+      else delete next.ignoredCourseEvents;
+      return next;
+    }
+
+    case 'project/setPublishState': {
+      // 月間の予定へ出すか (作成中 / 仮確定 / 確定)。Undo で戻せる (履歴に積む)
+      const { state } = action.payload;
+      if (!isPublishState(state) || projectPublishState(project) === state) return project;
+      return { ...project, publishState: state };
     }
     case 'project/setGenerationParams': {
       // 自動生成パラメータ (numPatterns / maxDailyHours / maxIterations) を

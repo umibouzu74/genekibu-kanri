@@ -47,8 +47,20 @@ export function parseTsvTable(text, columns) {
 
   const headCells = lines[0].raw.split("\t").map((c) => norm(unquoteCell(c)));
   const index = {};
+  // 見出しに当てる列: 完全に一致する名前を先に、無ければ前方一致のうち長い名前 (「担当しない日」を
+  // 「担当」(講師) の列にしない・「期の日」を「期」の列にしない)
+  const keyOf = (h) => {
+    let best = null;
+    for (const k of keys) {
+      for (const alias of columns[k]) {
+        const score = h === alias ? 10000 + alias.length : h.startsWith(alias) ? alias.length : -1;
+        if (score >= 0 && (!best || score > best.score)) best = { key: k, score };
+      }
+    }
+    return best?.key ?? null;
+  };
   headCells.forEach((h, i) => {
-    const key = keys.find((k) => columns[k].some((alias) => h === alias || h.startsWith(alias)));
+    const key = keyOf(h);
     if (key && index[key] == null) index[key] = i;
   });
   const header = Object.keys(index).length >= 2;

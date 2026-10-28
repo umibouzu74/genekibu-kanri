@@ -12,6 +12,8 @@ import {
 /** 講師の所属で分けたグループの key (現役部 常勤 / バイト以外の現役部 非常勤) */
 export const GENYAKU_FULLTIME_GROUP_KEY = "__genyaku_fulltime__";
 export const GENYAKU_PARTTIME_GROUP_KEY = "__genyaku_parttime__";
+/** 時間割にコマの無い、高校・予備校の講習だけの講師のグループ (utils/seniorKoshu) */
+export const SENIOR_KOSHU_GROUP_KEY = "__senior_koshu__";
 
 // 教員をカテゴリ (バイト → 英数国理社 → その他) にグループ化する。
 // バイトは partTimeStaff にいる名前をそのまま「バイト」グループに入れる。
@@ -23,6 +25,8 @@ export const GENYAKU_PARTTIME_GROUP_KEY = "__genyaku_parttime__";
 // 教科別のグループは予備校部の人だけになる (section: "yobiko")。所属を誰も
 // 分けていないときは従来どおり (機能を使わない人の見た目を変えない)。
 // 現役部 常勤の人はコマが無くても並べる (有給・半休を月間で見るため)。
+// extraTeachers (これからの高校・予備校の講習の担当) は、時間割にもバイト一覧にも
+// いなければ「高校・予備校の講習」のグループに並べる (月間の予定を開けるように)。
 export function useTeacherGroups({
   slots,
   partTimeStaff,
@@ -30,10 +34,12 @@ export function useTeacherGroups({
   teacherKana,
   affiliations = null,
   year = null,
+  extraTeachers = null,
 }) {
   return useMemo(
-    () => buildTeacherGroups({ slots, partTimeStaff, subjects, teacherKana, affiliations, year }),
-    [slots, partTimeStaff, subjects, teacherKana, affiliations, year]
+    () =>
+      buildTeacherGroups({ slots, partTimeStaff, subjects, teacherKana, affiliations, year, extraTeachers }),
+    [slots, partTimeStaff, subjects, teacherKana, affiliations, year, extraTeachers]
   );
 }
 
@@ -45,6 +51,7 @@ export function buildTeacherGroups({
   teacherKana,
   affiliations = null,
   year = null,
+  extraTeachers = null,
 }) {
   const staffNameSet = new Set(partTimeStaff.map((s) => s.name));
   const affIndex =
@@ -94,6 +101,13 @@ export function buildTeacherGroups({
   for (const s of slots) for (const t of getSlotTeachers(s)) slotTeachers.add(t);
   for (const t of slotTeachers) allTeachers.add(t);
   for (const s of partTimeStaff) allTeachers.add(s.name);
+  // 高校・予備校の講習だけの講師 (時間割にもバイト一覧にもいない)
+  const seniorOnly = new Set();
+  for (const t of extraTeachers || []) {
+    if (!t || allTeachers.has(t)) continue;
+    allTeachers.add(t);
+    seniorOnly.add(t);
+  }
   // 現役部 常勤はコマが無くても並べる
   if (affIndex) {
     for (const t of affIndex.keys()) {
@@ -107,11 +121,12 @@ export function buildTeacherGroups({
   const staffGroup = [];
   const bySubject = new Map();
   const other = [];
+  const seniorGroup = [];
   for (const t of allTeachers) {
     const cat = categoryOf(t);
-    // 退職・非表示の人は、時間割にコマが残っているときだけ (教科別に) 並べる
+    // 退職・非表示の人は、時間割にコマ (これからの講習) が残っているときだけ並べる
     const retired = rawCategoryOf(t) === RETIRED_CATEGORY;
-    if (retired && !slotTeachers.has(t)) continue;
+    if (retired && !slotTeachers.has(t) && !seniorOnly.has(t)) continue;
     if (cat === LEAVE_CATEGORY) {
       genyakuFulltime.push(t);
       continue;
@@ -122,6 +137,10 @@ export function buildTeacherGroups({
     }
     if (cat === PART_TIME_CATEGORY) {
       genyakuParttime.push(t);
+      continue;
+    }
+    if (seniorOnly.has(t)) {
+      seniorGroup.push(t);
       continue;
     }
     const counts = teacherSubjectCounts.get(t);
@@ -151,6 +170,7 @@ export function buildTeacherGroups({
   staffGroup.sort(cmp);
   for (const arr of bySubject.values()) arr.sort(cmp);
   other.sort(cmp);
+  seniorGroup.sort(cmp);
 
   // 表示順: バイト → 英数国理社 → それ以外の教科 → その他
   const SUBJECT_ORDER = ["英語", "数学", "国語", "理科", "社会"];
@@ -190,6 +210,14 @@ export function buildTeacherGroups({
   }
   if (other.length) {
     groups.push({ key: "__other__", label: "その他", teachers: other, ...sec("yobiko") });
+  }
+  if (seniorGroup.length) {
+    groups.push({
+      key: SENIOR_KOSHU_GROUP_KEY,
+      label: "高校・予備校の講習",
+      teachers: seniorGroup,
+      ...sec("yobiko"),
+    });
   }
 
   // 検索で絞るのは表示側 (Sidebar) が filterTeacherGroups で行う。

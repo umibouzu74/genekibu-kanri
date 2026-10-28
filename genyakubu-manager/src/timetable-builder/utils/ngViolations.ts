@@ -14,6 +14,7 @@
 import { effectiveConfigForTab, makeKey, makeNgKey } from './scheduleKey';
 import { formatHHmm, getSessionTimeRange } from './timeRange';
 import type { AutoNgEntries } from './autoNg';
+import { normalizeSessionCourse } from './externalSessionShape';
 import type { Project, Teacher } from '../types';
 
 export interface NgViolationItem {
@@ -31,13 +32,13 @@ export interface NgViolationItem {
   reasons: string[];
 }
 
-// 他学年セッション 1 件の短い説明 (メモ + 時刻)
-function describeSession(s: { memo?: string; label?: string; startTime?: string; endTime?: string }): string {
+// 他学年セッション 1 件の短い説明 (メモ + 講座名 + 時刻)
+function describeSession(s: { memo?: string; course?: string; label?: string; startTime?: string; endTime?: string }): string {
   const range = getSessionTimeRange(s);
   const time = range
     ? `${formatHHmm(range.startMin)}〜${range.endMin != null ? formatHHmm(range.endMin) : ''}`
     : (s.label || '');
-  const memo = (s.memo || '').trim();
+  const memo = [(s.memo || '').trim(), normalizeSessionCourse(s.course)].filter(Boolean).join(' ');
   if (memo && time) return `${memo} ${time}`;
   return memo || time || '他学年セッション';
 }

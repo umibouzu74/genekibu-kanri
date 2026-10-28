@@ -21,6 +21,7 @@
 //   (usedDateLabels)。本体では前の夏の日付が翌年 7 月の「講」として出ていた
 
 import { activeDatesForTab, activePeriodsForTab } from './scheduleKey';
+import { isExternalOnlyDate } from './externalSessionShape';
 import { WEEKDAY_LABELS, seasonStartMonth } from './dateGenerate';
 import type { Project } from '../types';
 
@@ -146,5 +147,15 @@ export function usedDateLabels(project: Pick<Project, 'dates' | 'periods' | 'tab
     if (activePeriodsForTab(project?.periods, tab).length === 0) return;
     activeDatesForTab(project?.dates, tab).forEach(d => out.add(d.label));
   });
+  return out;
+}
+
+// 他学年セッション (外部授業) を本体の月間・講師別 Excel に出す日 = タブが授業に使う日 +
+// 外部授業だけの日 (日付プールの印、DateEntity.externalOnly)。12/24 の高3 Ⅰ期の初日の
+// ように、中学の講習が無い日の外部授業も出せるように。どちらでもない日 (前の季節の残り)
+// の外部授業は出さない
+export function sessionDateLabels(project: Pick<Project, 'dates' | 'periods' | 'tabs'> | null | undefined): Set<string> {
+  const out = usedDateLabels(project);
+  (project?.dates || []).forEach(d => { if (isExternalOnlyDate(d)) out.add(d.label); });
   return out;
 }

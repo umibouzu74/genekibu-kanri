@@ -21,7 +21,9 @@ import { getPeriodTimeRange, getSessionTimeRange } from './timeRange';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { computePresetMemoBackfill } from './presetMemoBackfill';
 import { classLabelWithRoom } from './classRoom';
-import { usedDateLabels } from './courseDates';
+import { sessionDateLabels, usedDateLabels } from './courseDates';
+import { normalizeSessionCourse, sessionKindLabel } from './externalSessionShape';
+import { frameById, frameOfTab, projectForFrame } from './frames';
 
 // ─── 共通スタイル定義 (exceljs 形式) ──────────────────────────────
 
@@ -215,8 +217,9 @@ export function buildScheduleWorkbook(project: Project): ExcelJS.Workbook {
     const rangeText = dates.length > 0 ? `期間 ${dates[0].label}〜${dates[dates.length - 1].label}` : '';
     const d0 = new Date();
     const printedAt = `出力日 ${d0.getMonth() + 1}/${d0.getDate()}`;
+    // 季節の中の枠に入ったタブは枠の名前 (「直前ポイント演習 — 中3直前 火木」)
     const titleText = [
-      `${project.name || '講習時間割'} — ${tab.name}`,
+      `${frameOfTab(project, tab)?.name || project.name || '講習時間割'} — ${tab.name}`,
       rangeText,
       printedAt,
     ].filter(Boolean).join(' / ');
@@ -570,8 +573,8 @@ export interface TeacherRow {
    * [日付, 時限(または時刻), クラス, 科目, 学年(タブ), 備考]。
    * 科目には回数連番 (①②…、そのクラスで何回目の授業か = 画面表示と同じ
    * 番号) が付く (Q1)。
-   * 外部授業の行は 科目=空欄、学年(タブ)=種別 (メモ＝プリセット名。メモ未設定
-   * でも時刻がプリセットに一致すればその名前、どちらも無ければ '外部')。
+   * 外部授業の行は 科目=講座名 (無ければ空欄)、学年(タブ)=種別 (メモ＝プリセット名。
+   * メモ未設定でも時刻がプリセットに一致すればその名前、どちらも無ければ '外部')。
    */
   cells: string[];
   /** 科目カラー適用用 (外部授業は undefined) */
@@ -629,10 +632,11 @@ export function buildTeacherRows(project: Project, teacherName: string): Teacher
   // 学年(タブ) 列に出す種別ラベル: メモ (プリセット適用時はプリセット名) を
   // 優先し、メモ未設定でも時刻がプリセットに一致するならその名前を**表示に
   // だけ**使う (プロジェクトのデータは書き換えない)。どちらも無ければ '外部'。
-  // 載せるのは「どれかのタブが授業に使う日」の予定だけ (日付プールに残った
-  // 前の季節の日付の予備校が、冬期の講師別シートの先頭に並ばないように)。
-  const used = usedDateLabels(project);
-  const sessions = (project.externalSessions || []).filter(s => used.has(s.date));
+  // 載せるのは「どれかのタブが授業に使う日」と「外部授業だけの日」の予定だけ
+  // (日付プールに残った前の季節の日付の予備校が、冬期の講師別シートの先頭に
+  // 並ばないように)。
+  const sessionDates = sessionDateLabels(project);
+  const sessions = (project.externalSessions || []).filter(s => sessionDates.has(s.date));
   const { assignments } = computePresetMemoBackfill(
     sessions,
     project.externalSessionPresets || [],
@@ -645,11 +649,11 @@ export function buildTeacherRows(project: Project, teacherName: string): Teacher
     const timeText = s.startTime
       ? (s.endTime ? `${s.startTime}〜${s.endTime}` : `${s.startTime}〜`)
       : (s.label || '-');
-    const kind = s.memo || presetMemoBySessionId.get(s.id) || '外部';
+    const kind = sessionKindLabel(s, presetMemoBySessionId.get(s.id));
     rows.push({
-      // 科目欄は空欄 (講習の科目ではないため)。予備校 / 高校の判別は
-      // 学年(タブ) 列の種別ラベルで行う。
-      cells: [s.date, timeText, '-', '', kind, ''],
+      // 科目欄は講座名 (講習の科目ではないので色は付けない。講座名が無ければ空欄)。
+      // 予備校 / 高校の判別は学年(タブ) 列の種別ラベル (メモ = プリセットの名前)
+      cells: [s.date, timeText, '-', normalizeSessionCourse(s.course), kind, ''],
       isExternal: true,
       dateIdx: dateIdx(s.date),
       sortMin: getSessionTimeRange(s)?.startMin ?? Number.POSITIVE_INFINITY,
@@ -1128,7 +1132,11 @@ export function buildTeacherWorkbook(project: Project): ExcelJS.Workbook {
 }
 
 // ─── 講師別 Excel: 公開エントリ ────────────────────────────────────
-export async function downloadTeacherExcel(project: Project) {
-  const workbook = buildTeacherWorkbook(project);
-  await downloadWorkbook(workbook, buildExcelFilename(project, '講師別'));
+// frameId を渡すと、その枠のタブと日だけ (季節の中の枠、utils/frames.projectForFrame)。
+// 紙面の見出しは枠の名前、ファイル名は「プロジェクト名_講師別_枠の名前」
+export async function downloadTeacherExcel(project: Project, { frameId }: { frameId?: number | null } = {}) {
+  const frame = frameId != null ? frameById(project, frameId) : null;
+  const workbook = buildTeacherWorkbook(frame ? projectForFrame(project, frame.id) : project);
+  const suffix = frame ? `講師別_${frame.name.replace(/[\\/:?*[\]<>|"]/g, '')}` : '講師別';
+  await downloadWorkbook(workbook, buildExcelFilename(project, suffix));
 }

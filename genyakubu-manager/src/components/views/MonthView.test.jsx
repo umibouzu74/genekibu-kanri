@@ -89,6 +89,17 @@ describe("MonthView 講習コマ", () => {
     expect(screen.getByText("講")).toBeInTheDocument();
   });
 
+  it("仮確定の講習は「仮」の印を出し、title にも書く (2026-10-27)", () => {
+    render(<MonthView {...baseProps} koshuLessons={[{ ...KOSHU_LESSON, tentative: true }]} />);
+    const mark = screen.getByText("仮");
+    expect(mark.closest(".month-print-card").getAttribute("title")).toContain("仮確定");
+  });
+
+  it("確定の講習には「仮」を出さない", () => {
+    render(<MonthView {...baseProps} koshuLessons={[{ ...KOSHU_LESSON, tentative: false }]} />);
+    expect(screen.queryByText("仮")).not.toBeInTheDocument();
+  });
+
   it("他講師の講習コマは表示しない", () => {
     render(
       <MonthView
@@ -789,5 +800,36 @@ describe("MonthView 特別イベントの種別と長い期間の帯", () => {
   it("特別イベントの表示トグルが OFF なら帯も出さない", () => {
     const { container } = render(<MonthView {...props} visibility={{ special: false }} />);
     expect(container.querySelector(".month-print-band")).toBeNull();
+  });
+});
+
+describe("MonthView 高校・予備校の講習 (本体に登録したもの)", () => {
+  const SENIOR = {
+    key: "1:2026-07-24",
+    lessonId: 1,
+    teacher: "堀上",
+    date: "2026-07-24",
+    time: "12:25-13:35",
+    termName: "高3 Ⅰ期",
+    periodName: "予備校３限",
+    grade: "高3",
+    course: "共通テスト英語",
+    memo: "",
+  };
+
+  it("「講」バッジ + 学年 + 講座名のカードを出し、title に期・時限を書く", () => {
+    render(<MonthView {...baseProps} seniorKoshuLessons={[SENIOR, { ...SENIOR, key: "x", teacher: "半田" }]} />);
+    expect(screen.getAllByText("講")).toHaveLength(1);
+    expect(screen.getByText("高3")).toBeInTheDocument();
+    expect(screen.getByText("12:25")).toBeInTheDocument();
+    const card = screen.getByText(/共通テスト英語/).closest(".month-print-card");
+    expect(card.getAttribute("title")).toContain("[高校・予備校の講習: 高3 Ⅰ期 予備校３限] 高3 共通テスト英語 (12:25-13:35)");
+  });
+
+  it("カードを押すと高校・予備校の講習の画面を開く", () => {
+    const onOpen = vi.fn();
+    render(<MonthView {...baseProps} seniorKoshuLessons={[SENIOR]} onOpenSeniorKoshu={onOpen} />);
+    fireEvent.click(screen.getByText(/共通テスト英語/).closest(".month-print-card"));
+    expect(onOpen).toHaveBeenCalled();
   });
 });

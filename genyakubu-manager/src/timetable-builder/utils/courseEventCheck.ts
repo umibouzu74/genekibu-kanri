@@ -15,6 +15,7 @@
 import { isFullDayHoliday } from '../../utils/scheduleHelpers';
 import { effectiveConfigForTab } from './scheduleKey';
 import { projectBaseYmd, resolveDateLabelsYmd, usedDateLabels } from './courseDates';
+import { normalizeEventName } from './eventName';
 import type { Project } from '../types';
 
 export interface CourseEventLike {
@@ -124,6 +125,87 @@ function overlaps(tabGrades: string[], eventGrades: string[]): boolean {
 // 行事予定を見て比べる範囲: 講習で使う日の前後 2 週間にかかる講習の行事予定
 const WINDOW_DAYS = 14;
 
+export { normalizeEventName };
+
+// タブ名から学年の部分を除いた語 (「中３直前 火木」→「直前火木」)。結び付けの提案に使う
+function tabTopic(name: string): string {
+  return normalizeEventName(name)
+    .replace(/[中高][1-3１-３](?:[・,、/\-〜~]?[1-3１-３])*/g, '')
+    .replace(/[中高]学?/g, '')
+    .replace(/年/g, '');
+}
+
+function bigrams(s: string): Set<string> {
+  const out = new Set<string>();
+  for (let i = 0; i < s.length - 1; i++) out.add(s.slice(i, i + 2));
+  return out;
+}
+
+// 2 つの語の近さ (2 文字ずつの重なり、0〜1)
+function similarity(a: string, b: string): number {
+  const A = bigrams(a);
+  const B = bigrams(b);
+  if (A.size === 0 || B.size === 0) return 0;
+  let common = 0;
+  A.forEach(x => { if (B.has(x)) common++; });
+  return common / Math.min(A.size, B.size);
+}
+
+/** 照合に使う行事予定 1 件 (画面の「行事予定との対応」) */
+export interface CourseEventRow {
+  name: string;
+  /** normalizeEventName(name) */
+  key: string;
+  range: string;
+  grades: string[];
+  /** この名前を結び付けたタブ */
+  linkedTabIds: number[];
+  /** 「この講習の対象外」 */
+  ignored: boolean;
+  /** 名前から結び付けを提案するタブ (結び付けが無いときだけ) */
+  suggestedTabIds: number[];
+}
+
+/** 見つからない行事予定への結び付け (名前の打ち間違い・ほかの季節から写した結び付け) */
+export interface StaleCourseEventLink {
+  tabId: number;
+  tabName: string;
+  name: string;
+}
+
+type TabDays = { id: number; name: string; grades: string[]; days: Array<{ label: string; ymd: string }>; links: Set<string> };
+
+// 比べる曜日。週ごとのコース (火木・水金・土曜・月水金) のタブは、そのタブが使う曜日だけ
+// 比べる。タブごとに決めて合わせる (火木のタブと水金のタブを 1 つの行事予定と比べると
+// 火水木金。月・土は比べない)。週ごとのコースとみなすのは、行事予定の期間が 1 週間以上で、
+// タブが使う曜日 (日曜を除く) が 3 つ以下、かつ使う日が期間の日 (日曜・全体休講日を除く) の
+// 半分以下のとき。冬期講習のような毎日の講習 (使う日が多い) は全曜日 (日曜を除く) を比べる
+// (12/24〜26 を入れ忘れた月火水のタブを週ごとのコースと見て見逃さないように)。
+// null = 全曜日を比べる
+function expectedWeekdays(
+  event: { startDate: string; endDate: string },
+  tabs: TabDays[],
+  holidayDates: Set<string>,
+): Set<number> | null {
+  if (daysBetween(event.startDate, event.endDate) < 7) return null;
+  let eventDays = 0;
+  for (let d = event.startDate; d <= event.endDate; d = addDays(d, 1)) {
+    const dt = parseYmd(d);
+    if (dt && dt.getDay() !== 0 && !holidayDates.has(d)) eventDays++;
+  }
+  const out = new Set<number>();
+  let any = false;
+  for (const t of tabs) {
+    const inRange = t.days.filter(d => d.ymd >= event.startDate && d.ymd <= event.endDate && parseYmd(d.ymd)!.getDay() !== 0);
+    if (inRange.length === 0) continue;
+    any = true;
+    const wd = new Set(inRange.map(d => parseYmd(d.ymd)!.getDay()));
+    if (wd.size > 3 || inRange.length * 2 > eventDays) return null;
+    wd.forEach(w => out.add(w));
+  }
+  return any ? out : null;
+}
+
 export function checkCourseEvents({
   project,
   specialEvents,
@@ -134,8 +216,8 @@ export function checkCourseEvents({
   specialEvents: CourseEventLike[];
   holidays?: unknown[];
   todayYmd?: string;
-}): { events: CourseEventLike[]; findings: CourseEventFinding[] } {
-  const empty = { events: [], findings: [] };
+}): { events: CourseEventLike[]; findings: CourseEventFinding[]; rows: CourseEventRow[]; staleLinks: StaleCourseEventLink[] } {
+  const empty = { events: [], findings: [], rows: [], staleLinks: [] };
   const used = usedDateLabels(project);
   if (used.size === 0) return empty;
   const baseYmd = projectBaseYmd(project, todayYmd);
@@ -146,31 +228,70 @@ export function checkCourseEvents({
   const windowStart = addDays(allYmd[0], -WINDOW_DAYS);
   const windowEnd = addDays(allYmd[allYmd.length - 1], WINDOW_DAYS);
 
-  const events = (specialEvents || [])
+  const inWindow = (specialEvents || [])
     .filter(e => e && e.eventType === 'course' && parseYmd(e.startDate || '') && parseYmd(e.endDate || e.startDate || ''))
     .map(e => ({ ...e, endDate: e.endDate || e.startDate }))
     .filter(e => e.startDate! <= windowEnd && e.endDate! >= windowStart)
     .sort((a, b) => a.startDate!.localeCompare(b.startDate!));
-  if (events.length === 0) return { events: [], findings: [] };
+  if (inWindow.length === 0) return empty;
 
+  const ignoredKeys = new Set((project.ignoredCourseEvents || []).map(normalizeEventName));
+  // 比べる行事予定 (対象外を除く)
+  const events = inWindow.filter(e => !ignoredKeys.has(normalizeEventName(e.name)));
+  const eventKeys = new Set(events.map(e => normalizeEventName(e.name)));
+  const windowKeys = new Set(inWindow.map(e => normalizeEventName(e.name)));
+  // 見つからない行事予定への結び付け (名前の打ち間違い・ほかの季節から写したもの) は
+  // 画面に出して外せるようにする。比べるときは無かったことにする (結び付けが全部
+  // 見つからないタブは結び付けの無いタブとして比べる。黙って比べなくならないように)
+  const staleLinks: StaleCourseEventLink[] = [];
+  for (const tab of project.tabs || []) {
+    for (const n of tab.config.courseEventNames || []) {
+      if (!windowKeys.has(normalizeEventName(n))) staleLinks.push({ tabId: tab.id, tabName: tab.name, name: n });
+    }
+  }
   const holidayDates = new Set(
     (holidays as Array<{ date?: string }>).filter(h => isFullDayHoliday(h)).map(h => h.date).filter(Boolean) as string[],
   );
-  const tabs = (project.tabs || [])
+  const tabs: TabDays[] = (project.tabs || [])
     .map(tab => {
       const cfg = effectiveConfigForTab(project, tab);
       if (cfg.periods.length === 0) return null;
       const days = cfg.dates
         .map(d => ({ label: d.label, ymd: ymdByLabel.get(d.label) }))
         .filter((d): d is { label: string; ymd: string } => !!d.ymd);
-      return { name: tab.name, grades: gradesFromTabName(tab.name), days };
+      const links = new Set((tab.config.courseEventNames || []).map(normalizeEventName).filter(k => eventKeys.has(k)));
+      return { id: tab.id, name: tab.name, grades: gradesFromTabName(tab.name), days, links };
     })
-    .filter((t): t is { name: string; grades: string[]; days: Array<{ label: string; ymd: string }> } => !!t && t.days.length > 0);
+    .filter((t): t is TabDays => !!t && t.days.length > 0);
+
+  // 結び付けたタブ (名前の一致) を行事予定ごとに
+  const linkedTabsOf = (e: CourseEventLike) => tabs.filter(t => t.links.has(normalizeEventName(e.name)));
+  // 結び付けのある行事予定 (日・時限がまだ無いタブの結び付けも含む。結び付けた行事予定を
+  // ほかのタブと比べない)
+  const linkedKeys = new Set(
+    (project.tabs || []).flatMap(t => (t.config.courseEventNames || []).map(normalizeEventName)).filter(k => eventKeys.has(k)),
+  );
+  // 結び付けの無い行事予定は、結び付けの無いタブと学年で比べる (従来どおり)
+  const unlinkedEvents = events.filter(e => !linkedKeys.has(normalizeEventName(e.name)));
+
+  // タブが比べる行事予定: 結び付けがあればその名前の行事予定 (同じ名前が何件もあれば
+  // 学年の合うもの、無ければ全部)、無ければ学年の合う結び付けの無い行事予定
+  const eventsForTab = (tab: TabDays): CourseEventLike[] => {
+    if (tab.links.size === 0) return unlinkedEvents.filter(e => overlaps(tab.grades, normalizeEventGrades(e.targetGrades)));
+    const named = events.filter(e => tab.links.has(normalizeEventName(e.name)));
+    const byGrade = named.filter(e => overlaps(tab.grades, normalizeEventGrades(e.targetGrades)));
+    return byGrade.length > 0 ? byGrade : named;
+  };
+  const tabsForEvent = (e: CourseEventLike): TabDays[] => {
+    const linked = linkedTabsOf(e);
+    if (linked.length > 0) return linked.filter(t => eventsForTab(t).includes(e));
+    return tabs.filter(t => t.links.size === 0 && overlaps(t.grades, normalizeEventGrades(e.targetGrades)));
+  };
 
   const findings: CourseEventFinding[] = [];
-  // タブが使う日なのに、学年に当たる講習の行事予定の期間に入っていない日
+  // タブが使う日なのに、比べる行事予定の期間に入っていない日
   for (const tab of tabs) {
-    const mine = events.filter(e => overlaps(tab.grades, normalizeEventGrades(e.targetGrades)));
+    const mine = eventsForTab(tab);
     if (mine.length === 0) continue;
     const outside = tab.days.filter(d => !mine.some(e => d.ymd >= e.startDate! && d.ymd <= e.endDate!));
     if (outside.length === 0) continue;
@@ -186,16 +307,18 @@ export function checkCourseEvents({
       eventRange: rangeLabel(near.startDate!, near.endDate!),
     });
   }
-  // 行事予定の期間の日なのに、その学年のどのタブも使っていない日
+  // 行事予定の期間の日なのに、比べるタブのどれも使っていない日 (週ごとのコースは
+  // タブが使う曜日だけ。日曜・塾の全体休講日は比べない)
   for (const e of events) {
-    const eventGrades = normalizeEventGrades(e.targetGrades);
-    const mine = tabs.filter(t => overlaps(t.grades, eventGrades));
+    const mine = tabsForEvent(e);
     if (mine.length === 0) continue;
     const usedYmd = new Set(mine.flatMap(t => t.days.map(d => d.ymd)));
+    const weekly = expectedWeekdays(e as { startDate: string; endDate: string }, mine, holidayDates);
     const unused: string[] = [];
     for (let d = e.startDate!; d <= e.endDate!; d = addDays(d, 1)) {
       const dt = parseYmd(d);
       if (!dt || dt.getDay() === 0 || holidayDates.has(d)) continue;
+      if (weekly && !weekly.has(dt.getDay())) continue;
       if (!usedYmd.has(d)) unused.push(d);
       if (unused.length > 60) break;
     }
@@ -208,5 +331,46 @@ export function checkCourseEvents({
       eventRange: rangeLabel(e.startDate!, e.endDate!),
     });
   }
-  return { events, findings };
+
+  // 画面の「行事予定との対応」: 名前ごとに 1 行 (同じ名前の行事予定は学年をまとめる)
+  const rowsByKey = new Map<string, CourseEventRow>();
+  for (const e of inWindow) {
+    const key = normalizeEventName(e.name);
+    if (!key) continue;
+    const row = rowsByKey.get(key);
+    const grades = normalizeEventGrades(e.targetGrades);
+    if (row) {
+      grades.forEach(g => { if (!row.grades.includes(g)) row.grades.push(g); });
+      continue;
+    }
+    // 結び付けは日・時限の無いタブも含めて設定から読む (外せなくならないように)
+    const linked = (project.tabs || [])
+      .filter(t => (t.config.courseEventNames || []).some(n => normalizeEventName(n) === key))
+      .map(t => t.id);
+    rowsByKey.set(key, {
+      name: e.name || '',
+      key,
+      range: rangeLabel(e.startDate!, e.endDate!),
+      grades,
+      linkedTabIds: linked,
+      ignored: ignoredKeys.has(key),
+      suggestedTabIds: [],
+    });
+  }
+  const rows = [...rowsByKey.values()];
+  // 名前から結び付けを提案: 学年を除いたタブ名と行事予定の名前が近いもの (結び付けも
+  // 対象外も無い行事予定・結び付けの無いタブだけ)。いちばん近いもの 1 つ
+  for (const t of (project.tabs || [])) {
+    if ((t.config.courseEventNames || []).some(n => windowKeys.has(normalizeEventName(n)))) continue;
+    const topic = tabTopic(t.name);
+    if (topic.length < 2) continue;
+    let best: { row: CourseEventRow; score: number } | null = null;
+    for (const row of rows) {
+      if (row.ignored || row.linkedTabIds.length > 0) continue;
+      const score = similarity(topic, row.key);
+      if (score >= 0.5 && (!best || score > best.score)) best = { row, score };
+    }
+    if (best) best.row.suggestedTabIds.push(t.id);
+  }
+  return { events: inWindow, findings, rows, staleLinks };
 }

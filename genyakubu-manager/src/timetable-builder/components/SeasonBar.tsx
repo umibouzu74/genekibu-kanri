@@ -1,5 +1,7 @@
 import { KOSHU_SEASONS, type KoshuSeason } from '../utils/seasons';
 import { formatSeasonRange, summarizeSeasonProject } from '../utils/seasonProject';
+import { publishStateDef } from '../utils/publishState';
+import { summarizePublishState } from '../utils/frames';
 import type { Project } from '../types';
 
 /** 本体 (hooks/useBuilderProjects → utils/builderSeasons) が決めた季節ごとの状態 */
@@ -25,6 +27,14 @@ function describe(entry: SeasonProjectEntry | undefined, selected: boolean): { n
   const range = formatSeasonRange(summary.firstYmd, summary.lastYmd);
   const parts = [range || '日付なし'];
   if (summary.cellCount > 0) parts.push(`${summary.cellCount}コマ`);
+  // 本体の月間の予定へ出しているか (作成中 / 仮確定 / 確定)。枠ごとに違えば「枠ごとに違う」
+  const summaryState = entry.project ? summarizePublishState(entry.project) : null;
+  if (summaryState) {
+    const publish = publishStateDef(summaryState);
+    parts.push(`${publish.icon}${publish.label}`);
+  } else {
+    parts.push('🧩枠ごとに違う');
+  }
   return {
     name: summary.name || '(名前なし)',
     detail: parts.join(' · '),

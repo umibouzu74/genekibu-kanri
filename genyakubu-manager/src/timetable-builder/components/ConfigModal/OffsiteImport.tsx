@@ -4,6 +4,7 @@ import { useUI } from '../../contexts/uiContextValue';
 import { useHostData } from '../../contexts/hostDataContext';
 import { buildOffsiteSessionItems } from '../../../utils/offsiteBuilderImport';
 import { projectBaseYmd, usedDateLabels } from '../../utils/courseDates';
+import { externalSessionContentKey } from '../../utils/externalSessionShape';
 
 // 本体の「🏫 他校舎の授業」を、この講習の日付に当たる分だけ他学年セッション
 // (講師不在) として取り込む。時刻つきなので重なる時限は自動で NG になる。
@@ -30,8 +31,7 @@ export default function OffsiteImport() {
   }, [offsiteLessons, holidays, project]);
 
   // 既に同じ内容で入っている分 (reducer の重複判定と同じキー)
-  const contentKey = (s: { date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string }) =>
-    JSON.stringify([s.date, s.teacherName, s.label || '', s.memo || '', s.startTime || '', s.endTime || '']);
+  const contentKey = externalSessionContentKey;
   const existing = new Set((project.externalSessions || []).map(contentKey));
   const fresh = plan.items.filter((it) => !existing.has(contentKey(it)));
 

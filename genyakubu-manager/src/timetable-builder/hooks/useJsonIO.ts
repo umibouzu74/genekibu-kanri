@@ -81,7 +81,12 @@ export function useJsonIO({
           if (onNotify) onNotify(parsed.error, 'error');
           return;
         }
-        const migrated = parsed.project;
+        // 月間の予定へ出すか (publishState) を持たない JSON (この項目ができる前に
+        // 書き出したもの) は、今の状態のまま (読み込んだだけで作成中の時間割が
+        // 月間に出ないように)
+        const migrated = parsed.project.publishState || !project.publishState
+          ? parsed.project
+          : { ...parsed.project, publishState: project.publishState };
 
         // L1c: 読込は現プロジェクトの全置換。undo は RAM のみで autosave が
         // 即上書きするため、講師差分の有無に関わらず必ず確認を挟む。

@@ -19,6 +19,16 @@ export interface Entity {
 }
 
 /**
+ * 日付プールの日 (2026-10-27)。externalOnly = 外部授業だけの日: どのタブの時間割にも
+ * 行を出さず、他学年セッション (高校・予備校の講習) の登録・本体の月間・講師別 Excel の
+ * 対象にだけする (12/24 の高3 Ⅰ期の初日のように、中学の講習が無い日)。前の季節から
+ * 残った日 (どのタブも使わない日) と区別するための印。タブがその日を使い始めたら外す
+ */
+export interface DateEntity extends Entity {
+  externalOnly?: boolean;
+}
+
+/**
  * 出勤可能調査の回答 1 マス分。ok = ○ (出られる) / maybe = △ (相談・できれば
  * 避けたい) / ng = × (出られない)。未記入はキーが無いことで表す。
  */
@@ -92,8 +102,16 @@ export interface TabConfig {
    * undefined / null = 全日使う (後方互換の既定)。[] = 0 日。
    */
   activeDateIds?: number[] | null;
-  /** activeDateIds の periods 版 (E-3) */
+  /** activeDateIds の periods 版 (E-3)。枠に入ったタブは必ず配列 (枠の時限の部分集合) */
   activePeriodIds?: number[] | null;
+  /** このタブが入っている枠 (Project.frames の id、任意。2026-10-27) */
+  frameId?: number;
+  /**
+   * このタブと比べる本体の行事予定 (種別「講習」) の名前 (任意、2026-10-27)。
+   * 結び付けたらその行事予定とだけ比べる (utils/courseEventCheck)。名前で持つのは、
+   * 行事予定を表で入れ直すと id が変わり、翌年も同じ名前で使えるため
+   */
+  courseEventNames?: string[];
   /** v3 以前の互換: migrate 前の外部 JSON にのみ現れる (v4 では project 側) */
   dates?: Entity[];
   /** v3 以前の互換 (同上) */
@@ -138,12 +156,29 @@ export interface ExternalSession {
   teacherName: string;
   /** reducer 経由では常に '' が入るが、外部 JSON は欠落し得る (migrate は補完しない) */
   label?: string;
+  /** 種別 (プリセットの名前「Ⅰ期 予備校３限」など)。プリセットの改名で同期する */
   memo?: string;
+  /**
+   * 講座名 (「高3 共通テスト理科基礎(物理基礎)」、任意)。表示は「メモ + 講座名」
+   * (utils/externalSessionShape)。空なら持たない
+   */
+  course?: string;
   /** "HH:mm"。あれば自動NG派生 (utils/autoNg) の対象 */
   startTime?: string;
   /** startTime がある場合のみ保持 (orphan endTime は作らない) */
   endTime?: string;
+  /**
+   * 取り込んだ元 (2026-10-27)。'seniorKoshu' = 本体の「高校・予備校の講習」から
+   * 取り込んだもの (ConfigModal/SeniorKoshuImport)。本体の月間には本体の登録の方を
+   * 出すので、このセッションは出さない (utils/builderLessons)。手で入れたものは持たない
+   */
+  source?: 'seniorKoshu';
+  /** 取り込んだ元の予定のキー (本体の expandSeniorKoshu の key = 担当 id:日付) */
+  sourceKey?: string;
 }
+
+/** 登録前の他学年セッション (id は reducer が振る) */
+export type ExternalSessionDraft = Omit<ExternalSession, 'id'>;
 
 export interface ExternalSessionPreset {
   id: number;
@@ -155,6 +190,22 @@ export interface ExternalSessionPreset {
   memo?: string;
   /** N4c: 適用時に選択状態へ展開する対象講師名 (任意)。無指定 = 講師は触らない */
   teachers?: string[];
+}
+
+/**
+ * 季節の中の「枠」(2026-10-27)。冬期講習 (12/25〜1/7) と直前ポイント演習 (1/12〜3/4)・
+ * 弱点補強演習 (土曜) のように、1 つの季節の中の別の講習。タブは枠に入り (TabConfig.frameId)、
+ * 枠ごとに時限 (プールの部分集合) と本体の月間の予定への反映 (作成中 / 仮確定 / 確定) を
+ * 持つ。本体の月間の「講」と講師別 Excel にはプロジェクト名ではなく枠の名前を出す。
+ * 決まりは utils/frames (形の確認は無依存の utils/frameShape)
+ */
+export interface Frame {
+  id: number;
+  name: string;
+  /** この枠の時限 (project.periods の id)。枠に入ったタブはこの中から使う時限を選ぶ */
+  periodIds: number[];
+  /** 本体の月間の予定へ出すか。未設定 = project の状態 (utils/publishState) */
+  publishState?: PublishState;
 }
 
 /** 名前付きスナップショット (E1c)。タブ単位で schedule を保存 */
@@ -209,18 +260,34 @@ export interface GenerationParams {
 
 export type GenerationParamKey = keyof GenerationParams;
 
+/**
+ * 本体の月間の予定 (講師別の月間・授業時間の集計) へ出すか (2026-10-27)。
+ * draft = 作成中 (出さない) / tentative = 仮確定 (「仮」の印つきで出す) /
+ * final = 確定 (出す)。決まりは utils/publishState
+ */
+export type PublishState = 'draft' | 'tentative' | 'final';
+
 export interface Project {
   version: number;
   name: string;
   createdAt: string;
   updatedAt: string;
+  /**
+   * 月間の予定へ出すか (utils/publishState)。未設定 = 確定 (この項目ができる前の
+   * project は従来どおり月間に出す)。新しく作る季節は作成中から始める
+   */
+  publishState?: PublishState;
   teachers: Teacher[];
   activeTabId: number;
-  /** v4: 全タブ共通の日付プール (各タブは activeDateIds で絞る) */
-  dates: Entity[];
+  /** v4: 全タブ共通の日付プール (各タブは activeDateIds で絞る。外部授業だけの日はどのタブにも出ない) */
+  dates: DateEntity[];
   /** v4: 全タブ共通の時限プール (各タブは activePeriodIds で絞る) */
   periods: Entity[];
   tabs: Tab[];
+  /** 季節の中の枠 (任意。無ければ従来どおり 1 つの講習) */
+  frames?: Frame[];
+  /** 「この講習の対象外」にした本体の行事予定 (講習) の名前 (utils/courseEventCheck) */
+  ignoredCourseEvents?: string[];
   subjects: string[];
   subjectColors: Record<string, string>;
   combinedGroups: CombinedGroup[];

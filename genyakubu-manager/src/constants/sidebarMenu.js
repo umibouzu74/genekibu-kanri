@@ -176,6 +176,9 @@ export const SIDEBAR_MENU = [
     sections: KOSHU_SEASONS,
     category: C.TIMETABLE,
   },
+  // 高校部・予備校の講習の担当 (講習時間割作成は中学の講習。こちらは本体が正で、
+  // 講師の月間に出し、講習時間割作成が取り込んで自動NG にする)
+  { key: VIEWS.SENIOR_KOSHU, icon: "🎓", label: "高校・予備校の講習", category: C.TIMETABLE },
 
   // ── 記録・データ ──
   // 責任者の引継ぎメモ。閲覧者には読めないデータなので項目ごと出さない

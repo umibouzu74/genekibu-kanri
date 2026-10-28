@@ -30,6 +30,12 @@ import { resolveSlotDaySchedule } from "../../utils/daySchedules";
 import { isCancelAdjustment } from "../../utils/slotCancel";
 import { indexKoshuLessonsByDate } from "../../utils/builderLessons";
 import {
+  indexSeniorKoshuByDate,
+  seniorKoshuCourse,
+  seniorKoshuKind,
+  seniorKoshuStartText,
+} from "../../utils/seniorKoshu";
+import {
   isTimetableActiveForDate,
   isSlotBeyondCutoff,
   getCutoffGroupLabelsWithSlots,
@@ -178,6 +184,10 @@ export function MonthView({
   specialEventDisplay,
   extraLessons = [],
   koshuLessons = [],
+  // 高校部・予備校の講習 (本体に登録したもの、utils/seniorKoshu.expandSeniorKoshu)。
+  // onOpenSeniorKoshu() でその画面を開く (カードのクリック)
+  seniorKoshuLessons = [],
+  onOpenSeniorKoshu,
   daySchedules = [],
   onEditExtraLesson,
   // 他校舎の授業 (utils/offsiteLessons)。onOpenOffsite({id} | {teacher}) で
@@ -250,6 +260,11 @@ export function MonthView({
   const koshuByDate = useMemo(
     () => indexKoshuLessonsByDate(koshuLessons, teacher),
     [koshuLessons, teacher]
+  );
+  // 日付 → この講師の高校・予備校の講習
+  const seniorByDate = useMemo(
+    () => indexSeniorKoshuByDate(seniorKoshuLessons, teacher),
+    [seniorKoshuLessons, teacher]
   );
   // 日付 → この講師の他校舎の授業 (休みの日・塾の全体休講日は除いた、実際に
   // 行く日だけ)。月の範囲だけ引く
@@ -567,6 +582,8 @@ export function MonthView({
     // 追加授業と違いカットオフでも消さない。休講の巻き添えでも
     // 消さないのは追加授業と同じ (日付を明示して組んだコマのため)。
     const koshuForDay = koshuByDate.get(ds) || [];
+    // 高校・予備校の講習 (本体に登録)。講習と同じく表示期間・休講では消さない
+    const seniorForDay = seniorByDate.get(ds) || [];
     // 他校舎の授業。塾の休講・表示期間とは関係なく先方で行うので、
     // カットオフの日にも出す (塾の全体休講日は既定で他校舎も休みなので、
     // 休講日に出るのは「休講日も行く」と登録した予定だけ)
@@ -621,6 +638,7 @@ export function MonthView({
             incomingForDay.length +
               extraForDay.length +
               koshuForDay.length +
+              seniorForDay.length +
               externalSubSlots.length +
               (examPrepByDate.get(ds)?.length ? 1 : 0)
           );
@@ -1123,17 +1141,19 @@ export function MonthView({
         // 回数連番 (①②… = そのクラスでその科目が何回目か)。
         // 講習時間割作成の画面・配布用 Excel と同じ番号。
         const subjText = `${lesson.subj}${lesson.countText || ""}`;
+        // 仮確定の時間割 (講習時間割作成の「🟡 仮確定」)。まだ変わるかもしれない
+        const tentativeNote = lesson.tentative ? "\n(仮確定: まだ変わることがあります)" : "";
         const title = external
-          ? `[講習期間の外部授業] ${lesson.subj}${
+          ? `[講習期間の外部授業${lesson.frameName ? `: ${lesson.frameName}` : ""}] ${lesson.subj}${
               lesson.time ? ` (${lesson.time})` : ""
-            }\n講習時間割作成の「講師不在・NG」で登録されたコマ`
+            }\n講習時間割作成の「講師不在・NG」で登録されたコマ${tentativeNote}`
           : `[講習${
-              lesson.projectName ? `: ${lesson.projectName}` : ""
+              lesson.frameName || lesson.projectName ? `: ${lesson.frameName || lesson.projectName}` : ""
             }] ${lesson.tabName} ${lesson.cls} ${subjText} (${
               lesson.periodLabel
             }${lesson.time ? ` ${lesson.time}` : ""})${
               lesson.room ? ` 教室 ${lesson.room}` : ""
-            }\n編集は「講習時間割作成」で行います`;
+            }${tentativeNote}\n編集は「講習時間割作成」で行います`;
         return (
           <div
             key={`koshu-${lesson.key}`}
@@ -1145,7 +1165,7 @@ export function MonthView({
               margin: "1px 0",
               borderRadius: 3,
               background: col.bg,
-              borderLeft: `2px solid ${col.color}`,
+              borderLeft: `2px ${lesson.tentative ? "dashed" : "solid"} ${col.color}`,
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -1165,6 +1185,22 @@ export function MonthView({
             >
               {external ? "外" : "講"}
             </span>
+            {/* 仮確定: 色だけに頼らず文字で出す (紙面・画像にも載る) */}
+            {lesson.tentative && (
+              <span
+                style={{
+                  border: `1px solid ${col.color}`,
+                  color: col.color,
+                  fontSize: 8,
+                  fontWeight: 800,
+                  padding: "0 2px",
+                  borderRadius: 2,
+                  marginRight: 2,
+                }}
+              >
+                仮
+              </span>
+            )}
             {!external && (
               <span
                 style={{
@@ -1183,6 +1219,82 @@ export function MonthView({
             {startText && <b>{startText}</b>} {subjText}
             {/* 教室 (講習時間割作成のクラスの教室)。振替先の教室と同じ「@」の書き方 */}
             {!external && lesson.room && <span style={{ fontSize: 10, color: "#555" }}> @{lesson.room}</span>}
+          </div>
+        );
+      })
+    );
+    // 高校・予備校の講習 (本体の「高校・予備校の講習」に登録した担当)。講習と同じ
+    // 「講」で、学年 + 講座名。クリックでその画面を開く
+    pushCards(
+      seniorForDay.map((it) => it.time),
+      seniorForDay.map((it) => {
+        const col = KOSHU_LESSON_COLOR;
+        const gc = GC(it.grade);
+        const clickable = !!onOpenSeniorKoshu;
+        const kind = seniorKoshuKind(it);
+        return (
+          <div
+            key={`senior-${it.key}`}
+            className="month-print-card"
+            role={clickable ? "button" : undefined}
+            tabIndex={clickable ? 0 : undefined}
+            onClick={clickable ? onOpenSeniorKoshu : undefined}
+            onKeyDown={
+              clickable
+                ? (e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onOpenSeniorKoshu();
+                    }
+                  }
+                : undefined
+            }
+            style={{
+              fontSize: 11,
+              lineHeight: 1.4,
+              padding: "2px 3px",
+              margin: "1px 0",
+              borderRadius: 3,
+              background: col.bg,
+              borderLeft: `2px solid ${col.color}`,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              cursor: clickable ? "pointer" : "default",
+            }}
+            title={`[高校・予備校の講習${kind ? `: ${kind}` : ""}] ${seniorKoshuCourse(it)}${
+              it.time ? ` (${formatOffsiteTime(it.time)})` : ""
+            }${it.memo ? `\n${it.memo}` : ""}${clickable ? "\n\nクリックで高校・予備校の講習を開きます" : ""}`}
+          >
+            <span
+              style={{
+                background: col.color,
+                color: "#fff",
+                fontSize: 8,
+                fontWeight: 800,
+                padding: "0 3px",
+                borderRadius: 2,
+                marginRight: 2,
+              }}
+            >
+              講
+            </span>
+            {it.grade && (
+              <span
+                style={{
+                  background: gc.b,
+                  color: gc.f,
+                  fontSize: 8,
+                  fontWeight: 700,
+                  padding: "0 3px",
+                  borderRadius: 2,
+                  marginRight: 2,
+                }}
+              >
+                {it.grade}
+              </span>
+            )}
+            {it.time && <b>{seniorKoshuStartText(it)}</b>} {it.course}
           </div>
         );
       })
@@ -1476,7 +1588,7 @@ export function MonthView({
         {dayCutoff ? (
           // 講習コマがある日は「通常時間割は未確定」の注記より講習の
           // 予定そのもの (下の講カード) を紙面に出す。
-          koshuForDay.length > 0 ? null : (
+          koshuForDay.length > 0 || seniorForDay.length > 0 ? null : (
             <div
               style={{ fontSize: 10, color: "#a09060", textAlign: "center", marginTop: 8 }}
             >

@@ -12,7 +12,11 @@ import {
   countCarriedCells,
   mappingForSourceTab,
   planTimetableCopy,
+  sequentialDateMapping,
   sourceTeacherCounts,
+  subjectCountDiffsAfterCopy,
+  weekdayMismatches,
+  type SubjectCountDiff,
   type TabCopyMapping,
 } from '../utils/timetableCopy';
 import type { CarriedTimetable, Entity } from '../types';
@@ -84,12 +88,48 @@ export default function TimetableCopyDialog({ onClose }: { onClose: () => void }
     [source, project, mappings, included, overwrite],
   );
 
+  // 写したあとの科目ごとのコマ数とコマ数の設定の差 (写す先のタブだけ)
+  const countDiffs = useMemo(
+    () => (plan ? subjectCountDiffsAfterCopy(project, plan.writes, mappings.filter(m => m.sourceTabIndex != null).map(m => m.targetTabId)) : []),
+    [plan, project, mappings],
+  );
+  // 写した後の結果 (写したあとのコマ数の差を出してから閉じる)
+  const [applied, setApplied] = useState<{ count: number; blanked: number; diffs: SubjectCountDiff[] } | null>(null);
+
+  // 去年の日を外す / 戻す。外した日を飛ばして残りを先頭から順に詰め直す。下の対応の表で
+  // 日を手で付け替えていたら、詰め直すと元に戻るので知らせる
+  const setSkipped = (targetTabId: number, skipped: number[]) => {
+    const m = mappings.find(x => x.targetTabId === targetTabId);
+    const src = m?.sourceTabIndex != null ? source?.timetable.tabs[m.sourceTabIndex] : null;
+    const tab = project.tabs.find(t => t.id === targetTabId);
+    if (!m || !src || !tab) return;
+    const targets = effectiveConfigForTab(project, tab).dates;
+    const packed = sequentialDateMapping(src.dates.length, targets, m.skippedDates || []);
+    const handEdited = m.dates.some((v, i) => (v ?? null) !== (packed[i] ?? null));
+    setMappings(prev => prev.map(x => (
+      x.targetTabId === targetTabId
+        ? { ...x, skippedDates: skipped, dates: sequentialDateMapping(src.dates.length, targets, skipped) }
+        : x
+    )));
+    if (handEdited) showToast('日の対応を詰め直しました (手で付け替えた日の対応は元に戻りました)', 'warning', 3500);
+  };
+  const toggleSkip = (m: TabCopyMapping, i: number) => {
+    const current = new Set(m.skippedDates || []);
+    if (current.has(i)) current.delete(i); else current.add(i);
+    setSkipped(m.targetTabId, [...current].sort((a, b) => a - b));
+  };
+
+  // 対応を 1 つ付け替える。日は「外す日」と揃える (写す先を選んだ日は外さない・
+  // 「写さない」にした日は外した日として出す。詰め直しはしない)
   const setMappingAt = (targetTabId: number, key: 'dates' | 'periods' | 'classes', idx: number, value: number | null) =>
     setMappings(prev => prev.map(m => {
       if (m.targetTabId !== targetTabId) return m;
       const arr = [...m[key]];
       arr[idx] = value;
-      return { ...m, [key]: arr };
+      if (key !== 'dates') return { ...m, [key]: arr };
+      const skipped = new Set(m.skippedDates || []);
+      if (value == null) skipped.add(idx); else skipped.delete(idx);
+      return { ...m, dates: arr, skippedDates: [...skipped].sort((a, b) => a - b) };
     }));
 
   const apply = () => {
@@ -102,7 +142,9 @@ export default function TimetableCopyDialog({ onClose }: { onClose: () => void }
       'success',
       6000,
     );
-    onClose();
+    // コマ数の設定と合わないクラスがあれば、閉じる前に一覧で見せる
+    if (countDiffs.length > 0) setApplied({ count: plan.writes.length, blanked: plan.teacherBlanked, diffs: countDiffs });
+    else onClose();
   };
 
   const selectCls = 'border border-builder-border rounded px-1 py-0.5 text-xs bg-builder-surface text-builder-ink max-w-[14rem]';
@@ -120,6 +162,28 @@ export default function TimetableCopyDialog({ onClose }: { onClose: () => void }
         className="bg-builder-surface w-full max-w-3xl max-h-[88vh] overflow-y-auto rounded-lg shadow-2xl p-5 text-builder-ink space-y-4"
       >
         <h2 id={TITLE_ID} className="text-lg font-bold">📋 前の講習の時間割を写す</h2>
+        {applied ? (
+          <>
+            <p role="status" className="text-sm">
+              <strong>{applied.count} コマ</strong>を写しました{applied.blanked > 0 && <> (講師を空にした {applied.blanked} コマ)</>}。Undo で戻せます。
+            </p>
+            <section aria-labelledby="builder-timetable-copy-result" className="space-y-1">
+              <h3 id="builder-timetable-copy-result" className="text-sm font-bold">コマ数の設定と合わないクラス</h3>
+              <CountDiffList diffs={applied.diffs} />
+              <p className="text-xs text-builder-ink-muted">
+                日数の違いなどで、科目のコマが足りない・多いクラスです (コマ数を設定していない科目は比べません)。時間割で直すか、⚙ 設定のコマ数を見直してください。
+              </p>
+            </section>
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3 py-1.5 text-sm font-bold rounded text-white bg-builder-blue hover:bg-builder-blue-hover"
+              >閉じる</button>
+            </div>
+          </>
+        ) : (
+        <>
         <p className="text-xs text-builder-ink-muted">
           科目と講師を、日付は <strong>N 日目 → N 日目</strong>、時限・クラスは同じ名前のところへ写します。
           先に「⚡ 期間から自動生成」で今年の日付を作っておいてください。
@@ -204,6 +268,16 @@ export default function TimetableCopyDialog({ onClose }: { onClose: () => void }
                           >{open ? '▲ 閉じる' : '▼ 日付・時限・クラスの対応'}</button>
                         )}
                       </div>
+                      {src && cfg.dates.length > 0 && (
+                        <DaySkipRow
+                          tabName={tab.name}
+                          sourceDates={src.dates}
+                          mapping={m}
+                          targetDates={cfg.dates}
+                          onToggle={(i) => toggleSkip(m, i)}
+                          onSkip={(list) => setSkipped(tab.id, list)}
+                        />
+                      )}
                       {src && open && (
                         <div className="grid gap-3 sm:grid-cols-3">
                           <MappingTable
@@ -304,6 +378,13 @@ export default function TimetableCopyDialog({ onClose }: { onClose: () => void }
                 <div className="text-builder-orange">科目マスタに無い科目: {plan.unknownSubjects.join('、')} (📚 科目で足してください)</div>
               )}
             </div>
+
+            {plan.writes.length > 0 && (
+              <section aria-labelledby="builder-timetable-copy-counts" className="space-y-1">
+                <h3 id="builder-timetable-copy-counts" className="text-sm font-bold">写したあとのコマ数 (コマ数の設定と合わないクラス)</h3>
+                <CountDiffList diffs={countDiffs} />
+              </section>
+            )}
           </>
         )}
 
@@ -320,8 +401,31 @@ export default function TimetableCopyDialog({ onClose }: { onClose: () => void }
             className="px-3 py-1.5 text-sm font-bold rounded text-white bg-builder-blue hover:bg-builder-blue-hover disabled:opacity-50"
           >写す{plan && plan.writes.length > 0 ? ` (${plan.writes.length} コマ)` : ''}</button>
         </div>
+        </>
+        )}
       </div>
     </div>
+  );
+}
+
+// 写したあとの科目ごとのコマ数とコマ数の設定の差 (「3SS 数学 8/9 (−1)」)
+function CountDiffList({ diffs }: { diffs: SubjectCountDiff[] }) {
+  if (diffs.length === 0) {
+    return <p className="text-xs text-builder-green">コマ数を設定した科目は、どのクラスも設定どおりです。</p>;
+  }
+  return (
+    <ul className="text-xs space-y-0.5 max-h-48 overflow-y-auto">
+      {diffs.map(d => (
+        <li key={`${d.tabId}-${d.className}`}>
+          <span className="font-bold">{d.tabName} {d.className}</span>:{' '}
+          {d.items.map((x, i) => (
+            <span key={x.subject} className={x.diff < 0 ? 'text-builder-red' : 'text-builder-orange'}>
+              {i > 0 && '・'}{x.subject} {x.count}/{x.quota} ({x.diff > 0 ? `+${x.diff}` : `−${-x.diff}`})
+            </span>
+          ))}
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -359,6 +463,77 @@ function MappingTable({
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+// 去年の日 (写す元) → 今年の日の対応を並べ、外す日を選ぶ。日数が違うとき (去年 15 日・
+// 今年 14 日) は外した日を飛ばして残りを先頭から詰める。曜日の違う対応は色で知らせる
+function DaySkipRow({
+  tabName,
+  sourceDates,
+  mapping,
+  targetDates,
+  onToggle,
+  onSkip,
+}: {
+  tabName: string;
+  sourceDates: string[];
+  mapping: TabCopyMapping;
+  targetDates: Entity[];
+  onToggle: (i: number) => void;
+  onSkip: (skipped: number[]) => void;
+}) {
+  const skipped = new Set(mapping.skippedDates || []);
+  const byId = new Map(targetDates.map(d => [d.id, d.label] as const));
+  const mismatched = new Set(weekdayMismatches(sourceDates, mapping.dates, targetDates).map(x => x.index));
+  const extra = sourceDates.length - targetDates.length;
+  const used = sourceDates.length - skipped.size;
+  const range = (from: number, n: number) => Array.from({ length: n }, (_, k) => from + k);
+  return (
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-bold">日の対応</span>
+        <span className={used > targetDates.length ? 'text-builder-orange' : 'text-builder-ink-muted'}>
+          去年 {sourceDates.length} 日{skipped.size > 0 ? ` (外す ${skipped.size} 日)` : ''} → 今年 {targetDates.length} 日
+          {used > targetDates.length && ` — 今年の日が ${used - targetDates.length} 日足りないので、最後の ${used - targetDates.length} 日は写しません。外す日を選んでください`}
+        </span>
+        {extra > 0 && (
+          <>
+            <button type="button" onClick={() => onSkip(range(sourceDates.length - extra, extra))} className="px-1.5 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-surface-alt">最後の {extra} 日を外す</button>
+            <button type="button" onClick={() => onSkip(range(0, extra))} className="px-1.5 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-surface-alt">最初の {extra} 日を外す</button>
+          </>
+        )}
+        {skipped.size > 0 && (
+          <button type="button" onClick={() => onSkip([])} className="px-1.5 py-0.5 border border-builder-border rounded bg-builder-surface hover:bg-builder-surface-alt">外した日を戻す</button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-1" role="group" aria-label={`${tabName} の去年の日 (押すと外す)`}>
+        {sourceDates.map((label, i) => {
+          const off = skipped.has(i);
+          const to = mapping.dates[i] != null ? byId.get(mapping.dates[i]!) : null;
+          const warn = mismatched.has(i);
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onToggle(i)}
+              aria-pressed={!off}
+              aria-label={`${i + 1}日目 ${label}${off ? ' (外す)' : to ? ` → ${to}${warn ? ' (曜日が違う)' : ''}` : ' (写す先なし)'}`}
+              title={off ? '押すと戻す' : '押すとこの日を外す (残りを詰める)'}
+              className={`px-1.5 py-0.5 border rounded text-left leading-tight ${off
+                ? 'border-builder-border text-builder-ink-muted line-through bg-builder-surface'
+                : warn ? 'border-builder-orange bg-builder-warning-soft' : to ? 'border-builder-blue bg-builder-info-soft' : 'border-builder-border text-builder-ink-muted bg-builder-surface'}`}
+            >
+              <span className="text-[10px] text-builder-ink-muted">{i + 1}日目</span> {label}
+              {!off && <span className="text-builder-ink-muted"> → {to ?? '—'}</span>}
+            </button>
+          );
+        })}
+      </div>
+      {mismatched.size > 0 && (
+        <div className="text-builder-orange">曜日が違う対応があります (オレンジ)。火木・水金のような曜日で決まるコースなら、外す日を選び直してください</div>
+      )}
     </div>
   );
 }

@@ -20,13 +20,17 @@
 // 注意: constants.js は本ファイルの parseKey を import しているため、
 // ここから constants.js を import すると循環になる。import してよいのは
 // 無依存モジュール (generationParams / dateGenerate / dateLabelUnify /
-// availabilityShape / carriedTimetable) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
+// availabilityShape / carriedTimetable / publishState / externalSessionShape /
+// frameShape) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
 // availabilityShape の無依存モジュールのみ。
 import { clampGenerationParam } from './generationParams';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { unifyDateLabelWeekdays } from './dateLabelUnify';
 import { sanitizeAvailability } from './availabilityShape';
 import { normalizeCarriedTimetable } from './carriedTimetable';
+import { isPublishState } from './publishState';
+import { isExternalOnlyDate, normalizeSessionCourse } from './externalSessionShape';
+import { normalizeProjectFrames } from './frameShape';
 import type {
   CombinedGroup,
   EffectiveConfig,
@@ -80,14 +84,17 @@ export function nextId(entities: Entity[] | undefined): number {
 // 返すと時間割の行順・科目の回数連番 (第N回) が日付順にならない (F5j と同根)。
 // M/D として解釈できないラベルは末尾 (安定順)。既に日付順のときは入力の参照を
 // そのまま返す (既存の identity 前提の memo / no-op 判定を保つ)。
+// 外部授業だけの日 (DateEntity.externalOnly) はどのタブにも出さない (全日使うタブでも)。
 export function activeDatesForTab(poolDates: Entity[] | undefined, tab: Tab | undefined): Entity[] {
   const ids = tab?.config?.activeDateIds;
+  const all = poolDates || [];
+  const pool = all.some(isExternalOnlyDate) ? all.filter(d => !isExternalOnlyDate(d)) : all;
   let subset: Entity[];
   if (!ids) {
-    subset = poolDates || [];
+    subset = pool;
   } else {
     const set = new Set(ids);
-    subset = (poolDates || []).filter(d => set.has(d.id));
+    subset = pool.filter(d => set.has(d.id));
   }
   const sorted = sortPoolDatesByCalendar(subset);
   return sorted.every((d, i) => d === subset[i]) ? subset : sorted;
@@ -517,6 +524,35 @@ export function migrateProject(project: any): Project {
   } else if (result.externalSessions.some(s => !s || typeof s !== 'object')) {
     result = { ...result, externalSessions: result.externalSessions.filter(s => s && typeof s === 'object') };
   }
+  // 講座名 (任意): 文字列でない・空白だけは落とし、前後の空白を落とす
+  const courseNeedsFix = (s: any) => 'course' in s && (!s.course || s.course !== normalizeSessionCourse(s.course));
+  if (result.externalSessions.some(courseNeedsFix)) {
+    result = {
+      ...result,
+      externalSessions: result.externalSessions.map((s: any) => {
+        if (!courseNeedsFix(s)) return s;
+        const course = normalizeSessionCourse(s.course);
+        const { course: _course, ...rest } = s;
+        return course ? { ...rest, course } : rest;
+      }),
+    };
+  }
+
+  // 取り込んだ元の印 (source / sourceKey、任意): 知らない値・片方だけは両方落とす
+  // (手で入れたセッションとして扱う)
+  const sourceNeedsFix = (s: any) =>
+    ('source' in s || 'sourceKey' in s) &&
+    !(s.source === 'seniorKoshu' && typeof s.sourceKey === 'string' && s.sourceKey !== '');
+  if (result.externalSessions.some(sourceNeedsFix)) {
+    result = {
+      ...result,
+      externalSessions: result.externalSessions.map((s: any) => {
+        if (!sourceNeedsFix(s)) return s;
+        const { source: _source, sourceKey: _sourceKey, ...rest } = s;
+        return rest;
+      }),
+    };
+  }
 
   // externalSessionPresets が未設定 / 型崩れの場合は空配列で初期化 (他学年
   // セッション登録テンプレートの保存先、後発フィールド)
@@ -634,6 +670,13 @@ export function migrateProject(project: any): Project {
     }
   }
 
+  // 月間の予定へ出すか (任意フィールド、utils/publishState)。知らない値は落とす
+  // (= 確定。未設定と同じく従来どおり月間に出す)
+  if (result.publishState !== undefined && !isPublishState(result.publishState)) {
+    const { publishState: _dropped, ...rest } = result;
+    result = rest;
+  }
+
   // snapshots が未設定 / 不正な場合は空配列で初期化 (E1c で追加された後発フィールド)
   if (!Array.isArray(result.snapshots)) {
     result = { ...result, snapshots: [] };
@@ -690,6 +733,64 @@ export function migrateProject(project: any): Project {
   // して共存しているプールはマージし、参照 (schedule / NG / externalCounts /
   // 合同 / セッション) も付け替える。idempotent (詳細は dateLabelUnify.js)。
   result = unifyDateLabelWeekdays(result);
+
+  // 本体の行事予定 (講習) との結び付け (任意、utils/courseEventCheck): 文字列だけ・
+  // 重複なし・空なら持たない
+  {
+    const cleanNames = (v: unknown): string[] => {
+      if (!Array.isArray(v)) return [];
+      const out: string[] = [];
+      v.forEach(x => {
+        const t = typeof x === 'string' ? x.trim() : '';
+        if (t && !out.includes(t)) out.push(t);
+      });
+      return out;
+    };
+    const sameList = (a: unknown, b: string[]) => Array.isArray(a) && a.length === b.length && a.every((x, i) => x === b[i]);
+    if ('ignoredCourseEvents' in result) {
+      const names = cleanNames(result.ignoredCourseEvents);
+      if (names.length === 0) {
+        const { ignoredCourseEvents: _drop, ...rest } = result;
+        result = rest;
+      } else if (!sameList(result.ignoredCourseEvents, names)) {
+        result = { ...result, ignoredCourseEvents: names };
+      }
+    }
+    if (Array.isArray(result.tabs) && result.tabs.some((t: any) => t?.config && 'courseEventNames' in t.config)) {
+      let changed = false;
+      const tabs = result.tabs.map((t: any) => {
+        if (!t?.config || !('courseEventNames' in t.config)) return t;
+        const names = cleanNames(t.config.courseEventNames);
+        if (names.length > 0 && sameList(t.config.courseEventNames, names)) return t;
+        changed = true;
+        const { courseEventNames: _drop, ...config } = t.config;
+        return { ...t, config: names.length > 0 ? { ...config, courseEventNames: names } : config };
+      });
+      if (changed) result = { ...result, tabs };
+    }
+  }
+
+  // 季節の中の枠 (任意、utils/frameShape): 形の崩れた枠・無い枠を指す frameId を落とし、
+  // 枠に入ったタブの使う時限を枠の時限の中に収める
+  result = normalizeProjectFrames(result);
+
+  // 外部授業だけの日の印 (任意): true 以外は落とす。タブが使う日になっていれば外す
+  // (時間割に出る日は外部授業だけの日ではない。tabDates の操作も同じく外す)
+  if (Array.isArray(result.dates) && result.dates.some((d: any) => d && 'externalOnly' in d)) {
+    const usedIds = new Set<number>();
+    (result.tabs || []).forEach((t: any) => {
+      (Array.isArray(t?.config?.activeDateIds) ? t.config.activeDateIds : []).forEach((id: number) => usedIds.add(id));
+    });
+    let changed = false;
+    const dates = result.dates.map((d: any) => {
+      if (!d || !('externalOnly' in d)) return d;
+      if (d.externalOnly === true && !usedIds.has(d.id)) return d;
+      changed = true;
+      const { externalOnly: _flag, ...rest } = d;
+      return rest;
+    });
+    if (changed) result = { ...result, dates };
+  }
 
   return result;
 }

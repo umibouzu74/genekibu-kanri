@@ -33,4 +33,6 @@ export const VIEWS = Object.freeze({
   YOTEIHYO: "yoteihyo",
   // 有給・半休 (現役部 常勤の休暇の記録。管理者だけが読める)
   LEAVE: "leave",
+  // 高校部・予備校の講習 (期 × 時限 × 担当。講師の月間に出し、講習時間割作成が取り込む)
+  SENIOR_KOSHU: "senior-koshu",
 });

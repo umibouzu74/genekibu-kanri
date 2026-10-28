@@ -6,7 +6,8 @@ import { useSubjectActions } from './useSubjectActions';
 import { useTeacherActions } from './useTeacherActions';
 import { makeKey, migrateProject, effectiveConfigForTab } from '../utils/scheduleKey';
 import { cleanSchedule } from '../utils/constants';
-import type { CombinedGroup, DayStatus, GenerationParamKey, Project } from '../types';
+import { withCurrentPublishStates } from '../utils/publishState';
+import type { CombinedGroup, DayStatus, GenerationParamKey, Project, PublishState } from '../types';
 
 // 講習時間割プロジェクトの一元状態管理フック。
 //
@@ -172,6 +173,10 @@ export function useProject(options: HistoryStackOptions) {
   const handleRemoveUnusedDatesFromPool = useCallback(() => {
     dispatch({ type: 'dates/removeUnusedFromPool' });
   }, [dispatch]);
+  // 外部授業だけの日を足す (どのタブにも出さない日。他学年セッションの登録・月間用)
+  const handleAddExternalOnlyDates = useCallback((labels: string[]) => {
+    dispatch({ type: 'dates/addExternalOnly', payload: { labels } });
+  }, [dispatch]);
   // L4g: 使う日 / 使う時限の選択を他の全タブへコピー
   const handleCopyTabDatesToOthers = useCallback((sourceTabId: number) => {
     dispatch({ type: 'tabDates/copyActiveToOthers', payload: { sourceTabId } });
@@ -193,6 +198,42 @@ export function useProject(options: HistoryStackOptions) {
   // --- メタデータ ---
   const updateProjectName = useCallback((name: string) => {
     dispatch({ type: 'project/updateName', payload: { name } });
+  }, [dispatch]);
+
+  // 月間の予定へ出すか (作成中 / 仮確定 / 確定、utils/publishState)
+  const setPublishState = useCallback((state: PublishState) => {
+    dispatch({ type: 'project/setPublishState', payload: { state } });
+  }, [dispatch]);
+
+  // --- 季節の中の枠 (utils/frames) ---
+  const addFrame = useCallback((name: string, tabIds: number[] = []) => {
+    dispatch({ type: 'frame/add', payload: { name, tabIds } });
+  }, [dispatch]);
+  const renameFrame = useCallback((id: number, name: string) => {
+    dispatch({ type: 'frame/rename', payload: { id, name } });
+  }, [dispatch]);
+  const removeFrame = useCallback((id: number) => {
+    dispatch({ type: 'frame/remove', payload: { id } });
+  }, [dispatch]);
+  const setTabFrame = useCallback((tabId: number, frameId: number | null) => {
+    dispatch({ type: 'frame/setTab', payload: { tabId, frameId } });
+  }, [dispatch]);
+  const setFramePeriods = useCallback((id: number, value: string) => {
+    dispatch({ type: 'frame/setPeriods', payload: { id, value } });
+  }, [dispatch]);
+  const setFramePublishState = useCallback((id: number, state: PublishState) => {
+    dispatch({ type: 'frame/setPublishState', payload: { id, state } });
+  }, [dispatch]);
+
+  // --- 本体の行事予定 (講習) との結び付け (utils/courseEventCheck) ---
+  const setCourseEventLink = useCallback((tabId: number, name: string, linked: boolean) => {
+    dispatch({ type: 'courseEvents/setLink', payload: { tabId, name, linked } });
+  }, [dispatch]);
+  const linkCourseEvents = useCallback((links: Array<{ tabId: number; name: string }>) => {
+    dispatch({ type: 'courseEvents/linkMany', payload: { links } });
+  }, [dispatch]);
+  const setCourseEventIgnored = useCallback((name: string, ignored: boolean) => {
+    dispatch({ type: 'courseEvents/setIgnored', payload: { name, ignored } });
   }, [dispatch]);
 
   // --- 自動生成パラメータ (E2e) ---
@@ -222,11 +263,17 @@ export function useProject(options: HistoryStackOptions) {
   // --- テンプレート適用 (E2d) ---
   // payload (保存済みプロジェクト) を migrate + cleanSchedule してから
   // project 全体を差し替える (Undo 可能)。JSON 読込と同じ apply 経路。
+  // 月間の予定へ出すか (publishState) は今の project のまま (テンプレートを当てた
+  // だけで作成中の時間割が月間に出たり、確定した時間割が消えたりしないように)。
+  // 枠の状態も、今の枠 (同じ id、無ければ同じ名前) の状態を引き継ぐ。今の project に無い
+  // 枠は作成中から (出すかは人が決める)
+  const currentPublishState = project.publishState;
+  const currentFrames = project.frames;
   const applyTemplateFull = useCallback((payload: unknown) => {
     if (!payload) return;
-    const migrated = migrateProject(payload);
-    dispatch({ type: 'project/replace', payload: { project: cleanSchedule(migrated) } });
-  }, [dispatch]);
+    const next = withCurrentPublishStates(migrateProject(payload), { publishState: currentPublishState, frames: currentFrames });
+    dispatch({ type: 'project/replace', payload: { project: cleanSchedule(next) } });
+  }, [dispatch, currentPublishState, currentFrames]);
 
   // --- 合同グループ管理 ---
   const addCombinedGroup = useCallback((group: Omit<CombinedGroup, 'id'>) => {
@@ -277,6 +324,7 @@ export function useProject(options: HistoryStackOptions) {
     handleSetAllTabDates,
     handleRemoveDateFromPool,
     handleRemoveUnusedDatesFromPool,
+    handleAddExternalOnlyDates,
     handleCopyTabDatesToOthers,
     handleCopyTabPeriodsToOthers,
     // タブ別『使う時限』(E-3)
@@ -298,6 +346,18 @@ export function useProject(options: HistoryStackOptions) {
     handleSaveJson,
     // メタデータ
     updateProjectName,
+    setPublishState,
+    // 季節の中の枠
+    addFrame,
+    renameFrame,
+    removeFrame,
+    setTabFrame,
+    setFramePeriods,
+    setFramePublishState,
+    // 本体の行事予定 (講習) との結び付け
+    setCourseEventLink,
+    linkCourseEvents,
+    setCourseEventIgnored,
     // 自動生成パラメータ
     updateGenerationParams,
     // スナップショット

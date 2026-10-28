@@ -505,3 +505,74 @@ describe("buildKoshuLessonsForSeasons (季節ごとの project、2026-10-23)", (
   });
 });
 
+
+describe("buildKoshuLessons: 作成中 / 仮確定 / 確定 (2026-10-27)", () => {
+  const withLessons = (over = {}) => {
+    const project = baseProject(over);
+    project.tabs[0].schedule = { "d1-p1-c1": { subject: "英語", teacher: "堀上" } };
+    project.externalSessions = [
+      { id: 1, date: "7/24(金)", teacherName: "堀上", label: "", memo: "予備校", startTime: "09:00", endTime: "10:00" },
+    ];
+    return project;
+  };
+
+  it("作成中の時間割は講習コマも外部授業も出さない", () => {
+    expect(buildKoshuLessons(withLessons({ publishState: "draft" }))).toEqual([]);
+  });
+
+  it("仮確定は出して tentative=true、確定・未設定 (この項目ができる前の時間割) は tentative=false", () => {
+    const tentative = buildKoshuLessons(withLessons({ publishState: "tentative" }));
+    expect(tentative.map((l) => [l.kind, l.tentative])).toEqual([
+      ["external", true],
+      ["koshu", true],
+    ]);
+    for (const project of [withLessons({ publishState: "final" }), withLessons()]) {
+      expect(buildKoshuLessons(project).every((l) => l.tentative === false)).toBe(true);
+      expect(buildKoshuLessons(project)).toHaveLength(2);
+    }
+  });
+
+  it("季節ごとに決まる (作成中の冬期を作っていても、確定の夏期は出る)", () => {
+    const lessons = buildKoshuLessonsForSeasons({
+      summer: { status: "ready", project: withLessons({ publishState: "final" }) },
+      winter: { status: "ready", project: withLessons({ name: "冬", publishState: "draft", updatedAt: "2026-12-01T09:00:00.000Z" }) },
+    });
+    expect(lessons.map((l) => l.season)).toEqual(["summer", "summer"]);
+  });
+});
+
+describe("buildKoshuLessons: 外部授業の講座名 (2026-10-27)", () => {
+  it("「外」カードの科目は「メモ + 講座名」", () => {
+    const project = baseProject({
+      externalSessions: [
+        { id: 1, date: "7/24(金)", teacherName: "滝澤", label: "", memo: "Ⅰ期 予備校３限", course: "共通テスト理科基礎(物理基礎)", startTime: "12:25", endTime: "13:35" },
+      ],
+    });
+    project.tabs[0].schedule = { "d1-p1-c1": { subject: "英語", teacher: "堀上" } };
+    const ext = buildKoshuLessons(project).find((l) => l.kind === "external");
+    expect(ext.subj).toBe("Ⅰ期 予備校３限 共通テスト理科基礎(物理基礎)");
+  });
+});
+
+describe("buildKoshuLessons: 外部授業だけの日 (2026-10-27)", () => {
+  it("どのタブも使わない日でも、外部授業だけの日の外部授業は出す (年は季節でまとめて決める)", () => {
+    const project = baseProject({
+      updatedAt: "2026-11-20T09:00:00.000Z",
+      dates: [
+        { id: 1, label: "12/25(金)" },
+        { id: 2, label: "2/8(月)", externalOnly: true },
+        { id: 3, label: "7/24(金)" }, // 前の季節の残り (どのタブも使わない・印なし)
+      ],
+      tabs: [{ ...baseProject().tabs[0], config: { ...baseProject().tabs[0].config, activeDateIds: [1] }, schedule: { "d1-p1-c1": { subject: "英語", teacher: "堀上" } } }],
+      externalSessions: [
+        { id: 1, date: "2/8(月)", teacherName: "堀上", label: "", memo: "Ⅳ期", startTime: "09:00", endTime: "10:30" },
+        { id: 2, date: "7/24(金)", teacherName: "堀上", label: "", memo: "前の夏", startTime: "09:00", endTime: "10:30" },
+      ],
+    });
+    const lessons = buildKoshuLessons(project);
+    expect(lessons.map((l) => [l.kind, l.date])).toEqual([
+      ["koshu", "2026-12-25"],
+      ["external", "2027-02-08"],
+    ]);
+  });
+});

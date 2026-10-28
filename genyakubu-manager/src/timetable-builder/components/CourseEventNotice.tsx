@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useHostData } from '../contexts/hostDataContext';
 import { checkCourseEvents, type CourseEventLike } from '../utils/courseEventCheck';
+import CourseEventLinks from './CourseEventLinks';
 
 function todayYmd(): string {
   const d = new Date();
@@ -16,6 +17,7 @@ export default function CourseEventNotice() {
   const { project } = useProjectContext();
   const { specialEvents, holidays } = useHostData();
   const [open, setOpen] = useState(false);
+  const [linksOpen, setLinksOpen] = useState(false);
   const { findings } = useMemo(
     () => checkCourseEvents({
       project,
@@ -61,8 +63,17 @@ export default function CourseEventNotice() {
           </ul>
           <p className="text-builder-ink-muted">
             行事予定が違っていれば、本体の「休講・テスト期間・イベント」の特別イベント (種別: 講習) で直してください。
-            タブの日付が違っていれば ⚙️ 設定 &gt; 基本設定 の「使う日」で直します。日曜・塾の全体休講日は比べていません。
+            タブの日付が違っていれば ⚙️ 設定 &gt; 基本設定 の「使う日」で直します。日曜・塾の全体休講日は比べていません
+            (火木・水金・土曜のような週ごとの講習は、タブが使う曜日だけ比べます)。
+            ほかの講習の行事予定と比べているときは、下の「行事予定との対応」でタブに結び付けるか、対象外にしてください。
           </p>
+          <button
+            type="button"
+            onClick={() => setLinksOpen(v => !v)}
+            aria-expanded={linksOpen}
+            className="px-2 py-0.5 text-xs border border-builder-warning-border rounded bg-builder-surface hover:bg-builder-surface-alt"
+          >{linksOpen ? '▲ 行事予定との対応を閉じる' : '▼ 行事予定との対応 (タブと結び付ける・対象外にする)'}</button>
+          {linksOpen && <div className="bg-builder-surface p-2 rounded border border-builder-border"><CourseEventLinks /></div>}
         </div>
       )}
     </section>

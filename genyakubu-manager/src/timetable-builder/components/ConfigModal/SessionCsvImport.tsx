@@ -4,14 +4,14 @@ import { useUI } from '../../contexts/uiContextValue';
 import { decodeCsvBytes } from '../../utils/csvImport';
 import { downloadCsvFile } from '../../utils/csvTemplates';
 import { buildSessionCsvTemplate, parseSessionCsv } from '../../utils/sessionCsvImport';
+import { externalSessionContentKey } from '../../utils/externalSessionShape';
 
-const PLACEHOLDER = `講師,日付,開始,終了,メモ
-半田,12/25・26・28,9:00,10:10,予備校１限
-滝澤・武下,12/25〜12/28,12:25,13:35,予備校３限 理科基礎`;
+const PLACEHOLDER = `講師,日付,開始,終了,メモ,講座名
+半田,12/25・26・28,9:00,10:10,予備校１限,高3 英語
+滝澤・武下,12/25〜12/28,12:25,13:35,予備校３限,共通テスト理科基礎`;
 
 // reducer (addExternalSessions) と同じ内容キー。登録済みの分を数える
-const contentKey = (s: { date: string; teacherName: string; label?: string; memo?: string; startTime?: string; endTime?: string }) =>
-  JSON.stringify([s.date, s.teacherName, s.label || '', s.memo || '', s.startTime || '', s.endTime || '']);
+const contentKey = externalSessionContentKey;
 
 // 他学年セッションの表での一括登録 (2026-10-27)。パンフレットの担当表を
 // 「講師,日付,開始,終了,メモ」の表にして貼り付け (Excel からのコピーでも可)、
@@ -36,6 +36,7 @@ export default function SessionCsvImport() {
     teacherName: r.teacherName,
     label: r.startTime ? (r.endTime ? `${r.startTime}-${r.endTime}` : r.startTime) : '',
     memo: r.memo,
+    course: r.course,
     startTime: r.startTime,
     endTime: r.endTime,
   })), [parsed]);
@@ -96,7 +97,7 @@ export default function SessionCsvImport() {
           <div className="flex items-start justify-between gap-2">
             <div className="text-xs text-builder-ink-muted space-y-0.5">
               <div>
-                見出しは <code>講師,日付,開始,終了,メモ</code> (列の順は自由。Excel の表をコピーして貼り付けてもかまいません)。
+                見出しは <code>講師,日付,開始,終了,メモ,講座名</code> (列の順は自由・講座名は任意。Excel の表をコピーして貼り付けてもかまいません)。
               </div>
               <div>
                 講師は「・」で何人でも、日付は「12/25・26・28」「12/25〜12/28」のように並べられます。日付は日付プールにある日だけ入ります。
@@ -145,7 +146,10 @@ export default function SessionCsvImport() {
                 <div>講師マスタに無い名前 (登録しません): <span className="text-builder-red">{parsed.unknownTeachers.join('、')}</span></div>
               )}
               {parsed.unknownDates.length > 0 && (
-                <div>日付プールに無い日付 (登録しません): <span className="text-builder-red">{parsed.unknownDates.join('、')}</span></div>
+                <div>
+                  日付プールに無い日付 (登録しません): <span className="text-builder-red">{parsed.unknownDates.join('、')}</span>
+                  <span className="text-builder-ink-muted"> — 中学の講習が無い日なら、基本設定の「🏫 外部授業だけの日」で足してから貼り直してください</span>
+                </div>
               )}
               {parsed.untimedCount > 0 && (
                 <div className="text-builder-orange">時刻の無い行が {parsed.untimedCount} 行あります (登録はしますが、自動NG にはなりません)</div>
@@ -167,6 +171,7 @@ export default function SessionCsvImport() {
                         <th className="border-b border-builder-border px-1 py-0.5 text-left">日付</th>
                         <th className="border-b border-builder-border px-1 py-0.5 text-left">時刻</th>
                         <th className="border-b border-builder-border px-1 py-0.5 text-left">メモ</th>
+                        <th className="border-b border-builder-border px-1 py-0.5 text-left">講座名</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -175,8 +180,9 @@ export default function SessionCsvImport() {
                           <td className="px-1 py-0.5">{it.teacherName}</td>
                           <td className="px-1 py-0.5">{it.date}</td>
                           <td className="px-1 py-0.5">{it.startTime ? `${it.startTime}〜${it.endTime || ''}` : '-'}</td>
+                          <td className="px-1 py-0.5">{it.memo || '-'}</td>
                           <td className="px-1 py-0.5">
-                            {it.memo || '-'}
+                            {it.course || '-'}
                             {existingKeys.has(contentKey(it)) && <span className="ml-1">(登録済み)</span>}
                           </td>
                         </tr>

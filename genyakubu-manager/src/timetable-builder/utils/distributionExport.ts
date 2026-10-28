@@ -33,6 +33,7 @@ import {
 } from './excelExport';
 import { makeSubjectOrderMarker } from './analysisHelpers';
 import { classRoomOf } from './classRoom';
+import { displayNameForTabs } from './frames';
 
 // ─── 紙面の実測定数 (2025 年版 xls 由来) ──────────────────────────
 
@@ -304,7 +305,8 @@ function buildDistributionSheet(
   const d0 = new Date();
   const titleCell = ws.getCell(2, 2);
   titleCell.value = [
-    `${project.name || '講習時間割'} — ${group.tabs.map(t => t.name).join('・')}`,
+    // 季節の中の枠のタブだけなら枠の名前 (utils/frames.displayNameForTabs)
+    `${displayNameForTabs(project, group.tabs) || '講習時間割'} — ${group.tabs.map(t => t.name).join('・')}`,
     rangeText,
     `出力日 ${d0.getMonth() + 1}/${d0.getDate()}`,
   ].filter(Boolean).join(' / ');

@@ -424,6 +424,35 @@ export interface CardForget {
   recordedAt?: string; // 最後に記録した日時 (ISO)
 }
 
+// ─── 高校部・予備校の講習 (utils/seniorKoshu、2026-10-27) ────────────
+// 期 (日の並び) × 時限 (時刻) × 担当 (講師 1 人 × 学年 × 講座名)。講師の月間に
+// 出し、講習時間割作成が取り込んで自動NG にする。
+export interface SeniorKoshuTerm {
+  id: number;
+  name: string; // "高3 Ⅰ期"
+  dates: string[]; // "YYYY-MM-DD" の昇順
+}
+export interface SeniorKoshuPeriod {
+  id: number;
+  name: string; // "予備校３限"
+  time: string; // "12:25-13:35" (読めない時刻は "")
+}
+export interface SeniorKoshuLesson {
+  id: number;
+  teacher: string;
+  termId: number;
+  periodId: number;
+  grade?: string; // "高3" / "予備校"
+  course: string; // "共通テスト理科基礎(物理基礎)"
+  skipDates?: string[]; // この講師が担当しない日 (期の日のうち)
+  memo?: string;
+}
+export interface SeniorKoshuData {
+  terms: SeniorKoshuTerm[];
+  periods: SeniorKoshuPeriod[];
+  lessons: SeniorKoshuLesson[];
+}
+
 // ─── Koshu lesson (講習コマ、派生表示) ───────────────────────────
 // 講習時間割作成 (timetable-builder) の project から
 // utils/builderLessons.buildKoshuLessons が導出する読み取り専用の表示モデル。
@@ -453,6 +482,12 @@ export interface KoshuLesson {
   room: string; // 教室 ("401"。合同は "401/403"。講習時間割作成のクラスに教室が無ければ "")
   tabName: string;
   projectName: string;
+  // 季節の中の枠の名前 (「直前ポイント演習」。枠を使っていなければ "")。カードの説明は
+  // projectName より枠の名前を出す (timetable-builder/utils/frames)
+  frameName: string;
+  // 講習時間割作成で「仮確定」にした時間割のコマ (月間のカードに「仮」)。
+  // 作成中の時間割のコマは KoshuLesson にならない (timetable-builder/utils/publishState)
+  tentative: boolean;
 }
 
 // ─── Class set (授業セット) ──────────────────────────────────────
@@ -549,6 +584,7 @@ export interface ExportBundle {
   daySchedules?: DaySchedule[];
   fuzokuPlan?: FuzokuPlan;
   offsiteLessons?: OffsiteLesson[];
+  seniorKoshu?: SeniorKoshuData;
   yobikoEvents?: YobikoEvent[];
   /** 管理者が書き出したときだけ含まれる */
   handoverNotes?: HandoverNote[];
