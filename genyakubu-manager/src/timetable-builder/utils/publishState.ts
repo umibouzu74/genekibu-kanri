@@ -26,7 +26,7 @@ export interface PublishStateDef {
 
 export const PUBLISH_STATES: PublishStateDef[] = [
   { key: 'draft', label: '作成中', icon: '📝', note: '本体の月間の予定には出しません' },
-  { key: 'tentative', label: '仮確定', icon: '🟡', note: '本体の月間の予定に「仮」の印をつけて出します' },
+  { key: 'tentative', label: '仮確定', icon: '🟡', note: '本体の月間の予定に「仮」の印を付けて出します' },
   { key: 'final', label: '確定', icon: '✅', note: '本体の月間の予定に出します' },
 ];
 

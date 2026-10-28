@@ -516,7 +516,7 @@ export default function BasicSettings() {
               }}
             />
             <span className="block text-[11px] text-builder-ink-muted">
-              欄の外をクリックすると確定します (Esc で取り消し)。ほかの枠の時限は ⚙ 上の「🧩 枠」で直します (季節の時限は全部で {poolPeriods.length} コマ)
+              欄の外をクリックすると確定します (Esc で取り消し)。ほかの枠の時限は上の「🧩 枠」で直します (季節の時限は全部で {poolPeriods.length} つ)
             </span>
           </label>
         ) : (

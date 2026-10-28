@@ -194,7 +194,7 @@ export default function Header() {
                   onClick={() => handleExport('teacher', f.id)}
                   className="w-full text-left px-3 py-2 text-sm hover:bg-builder-surface-alt"
                   title={`枠「${f.name}」のタブと日だけの講師別スケジュールをExcel出力`}
-                >👤 講師別 ({f.name})</button>
+                >👤 講師別スケジュール ({f.name})</button>
               ))}
             </div>
           )}

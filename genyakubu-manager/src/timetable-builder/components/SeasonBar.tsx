@@ -27,13 +27,13 @@ function describe(entry: SeasonProjectEntry | undefined, selected: boolean): { n
   const range = formatSeasonRange(summary.firstYmd, summary.lastYmd);
   const parts = [range || '日付なし'];
   if (summary.cellCount > 0) parts.push(`${summary.cellCount}コマ`);
-  // 本体の月間の予定へ出しているか (作成中 / 仮確定 / 確定)。枠ごとに違えば「枠ごと」
+  // 本体の月間の予定へ出しているか (作成中 / 仮確定 / 確定)。枠ごとに違えば「枠ごとに違う」
   const summaryState = entry.project ? summarizePublishState(entry.project) : null;
   if (summaryState) {
     const publish = publishStateDef(summaryState);
     parts.push(`${publish.icon}${publish.label}`);
   } else {
-    parts.push('🧩枠ごと');
+    parts.push('🧩枠ごとに違う');
   }
   return {
     name: summary.name || '(名前なし)',

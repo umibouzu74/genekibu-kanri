@@ -945,7 +945,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
                 />
               </label>
               <label className="flex flex-col gap-1 text-xs flex-1 min-w-[12rem]">
-                <span className="text-builder-ink-muted">講座名 (任意・月間の予定と講師別 Excel にメモと並べて出ます)</span>
+                <span className="text-builder-ink-muted">講座名 (任意・月間の予定にメモと並べて、講師別 Excel の科目の欄に出ます)</span>
                 <input
                   type="text"
                   value={formCourse}
