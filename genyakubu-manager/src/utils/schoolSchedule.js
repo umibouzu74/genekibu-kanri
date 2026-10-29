@@ -14,6 +14,11 @@
 //
 // 考査日 (ExamPeriod.examDates) は**表示専用**。授業停止 (scheduleHelpers.
 // examPeriodStopsClassesOn)・特訓・隔週の週送り・第N回には使わない。
+//
+// 紙の大きさ「B4・A3」の表示 (2026-10-29) では、タイムラインの模試に名前と対象
+// 学年の札 (buildSchoolTimeline の labelDays)、その下に学校ごとの一覧
+// (buildSchoolScheduleList)、年間カレンダーのバッジの下に説明の行
+// (schoolBadgeDetails) を出す。A4 の表示はバッジ・点のまま。
 
 import { compareJa } from "./sortJa";
 import { eachDateStrInRange, fmtMD } from "./dateHelpers";
@@ -308,9 +313,26 @@ export function mockGradeClass(grades) {
   return "all";
 }
 
+/**
+ * 文字列の幅 (px) の見積もり。全角 = 1 字、半角 (英数・記号・半角カナ) = 0.6 字。
+ * 学校別タイムラインの名前の札が隣の札に重ならないように段を分けるのに使う
+ * (実際の幅は測らない。足りなければ札は「…」で切れる)
+ */
+export function estimateTextPx(text, fontPx) {
+  let w = 0;
+  for (const ch of String(text || "")) {
+    const c = ch.codePointAt(0);
+    w += c < 0x2000 || (c >= 0xff61 && c <= 0xff9f) ? 0.6 : 1;
+  }
+  return w * fontPx;
+}
+
 // 重なる帯を段に分ける (開始順に、空いている一番上の段へ)。items は
-// { startOffset, endOffset } (両端を含む日の番号)
-function packLanes(items) {
+// { startOffset, endOffset } (両端を含む日の番号)。extentEnd(it) を渡すと、帯の
+// 後ろに続く名前の札の分まで塞がっているとみなす (札どうしが重ならないように)。
+// 段に入れた後、各帯に roomDays = 同じ段の次の帯の始まりまでの日数 (最後なら
+// 期間の終わりまで) を付ける。札の幅の上限に使う (はみ出す分は「…」で切る)
+function packLanes(items, days, extentEnd = (it) => it.endOffset) {
   const lanes = [];
   const lastEnd = [];
   const sorted = [...items].sort(
@@ -324,7 +346,12 @@ function packLanes(items) {
       lastEnd.push(-1);
     }
     lanes[i].push(it);
-    lastEnd[i] = it.endOffset;
+    lastEnd[i] = Math.max(it.endOffset, extentEnd(it));
+  }
+  for (const lane of lanes) {
+    lane.forEach((it, j) => {
+      it.roomDays = (lane[j + 1] ? lane[j + 1].startOffset : days) - it.startOffset;
+    });
   }
   return lanes;
 }
@@ -342,8 +369,19 @@ function packLanes(items) {
  *   }],
  * }
  * 帯は開始日 (考査発表)〜終了日 (ふつうは最後の考査日)。from〜to で切る。
+ *
+ * テスト期間には detail (「発表 10/6 → 考査 10/13〜16（4日）」/ 考査日が無ければ
+ * 「テスト期間 10/1〜5」)、模試には name (学校名を落とした名前)・grade (対象学年)・
+ * range を付ける (B4・A3 の表示の札)。どの帯にも roomDays (同じ段の次の帯まで)。
+ * layout.labelDays(kind, item) を渡すと、帯の始まりから札が何日ぶん塞ぐかとして
+ * 段分けに使う (kind = "exam" | "mock"。0 なら札なし)。
  */
-export function buildSchoolTimeline({ examPeriods = [], specialEvents = [], filter } = {}, from, to) {
+export function buildSchoolTimeline(
+  { examPeriods = [], specialEvents = [], filter } = {},
+  from,
+  to,
+  { labelDays } = {}
+) {
   const days = daysBetween(from, to) + 1;
   const off = (ds) => daysBetween(from, ds);
   const inRange = (rec) => rec.startDate <= to && endOf(rec) >= from;
@@ -377,6 +415,7 @@ export function buildSchoolTimeline({ examPeriods = [], specialEvents = [], filt
       examOffsets,
       announceOffset: announce && announce >= from && announce <= to ? off(announce) : null,
       label: `${name}（${grade}）`,
+      detail: describeExamDates(ep) || `テスト期間 ${mdRange(ep.startDate, endOf(ep))}`,
       title: [
         `${school} ${name}（${grade}）`,
         announce ? `発表 ${fmtMD(announce)}` : "",
@@ -394,9 +433,14 @@ export function buildSchoolTimeline({ examPeriods = [], specialEvents = [], filt
       endOffset: clampOff(endOf(ev)),
       gradeClass: mockGradeClass(ev.targetGrades),
       optional: isOptionalMock(ev),
+      name: stripSchoolPrefix(ev.name, school),
+      grade: schoolGradeLabel(ev.targetGrades),
+      range: mdRange(ev.startDate, endOf(ev)),
       title: `${school} 模試: ${describeMock(ev, school)}`,
     });
   }
+  const extent = (kind) =>
+    labelDays ? (it) => it.startOffset + Math.ceil(labelDays(kind, it)) - 1 : undefined;
 
   const examCounts = [...countBy.entries()]
     .map(([date, set]) => ({ date, offset: off(date), count: set.size }))
@@ -405,10 +449,126 @@ export function buildSchoolTimeline({ examPeriods = [], specialEvents = [], filt
     .sort(([a], [b]) => compareJa(a, b))
     .map(([school, { exams: es, mocks: ms }]) => ({
       school,
-      examLanes: packLanes(es),
-      mockLanes: packLanes(ms),
+      examLanes: packLanes(es, days, extent("exam")),
+      mockLanes: packLanes(ms, days, extent("mock")),
     }));
   return { from, to, days, examCounts, schools };
+}
+
+// ─── ③ 学校ごとの一覧 (学校別の B4・A3 の表示) ──────────────────────────
+
+/**
+ * 学校ごとの一覧。from〜to にかかるテスト期間と模試を、学校ごと (五十音) に
+ * 日付順で並べる。並べる日付は画面の「日付」の欄と同じ = テスト期間は考査の
+ * 始まり (考査日が無ければ開始日)、模試は開始日。同じ日はテスト期間 → 模試。
+ * 戻り値: [{ school, rows }]
+ *   exam: { kind, key, record, date, end, name, grade, announce, examDates }
+ *         date〜end = 考査の範囲 (考査日が無ければテスト期間)、announce = 発表日 (無ければ null)
+ *   mock: { kind, key, record, date, end, name, grade, gradeClass, optional }
+ */
+export function buildSchoolScheduleList({ examPeriods = [], specialEvents = [], filter } = {}, from, to) {
+  const inRange = (rec) => rec.startDate <= to && endOf(rec) >= from;
+  const bySchool = new Map();
+  const push = (school, row) => {
+    if (!bySchool.has(school)) bySchool.set(school, []);
+    bySchool.get(school).push(row);
+  };
+  for (const ep of visibleSchoolExams(examPeriods, filter).filter(inRange)) {
+    const school = schoolKeyOf(ep);
+    const dates = examDatesOf(ep);
+    push(school, {
+      kind: "exam",
+      key: `exam-${ep.id}`,
+      record: ep,
+      date: dates[0] || ep.startDate,
+      end: dates.length ? dates[dates.length - 1] : endOf(ep),
+      name: stripSchoolPrefix(ep.name, school),
+      grade: schoolGradeLabel(ep.targetGrades),
+      announce: dates.length && ep.startDate < dates[0] ? ep.startDate : null,
+      examDates: dates,
+    });
+  }
+  for (const ev of visibleSchoolMocks(specialEvents, filter).filter(inRange)) {
+    const school = schoolKeyOf(ev);
+    push(school, {
+      kind: "mock",
+      key: `mock-${ev.id}`,
+      record: ev,
+      date: ev.startDate,
+      end: endOf(ev),
+      name: stripSchoolPrefix(ev.name, school),
+      grade: schoolGradeLabel(ev.targetGrades),
+      gradeClass: mockGradeClass(ev.targetGrades),
+      optional: isOptionalMock(ev),
+    });
+  }
+  const kindRank = { exam: 0, mock: 1 };
+  return [...bySchool.entries()]
+    .sort(([a], [b]) => compareJa(a, b))
+    .map(([school, rows]) => ({
+      school,
+      rows: rows.sort(
+        (a, b) =>
+          a.date.localeCompare(b.date) ||
+          kindRank[a.kind] - kindRank[b.kind] ||
+          (a.record.id ?? 0) - (b.record.id ?? 0)
+      ),
+    }));
+}
+
+/** 考査日の並び (「11/26・27・30・12/1・2」。同じ月は日だけ) */
+export function examDatesText(dates) {
+  let prevMonth = null;
+  return (dates || [])
+    .map((d) => {
+      const m = d.slice(5, 7);
+      const text = m === prevMonth ? String(Number(d.slice(8))) : fmtMD(d);
+      prevMonth = m;
+      return text;
+    })
+    .join("・");
+}
+
+// ─── ④ 年間カレンダー (B4・A3): バッジの下の説明の行 ────────────────────
+
+/**
+ * 年間カレンダーの B4・A3 の表示で、学校のバッジの下に出す説明の行。
+ * バッジは毎日並ぶので、名前は要るところだけに出す (毎日並べると読めなくなる):
+ *   テスト期間: その月で最初の日 (発表日・月の 1 日) と最初の考査日に
+ *     「2学期期末（高校部）考査発表 → 考査 11/26〜12/2」/「…考査 11/26〜12/2（5日）」
+ *   模試: 模試の日ごとに名前と対象学年 (何日か続く模試は始まりの日に「〜10/31」)
+ * monthStart: その月の 1 日 ("YYYY-MM-01")。
+ * 戻り値: [{ key, kind, school, text, grade?, gradeClass?, optional?, isStart }]
+ */
+export function schoolBadgeDetails(badge, ds, monthStart) {
+  const out = [];
+  for (const { exam, state } of badge?.exams || []) {
+    const firstVisible = exam.startDate > monthStart ? exam.startDate : monthStart;
+    const firstExam = state.kind === "exam" && state.index === 1;
+    if (ds !== firstVisible && !firstExam) continue;
+    const head = `${stripSchoolPrefix(exam.name, badge.school)}（${schoolGradeLabel(exam.targetGrades)}）`;
+    let text;
+    if (state.kind === "announce") text = `${head}考査発表 → 考査 ${examRangeText(exam)}`;
+    else if (state.kind === "period") text = `${head}テスト期間 ${examRangeText(exam)}`;
+    else text = `${head}考査 ${examRangeText(exam)}（${examDatesOf(exam).length}日）`;
+    out.push({ key: `e-${exam.id}`, kind: "exam", school: badge.school, text, isStart: true });
+  }
+  for (const ev of badge?.mocks || []) {
+    const end = endOf(ev);
+    const isStart = ds === ev.startDate;
+    const name = stripSchoolPrefix(ev.name, badge.school);
+    out.push({
+      key: `m-${ev.id}`,
+      kind: "mock",
+      school: badge.school,
+      text: isStart && end !== ev.startDate ? `${name} 〜${fmtMD(end)}` : name,
+      grade: schoolGradeLabel(ev.targetGrades),
+      gradeClass: mockGradeClass(ev.targetGrades),
+      optional: isOptionalMock(ev),
+      isStart,
+    });
+  }
+  return out;
 }
 
 /**

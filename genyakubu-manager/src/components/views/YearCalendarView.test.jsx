@@ -160,6 +160,27 @@ describe("YearCalendarView", () => {
     expect(JSON.parse(sessionStorage.getItem(SS_YEAR_CAL_KEY))).toMatchObject({ orient: "portrait" });
   });
 
+  it("紙の大きさは既定で A4。B4・A3 に切り替えると案内が出て、sessionStorage に残る", () => {
+    const { container } = renderView();
+    const group = screen.getByRole("group", { name: "紙の大きさ" });
+    expect(within(group).getByRole("button", { name: "A4" }).getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector(".year-cal-view--large")).toBeNull();
+    fireEvent.click(within(group).getByRole("button", { name: "B4・A3" }));
+    expect(container.querySelector(".year-cal-view--large")).toBeTruthy();
+    expect(screen.getByText(/印刷ダイアログの用紙サイズで B4 か A3 を選んでください/)).toBeTruthy();
+    expect(JSON.parse(sessionStorage.getItem(SS_YEAR_CAL_KEY))).toMatchObject({ paper: "large" });
+    // 紙の大きさは @page に書かない (印刷ダイアログで用紙を選ぶ)
+    const pageRule = container.querySelector(".year-cal-view > style").textContent;
+    expect(pageRule).not.toMatch(/@page\s*\{[^}]*(B4|A3|A4)/);
+  });
+
+  it("保存された紙の大きさが読めなければ A4 に戻す", () => {
+    sessionStorage.setItem(SS_YEAR_CAL_KEY, JSON.stringify({ ym: "2026-10", count: 1, paper: "B5" }));
+    renderView();
+    const group = screen.getByRole("group", { name: "紙の大きさ" });
+    expect(within(group).getByRole("button", { name: "A4" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
   it("保存された向きが読めなければ横に戻す", () => {
     sessionStorage.setItem(SS_YEAR_CAL_KEY, JSON.stringify({ ym: "2026-10", count: 1, orient: "sideways" }));
     renderView();
@@ -407,6 +428,57 @@ describe("YearCalendarView: 学校の考査・模試", () => {
       schoolFilter: { grade: "3" },
     });
     expect(title.textContent).toBe("2026年10月〜12月 (学校別の考査・模試 / 高3)");
+  });
+
+  it("B4・A3 のカレンダー: バッジの下に考査の範囲と模試の名前・対象学年 (A4 では出さない)", () => {
+    viewAt({ ym: "2026-11", count: 1 });
+    renderSchool();
+    const nov = () => month("2026年11月");
+    expect(within(nov()).queryByText("2学期期末（高校部）考査発表 → 考査 11/26〜12/2")).toBeNull();
+    expect(within(nov()).queryByText("3年全統マーク模試")).toBeNull();
+    fireEvent.click(within(screen.getByRole("group", { name: "紙の大きさ" })).getByRole("button", { name: "B4・A3" }));
+    // 考査: 発表日と最初の考査日だけ (毎日は並べない)
+    const announce = within(nov()).getByText("2学期期末（高校部）考査発表 → 考査 11/26〜12/2");
+    expect(announce.closest(".ycs-line").textContent).toBe("桜井2学期期末（高校部）考査発表 → 考査 11/26〜12/2");
+    expect(within(nov()).getAllByText("2学期期末（高校部）考査 11/26〜12/2（5日）")).toHaveLength(1);
+    // 模試: 学校・対象学年・名前
+    const mock = within(nov()).getByText("3年全統マーク模試").closest(".ycs-line");
+    expect(mock.textContent).toBe("桜井高33年全統マーク模試");
+    expect(mock.querySelector(".ysl-grade--g3")).toBeTruthy();
+    // 読み上げはバッジの全文で足りるので、説明の行は読み上げない
+    expect(mock.closest(".ycs-details").getAttribute("aria-hidden")).toBe("true");
+    // 12 月の紙面では 12/1 (11 月から続く考査) に名前を出す
+    fireEvent.click(screen.getByRole("button", { name: "次の月" }));
+    expect(within(month("2026年12月")).getAllByText("2学期期末（高校部）考査 11/26〜12/2（5日）")).toHaveLength(1);
+  });
+
+  it("学校別: A4 でも模試の札 (対象学年 + 名前) と学校ごとの一覧。B4・A3 は札に発表・考査の日付まで", () => {
+    viewAt({ ym: "2026-10", count: 3, display: "school" });
+    renderSchool();
+    const sakurai = screen.getByRole("group", { name: "桜井 の考査・模試" });
+    const label = within(sakurai).getByText("3年第8回校外模試(進研マーク)");
+    expect(label.closest(".ysl-mlabel").textContent).toBe("高33年第8回校外模試(進研マーク)");
+    // 札を押しても内訳が開く
+    fireEvent.click(label.closest(".ysl-mlabel"));
+    expect(screen.getByRole("dialog", { name: "桜井 模試" }).textContent).toContain("3年第8回校外模試(進研マーク)（高3）");
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    // A4 の札には発表・考査の日付を出さない
+    expect(within(sakurai).queryByText("発表 11/19 → 考査 11/26〜12/2（5日）")).toBeNull();
+
+    // 学校ごとの一覧 (日付順。テスト期間は考査の範囲・発表日・考査日)
+    const table = screen.getByRole("table", { name: "桜井 の考査・模試の一覧" });
+    const rows = within(table).getAllByRole("row").slice(2).map((r) => r.textContent);
+    expect(rows).toContain(
+      "11/26 (木)〜12/2 (水)考査2学期期末発表 11/19 (木) / 考査日 11/26・27・30・12/1・2（5日）高校部"
+    );
+    expect(rows).toContain("10/30 (金)〜10/31 (土)模試3年第8回校外模試(進研マーク)高3");
+    expect(rows[0]).toMatch(/^10\/3 \(土\)模試3年第6回校外模試\(進研記述\)高3$/);
+    expect(screen.getByRole("table", { name: "第一 の考査・模試の一覧" })).toBeTruthy();
+
+    fireEvent.click(within(screen.getByRole("group", { name: "紙の大きさ" })).getByRole("button", { name: "B4・A3" }));
+    expect(
+      within(screen.getByRole("group", { name: "桜井 の考査・模試" })).getByText("発表 11/19 → 考査 11/26〜12/2（5日）")
+    ).toBeTruthy();
   });
 
   it("学校の記録が無ければ学校別は案内だけ", () => {
