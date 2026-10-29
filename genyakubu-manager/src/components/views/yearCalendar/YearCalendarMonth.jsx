@@ -2,7 +2,7 @@ import { DayNumberLink } from "../../DayNumberLink";
 import { YEAR_CAL_LANES } from "../../../constants/yobikoEvents";
 import { buildMonthWeeks, shortDate } from "../../../utils/yearCalendar";
 import { fmtDateWeekday, formatDateRange } from "../../../utils/dateHelpers";
-import { SchoolBadgeStrip } from "./SchoolBadges";
+import { SchoolBadgeDetails, SchoolBadgeStrip } from "./SchoolBadges";
 
 const WEEK_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 const SUN_COLOR = "#c03030";
@@ -20,6 +20,10 @@ const SAT_HEAD = "#b3d1ff";
 // 段の見出しは左の列 (紙面でも段が読めるように、色だけに頼らない)。
 // 現役部の欄の先頭には学校の考査・模試のバッジを 1 行 (schoolBadgesByDate。
 // utils/schoolSchedule)。バッジにした記録は genyakuByDate に入っていない。
+// large (紙の大きさ「B4・A3」) はバッジの下に模試の名前・対象学年と考査の範囲。
+//
+// 罫線 (2026-10-29、紙面で読みやすく): 1 日 (日付 + 2 段) を太い枠で囲み、日付と
+// 段の間は細い線、予備校部と現役部の間は点線 (YearCalendarView の YEAR_CAL_CSS)。
 export function YearCalendarMonth({
   ym,
   todayStr,
@@ -28,6 +32,7 @@ export function YearCalendarMonth({
   marksByDate,
   genyakuByDate,
   schoolBadgesByDate,
+  large = false,
   openBadgeKey,
   onOpenBadge,
   onSelectDate,
@@ -108,6 +113,7 @@ export function YearCalendarMonth({
                     items={ds ? genyakuByDate.get(ds) : null}
                     onEdit={onEditGenyaku}
                     badges={ds ? schoolBadgesByDate?.get(ds) : null}
+                    detailMonth={large ? `${ym}-01` : null}
                     openBadgeKey={openBadgeKey}
                     onOpenBadge={onOpenBadge}
                   />
@@ -162,7 +168,7 @@ function DateCell({ ds, dow, isToday, marks, onSelectDate, onAddYobiko }) {
   );
 }
 
-function LaneCell({ ds, items, onEdit, badges, openBadgeKey, onOpenBadge }) {
+function LaneCell({ ds, items, onEdit, badges, detailMonth, openBadgeKey, onOpenBadge }) {
   if (!ds) return <td className="year-cal-out" />;
   return (
     <td className="year-cal-cell">
@@ -171,6 +177,7 @@ function LaneCell({ ds, items, onEdit, badges, openBadgeKey, onOpenBadge }) {
         <span className="year-cal-sr">{Number(ds.slice(8))}日 </span>
       )}
       <SchoolBadgeStrip ds={ds} badges={badges} openKey={openBadgeKey} onOpen={onOpenBadge} />
+      {detailMonth && <SchoolBadgeDetails ds={ds} badges={badges} monthStart={detailMonth} />}
       {(items || []).map((it) => (
         <LaneItem key={it.key} item={it} onEdit={onEdit} />
       ))}

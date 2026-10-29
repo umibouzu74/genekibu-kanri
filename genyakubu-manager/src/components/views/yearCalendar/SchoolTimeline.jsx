@@ -1,5 +1,10 @@
 import { useMemo } from "react";
-import { buildSchoolTimeline, daysBetween, mdRange } from "../../../utils/schoolSchedule";
+import {
+  buildSchoolTimeline,
+  daysBetween,
+  estimateTextPx,
+  mdRange,
+} from "../../../utils/schoolSchedule";
 import { eachDateStrInRange } from "../../../utils/dateHelpers";
 import { MOCK_GRADE_LABELS, SCHOOL_COLORS } from "./schoolScheduleStyle";
 
@@ -11,25 +16,66 @@ import { MOCK_GRADE_LABELS, SCHOOL_COLORS } from "./schoolScheduleStyle";
 //           帯の上に名前と対象学年)、下段に模試 (対象学年で色分け、希望者は点線)。
 //           重なる帯は段を分ける
 // 位置は日数に対する割合 (%) で置く (画面幅・紙面に追従させ、JS で幅を測らない)。
-// 画面で狭すぎるときだけ min-width を付けて横スクロールにする。土日の縦帯と今日の線。
-// 祝日の色付けはしない (全員が読める祝日のデータが無い。staffLeave のカレンダーは
-// adminData なので使わない)。
+// 画面で狭すぎるときだけ min-width を付けて横スクロールにする。土日の縦帯・月の
+// 境の線・今日の線。祝日の色付けはしない (全員が読める祝日のデータが無い。
+// staffLeave のカレンダーは adminData なので使わない)。
+//
+// 名前の札 (2026-10-29): テスト期間の帯の上に名前と対象学年 (B4・A3 では発表日・
+// 考査日も)、模試の点の右に対象学年と名前。札が隣の札に重ならないように、紙の
+// 幅 (PAPER_LAYOUT.trackPx) から札の幅を見積もって段を分け
+// (buildSchoolTimeline の labelDays)、それでも足りない分は同じ段の次の帯の手前で
+// 「…」で切る (roomDays)。全文は帯の title・内訳・下の学校ごとの一覧にある。
+// large = 紙の大きさ「B4・A3」: 字を大きくし、札に発表・考査の日付まで出す。
 
-const LABEL_PX = 76;
 const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
 
-// 1 日に要る最小の幅 (px)。これより狭くなる画面では横スクロール
+// 紙の大きさごとの寸法。trackPx は横向きの紙で日付の欄が取れる幅の目安
+// (A4 = 297mm、B4 = 364mm から余白と学校名の列を引いたもの)。字の大きさは
+// schoolScheduleStyle の .ysl--large と合わせる
+const PAPER_LAYOUT = {
+  a4: { labelPx: 76, trackPx: 960, examFont: 10, mockFont: 9.5, gradeFont: 8.5 },
+  large: { labelPx: 96, trackPx: 1200, examFont: 11.5, mockFont: 11, gradeFont: 10 },
+};
+
+// 1 日に要る最小の幅 (px)。これより狭くなる画面では横スクロール (紙の幅の目安より
+// 狭い画面では、札が少し早めに「…」で切れる)
 const minDayPx = (days) => (days > 200 ? 2.6 : 5);
 
 const pct = (offset, days) => `${(offset / days) * 100}%`;
+// 同じ段の次の帯の手前まで (札の幅の上限)
+const roomWidth = (roomDays, days, gapPx = 4) => `calc(${pct(Math.max(roomDays, 0), days)} - ${gapPx}px)`;
 
-export function SchoolTimeline({ examPeriods, specialEvents, filter, from, to, todayStr, onOpen, openKey }) {
-  const tl = useMemo(
-    () => buildSchoolTimeline({ examPeriods, specialEvents, filter }, from, to),
-    [examPeriods, specialEvents, filter, from, to]
-  );
+// 札の文字
+const examLabelText = (band, large) => (large ? `${band.label} ${band.detail}` : band.label);
+const mockBarDays = (m) => m.endOffset - m.startOffset + 1;
+
+export function SchoolTimeline({
+  examPeriods,
+  specialEvents,
+  filter,
+  from,
+  to,
+  todayStr,
+  onOpen,
+  openKey,
+  large = false,
+}) {
+  const L = PAPER_LAYOUT[large ? "large" : "a4"];
+  const tl = useMemo(() => {
+    const pxPerDay = L.trackPx / (daysBetween(from, to) + 1);
+    // 札が帯の始まりから何日ぶん塞ぐか (見積もり)
+    const labelDays = (kind, it) => {
+      if (kind === "exam") return (estimateTextPx(examLabelText(it, large), L.examFont) + 12) / pxPerDay;
+      const barPx = Math.max(mockBarDays(it) * pxPerDay, 8);
+      const gradePx = estimateTextPx(it.grade, L.gradeFont) + 8;
+      const optPx = it.optional ? estimateTextPx("希望者", L.gradeFont) + 8 : 0;
+      return (barPx + 3 + gradePx + 3 + estimateTextPx(it.name, L.mockFont) + optPx + 6) / pxPerDay;
+    };
+    return buildSchoolTimeline({ examPeriods, specialEvents, filter }, from, to, { labelDays });
+  }, [examPeriods, specialEvents, filter, from, to, large, L]);
   const { days } = tl;
   const dates = useMemo(() => eachDateStrInRange(from, to), [from, to]);
+  const LABEL_PX = L.labelPx;
   const minWidth = Math.round(LABEL_PX + days * minDayPx(days));
 
   if (tl.schools.length === 0) {
@@ -43,24 +89,35 @@ export function SchoolTimeline({ examPeriods, specialEvents, filter, from, to, t
     );
   }
 
-  const showAllNums = days <= 45;
-  const showMondays = !showAllNums && days <= 200;
+  // 日付の数字: 狭いほど間引く (B4・A3 は 3 か月まで毎日、年度まで月曜)
+  const showAllNums = days <= (large ? 100 : 45);
+  const showMondays = !showAllNums && days <= (large ? 400 : 200);
   const todayOff = todayStr >= from && todayStr <= to ? daysBetween(from, todayStr) : null;
   const overlapDays = tl.examCounts.filter((c) => c.count >= 2).map((c) => c.date);
 
   return (
     <div className="ysl-scroll">
-      <div className="ysl" style={{ minWidth }}>
-        {/* 土日の縦帯 (行をまたいで 1 枚) */}
+      <div
+        className={`ysl${large ? " ysl--large" : ""}`}
+        style={{ minWidth, "--ysl-label": `${LABEL_PX}px` }}
+      >
+        {/* 土日の縦帯と月の境の線 (行をまたいで 1 枚) */}
         <div className="ysl-bg" aria-hidden="true">
           {dates.map((d, i) => {
             const dow = new Date(`${d}T00:00:00`).getDay();
-            if (dow !== 0 && dow !== 6) return null;
-            return <div key={d} className="ysl-we" style={{ left: pct(i, days), width: pct(1, days) }} />;
+            const monthLine =
+              i > 0 && d.endsWith("-01") ? (
+                <div key={`l-${d}`} className="ysl-mline" style={{ left: pct(i, days) }} />
+              ) : null;
+            if (dow !== 0 && dow !== 6) return monthLine;
+            return [
+              <div key={d} className="ysl-we" style={{ left: pct(i, days), width: pct(1, days) }} />,
+              monthLine,
+            ];
           })}
         </div>
 
-        <div className="ysl-row" style={{ height: 34 }}>
+        <div className="ysl-row ysl-row--dates">
           <div className="ysl-label" style={{ fontSize: 10, color: "#6b7480" }}>
             日付
           </div>
@@ -91,7 +148,7 @@ export function SchoolTimeline({ examPeriods, specialEvents, filter, from, to, t
           </div>
         </div>
 
-        <div className="ysl-row" style={{ height: 28 }}>
+        <div className="ysl-row ysl-row--count">
           <div className="ysl-label" style={{ fontSize: 11 }}>
             考査中<small>学校数</small>
           </div>
@@ -137,6 +194,7 @@ export function SchoolTimeline({ examPeriods, specialEvents, filter, from, to, t
                       key={b.exam.id}
                       band={b}
                       days={days}
+                      large={large}
                       open={openKey === `exam|${b.exam.id}`}
                       onOpen={onOpen}
                     />
@@ -146,19 +204,12 @@ export function SchoolTimeline({ examPeriods, specialEvents, filter, from, to, t
               {s.mockLanes.map((lane, li) => (
                 <div key={`m${li}`} className="ysl-lane ysl-lane--mock">
                   {lane.map((m) => (
-                    <button
+                    <MockMark
                       key={m.event.id}
-                      type="button"
-                      className={`ysl-mock ysl-mock--${m.gradeClass}${m.optional ? " ysl-mock--opt" : ""} inline-activate`}
-                      style={{
-                        left: pct(m.startOffset, days),
-                        width: pct(m.endOffset - m.startOffset + 1, days),
-                      }}
-                      title={`${m.title} — クリックで内訳`}
-                      aria-label={m.title}
-                      aria-haspopup="dialog"
-                      aria-expanded={openKey === `mock|${m.event.id}`}
-                      onClick={(e) => onOpen({ kind: "mock", record: m.event }, e.currentTarget)}
+                      mock={m}
+                      days={days}
+                      open={openKey === `mock|${m.event.id}`}
+                      onOpen={onOpen}
                     />
                   ))}
                 </div>
@@ -171,7 +222,7 @@ export function SchoolTimeline({ examPeriods, specialEvents, filter, from, to, t
           <div
             className="ysl-today no-print"
             aria-hidden="true"
-            style={{ left: `calc(${LABEL_PX}px + (100% - ${LABEL_PX}px) * ${(todayOff + 0.5) / days})` }}
+            style={{ left: `calc(var(--ysl-label) + (100% - var(--ysl-label)) * ${(todayOff + 0.5) / days})` }}
           >
             <span>今日</span>
           </div>
@@ -181,13 +232,18 @@ export function SchoolTimeline({ examPeriods, specialEvents, filter, from, to, t
   );
 }
 
-function ExamBand({ band, days, open, onOpen }) {
+function ExamBand({ band, days, large, open, onOpen }) {
   const len = band.endOffset - band.startOffset + 1;
   const hasDates = band.exam.examDates?.length > 0;
   return (
     <>
-      <div className="ysl-ename" style={{ left: pct(band.startOffset, days) }}>
+      <div
+        className="ysl-ename"
+        aria-hidden="true"
+        style={{ left: pct(band.startOffset, days), maxWidth: roomWidth(band.roomDays, days) }}
+      >
         {band.label}
+        {large && <span className="ysl-edetail"> {band.detail}</span>}
       </div>
       {band.announceOffset != null && (
         <div className="ysl-ann" style={{ left: pct(band.announceOffset + 0.5, days) }} />
@@ -210,6 +266,44 @@ function ExamBand({ band, days, open, onOpen }) {
           />
         ))}
       </button>
+    </>
+  );
+}
+
+// 模試: 日付の位置に点 (対象学年の色、希望者・冠模試は点線) と、その右に対象学年と
+// 名前の札。点がボタン (読み上げ名 = 全文)、札は同じ内訳を開く (読み上げは点で足りる)
+function MockMark({ mock: m, days, open, onOpen }) {
+  const span = mockBarDays(m);
+  const openIt = (e) => onOpen({ kind: "mock", record: m.event }, e.currentTarget);
+  return (
+    <>
+      <button
+        type="button"
+        className={`ysl-mock ysl-mock--${m.gradeClass}${m.optional ? " ysl-mock--opt" : ""} inline-activate`}
+        style={{ left: pct(m.startOffset, days), width: pct(span, days) }}
+        title={`${m.title} — クリックで内訳`}
+        aria-label={m.title}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={openIt}
+      />
+      <span
+        className="ysl-mlabel"
+        aria-hidden="true"
+        title={`${m.title} — クリックで内訳`}
+        style={{
+          // 点は 1 日の幅が狭くても 6px (.ysl-mock の min-width) あるので、その後ろから
+          left: `calc(max(${pct(m.startOffset + span, days)}, ${pct(m.startOffset, days)} + 6px) + 3px)`,
+          maxWidth: roomWidth(m.roomDays - span, days, 7),
+        }}
+        onClick={openIt}
+      >
+        <span className={`ysl-grade ysl-grade--${m.gradeClass}${m.optional ? " ysl-grade--opt" : ""}`}>
+          {m.grade}
+        </span>
+        {m.name}
+        {m.optional && <span className="ysl-optmark">希望者</span>}
+      </span>
     </>
   );
 }
@@ -255,6 +349,9 @@ export function SchoolTimelineLegend() {
       {item(sw({ background: C.count1 }), "考査中 1 校")}
       {item(sw({ background: C.count2 }), "2 校以上")}
       {item(sw({ background: "#f2f3f6", border: "1px solid #e3e5e8" }), "土日")}
+      <span style={{ fontSize: 11, color: "#555" }}>
+        模試の札 = 対象学年 + 名前 (「…」で切れたものは下の一覧に全文)
+      </span>
     </div>
   );
 }

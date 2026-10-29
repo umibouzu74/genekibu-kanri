@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SCHOOL_FILTER,
   buildSchoolBadges,
+  buildSchoolScheduleList,
   buildSchoolTimeline,
   describeExamDates,
   describeSchoolBadge,
+  estimateTextPx,
+  examDatesText,
   examDayState,
   gradeMatches,
   isSchoolBadgeExam,
@@ -12,6 +15,7 @@ import {
   mdRange,
   mockGradeClass,
   normalizeSchoolFilter,
+  schoolBadgeDetails,
   schoolKeyOf,
   stripSchoolPrefix,
 } from "./schoolSchedule";
@@ -260,5 +264,99 @@ describe("buildSchoolTimeline (付録 B)", () => {
     const b = tl.schools.find((s) => s.school === "桜井").examLanes.flat()[0];
     expect(b.endOffset).toBe(29); // 12/2 まで続くが 11/30 で切る
     expect(tl.schools.every((s) => s.mockLanes.length === 0)).toBe(true);
+  });
+});
+
+describe("B4・A3 の表示: 札・一覧・説明の行", () => {
+  it("札の幅の見積もりは全角 1 字・半角 0.6 字", () => {
+    expect(estimateTextPx("模試", 10)).toBe(20);
+    expect(estimateTextPx("10/31", 10)).toBe(30);
+    expect(estimateTextPx("（高3）", 10)).toBeCloseTo(36);
+  });
+
+  it("タイムラインの模試に名前・対象学年、テスト期間に発表・考査の説明。札の幅で段を分ける", () => {
+    const plain = buildSchoolTimeline(data, "2026-10-01", "2026-12-31");
+    const sakurai = (tl) => tl.schools.find((s) => s.school === "桜井");
+    const oct30 = sakurai(plain)
+      .mockLanes.flat()
+      .find((m) => m.event.startDate === "2026-10-30");
+    expect(oct30).toMatchObject({ name: "3年第8回校外模試(進研マーク)", grade: "高3", range: "10/30〜31" });
+    const [chukan] = sakurai(plain).examLanes.flat();
+    expect(chukan.detail).toBe("発表 10/6 → 考査 10/13〜16（4日）");
+    // 札が 10 日ぶん塞ぐなら、10/17 と 10/24 の模試 (7 日違い) は同じ段に並ばない
+    const labeled = buildSchoolTimeline(data, "2026-10-01", "2026-12-31", {
+      labelDays: (kind) => (kind === "mock" ? 10 : 0),
+    });
+    const laneOf = (tl, date) =>
+      sakurai(tl).mockLanes.findIndex((l) => l.some((m) => m.event.startDate === date));
+    expect(laneOf(plain, "2026-10-17")).toBe(laneOf(plain, "2026-10-24"));
+    expect(laneOf(labeled, "2026-10-17")).not.toBe(laneOf(labeled, "2026-10-24"));
+    expect(sakurai(labeled).mockLanes.length).toBeGreaterThan(sakurai(plain).mockLanes.length);
+    // roomDays = 同じ段の次の帯までの日数 (札の幅の上限)
+    for (const lane of sakurai(labeled).mockLanes) {
+      lane.forEach((m, i) => {
+        const next = lane[i + 1];
+        expect(m.roomDays).toBe((next ? next.startOffset : labeled.days) - m.startOffset);
+        if (next) expect(m.roomDays).toBeGreaterThanOrEqual(10);
+      });
+    }
+  });
+
+  it("学校ごとの一覧: 考査の始まり / 模試の日付順。絞り込みと範囲が効く", () => {
+    const list = buildSchoolScheduleList(data, "2026-11-01", "2026-12-31");
+    expect(list.map((s) => s.school)).toEqual(["桜井", "第一"]);
+    const sakurai = list[0].rows;
+    expect(sakurai.map((r) => `${r.date} ${r.kind} ${r.name}`)).toEqual([
+      "2026-11-15 mock 3年全統マーク模試",
+      "2026-11-26 exam 2学期期末",
+      "2026-12-04 mock 大進研共通テストファイナル(3年)",
+      "2026-12-18 mock 1年小論文模試",
+      // 卒業考査は 12/23 発表、考査は 1/12〜 (12 月にかかるので載る)
+      "2027-01-12 exam 卒業考査",
+    ]);
+    const kimatsu = sakurai[1];
+    expect(kimatsu).toMatchObject({ end: "2026-12-02", announce: "2026-11-19", grade: "高校部" });
+    expect(examDatesText(kimatsu.examDates)).toBe("11/26・27・30・12/1・2");
+    expect(sakurai[2]).toMatchObject({ end: "2026-12-05", grade: "高3", gradeClass: "g3", optional: false });
+    // 希望者・冠模試は絞り込みで足す
+    const withOpt = buildSchoolScheduleList(
+      { ...data, filter: { ...DEFAULT_SCHOOL_FILTER, optional: true } },
+      "2026-11-01",
+      "2026-11-30"
+    );
+    const opt = withOpt[0].rows.find((r) => r.name === "3年国公立大オープン模試");
+    expect(opt).toMatchObject({ optional: true });
+    const g12 = buildSchoolScheduleList(
+      { ...data, filter: { ...DEFAULT_SCHOOL_FILTER, grade: "12" } },
+      "2026-11-01",
+      "2026-12-31"
+    );
+    expect(g12[0].rows.map((r) => r.name)).toEqual(["2学期期末", "1年小論文模試"]);
+  });
+
+  it("カレンダーの説明の行: 考査は発表日・月の初日・最初の考査日だけ、模試は毎日", () => {
+    const badges = buildSchoolBadges(data, "2026-10-01", "2026-12-31");
+    const sakuraiOn = (ds) => badges.get(ds).find((b) => b.school === "桜井");
+    const lines = (ds, month) => schoolBadgeDetails(sakuraiOn(ds), ds, month).map((l) => l.text);
+    expect(lines("2026-11-19", "2026-11-01")).toEqual(["2学期期末（高校部）考査発表 → 考査 11/26〜12/2"]);
+    expect(lines("2026-11-20", "2026-11-01")).toEqual([]);
+    expect(lines("2026-11-26", "2026-11-01")).toEqual(["2学期期末（高校部）考査 11/26〜12/2（5日）"]);
+    expect(lines("2026-11-27", "2026-11-01")).toEqual([]);
+    // 12 月の紙面では 12/1 に名前を出す (11 月から続いている)
+    expect(lines("2026-12-01", "2026-12-01")).toEqual(["2学期期末（高校部）考査 11/26〜12/2（5日）"]);
+    // 模試: 対象学年と、続く模試は始まりの日に「〜」
+    const [mock] = schoolBadgeDetails(sakuraiOn("2026-10-30"), "2026-10-30", "2026-10-01");
+    expect(mock).toMatchObject({
+      kind: "mock",
+      text: "3年第8回校外模試(進研マーク) 〜10/31",
+      grade: "高3",
+      gradeClass: "g3",
+      isStart: true,
+    });
+    const next = schoolBadgeDetails(sakuraiOn("2026-10-31"), "2026-10-31", "2026-10-01");
+    expect(next.map((l) => `${l.text}|${l.grade}|${l.isStart}`)).toEqual([
+      "3年第8回校外模試(進研マーク)|高3|false",
+      "1・2年第2回校外模試(進研記述)|高1・高2|true",
+    ]);
   });
 });

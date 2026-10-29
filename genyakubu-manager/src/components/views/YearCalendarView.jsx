@@ -37,6 +37,7 @@ import { YobikoBulkImportDialog } from "./yearCalendar/YobikoBulkImportDialog";
 import { SchoolBadgeLegend } from "./yearCalendar/SchoolBadges";
 import { SchoolSchedulePopover } from "./yearCalendar/SchoolSchedulePopover";
 import { SchoolTimeline, SchoolTimelineLegend } from "./yearCalendar/SchoolTimeline";
+import { SchoolScheduleList } from "./yearCalendar/SchoolScheduleList";
 import { SCHOOL_SCHEDULE_CSS } from "./yearCalendar/schoolScheduleStyle";
 import {
   SCHOOL_GRADE_FILTERS,
@@ -68,6 +69,12 @@ import {
 // 絞り込み (学年・発表〜考査・模試・希望者) はバッジとタイムラインだけに効く。
 // 表示・絞り込みは期間と同じく sessionStorage (使用統計は取らない)。バッジ・
 // 帯を押すと内訳のポップオーバー (管理者は記録ごとに「編集」)。
+//
+// 紙の大きさ「A4 / B4・A3」(2026-10-29): B4・A3 は大きい紙に刷る前提で、画面も
+// 同じ表示になる。字を大きくし、カレンダーはバッジの下に模試の名前・対象学年と
+// 考査の範囲、学校別は札に発表・考査の日付まで出す。学校別は A4 でも模試の札と
+// 学校ごとの一覧を出す (縦に余裕があるため)。紙の大きさは @page に書かない
+// (印刷ダイアログで用紙を選ぶ。向きと同じ理由)。
 
 export const SS_YEAR_CAL_KEY = "genyakubu:yearCalendar";
 const COUNT_OPTIONS = [1, 3, 6, 12];
@@ -78,6 +85,17 @@ const ORIENT_OPTIONS = [
   { key: "portrait", label: "縦" },
 ];
 const DEFAULT_ORIENT = "landscape";
+// 紙の大きさ。large = B4・A3 (字を大きくし、名前・対象学年まで出す)
+const PAPER_OPTIONS = [
+  { key: "a4", label: "A4", title: "A4 の紙に収まる表示" },
+  {
+    key: "large",
+    label: "B4・A3",
+    title:
+      "B4・A3 の紙を前提に、字を大きくして模試の名前・対象学年・考査の範囲まで出す (画面も同じ表示)。用紙は印刷ダイアログで選ぶ",
+  },
+];
+const DEFAULT_PAPER = "a4";
 // 表示: カレンダー (日ごと) / 学校別 (学校の考査・模試を学校ごとの横棒で比べる)
 const DISPLAY_OPTIONS = [
   { key: "calendar", label: "カレンダー" },
@@ -91,6 +109,7 @@ function loadViewState(todayYm) {
     count: DEFAULT_COUNT,
     lanes: { yobiko: true, genyaku: true },
     orient: DEFAULT_ORIENT,
+    paper: DEFAULT_PAPER,
     display: DEFAULT_DISPLAY,
     schoolFilter: normalizeSchoolFilter(null),
   };
@@ -103,11 +122,13 @@ function loadViewState(todayYm) {
     const genyaku = raw.lanes?.genyaku !== false;
     const orient = ORIENT_OPTIONS.some((o) => o.key === raw.orient) ? raw.orient : DEFAULT_ORIENT;
     const display = DISPLAY_OPTIONS.some((o) => o.key === raw.display) ? raw.display : DEFAULT_DISPLAY;
+    const paper = PAPER_OPTIONS.some((o) => o.key === raw.paper) ? raw.paper : DEFAULT_PAPER;
     return {
       ym,
       count,
       lanes: yobiko || genyaku ? { yobiko, genyaku } : fallback.lanes,
       orient,
+      paper,
       display,
       schoolFilter: normalizeSchoolFilter(raw.schoolFilter),
     };
@@ -151,7 +172,8 @@ export function YearCalendarView({
       return next;
     });
   };
-  const { ym, count, lanes, orient, display, schoolFilter } = viewState;
+  const { ym, count, lanes, orient, paper, display, schoolFilter } = viewState;
+  const large = paper === "large";
   const setSchoolFilter = (patch) =>
     setViewState((s) => ({ schoolFilter: { ...s.schoolFilter, ...patch } }));
 
@@ -278,7 +300,7 @@ export function YearCalendarView({
         .join(" / ");
 
   return (
-    <div className="year-cal-view">
+    <div className={`year-cal-view${large ? " year-cal-view--large" : ""}`}>
       <style>{YEAR_CAL_CSS + SCHOOL_SCHEDULE_CSS + yearCalPageRule(orient)}</style>
       <div
         className="no-print"
@@ -354,6 +376,21 @@ export function YearCalendarView({
         {(isSchoolView || lanes.genyaku) && (
           <SchoolFilterControls filter={schoolFilter} onChange={setSchoolFilter} />
         )}
+        <div role="group" aria-label="紙の大きさ" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+          <span style={{ fontSize: 11, color: colors.inkMuted }}>紙の大きさ</span>
+          {PAPER_OPTIONS.map((o) => (
+            <button
+              key={o.key}
+              type="button"
+              aria-pressed={paper === o.key}
+              onClick={() => setViewState({ paper: o.key })}
+              title={o.title}
+              style={{ ...S.btn(paper === o.key), fontSize: 11, padding: "4px 10px" }}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
         <div role="group" aria-label="印刷の向き" style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
           <span style={{ fontSize: 11, color: colors.inkMuted }}>印刷の向き</span>
           {ORIENT_OPTIONS.map((o) => (
@@ -370,6 +407,11 @@ export function YearCalendarView({
           ))}
         </div>
         <PrintButton />
+        {large && (
+          <span style={{ flexBasis: "100%", fontSize: 11, color: colors.inkMuted }}>
+            B4・A3 用の表示です。印刷するときは、印刷ダイアログの用紙サイズで B4 か A3 を選んでください。
+          </span>
+        )}
       </div>
 
       {/* 紙面だけの見出し (画面はトップバーの題と期間の操作で足りる)。トップバーの
@@ -398,16 +440,27 @@ export function YearCalendarView({
       )}
 
       {isSchoolView ? (
-        <SchoolTimeline
-          examPeriods={examPeriods}
-          specialEvents={specialEvents}
-          filter={schoolFilter}
-          from={from}
-          to={to}
-          todayStr={todayStr}
-          openKey={popover?.key}
-          onOpen={openTimelineItem}
-        />
+        <>
+          <SchoolTimeline
+            examPeriods={examPeriods}
+            specialEvents={specialEvents}
+            filter={schoolFilter}
+            from={from}
+            to={to}
+            todayStr={todayStr}
+            openKey={popover?.key}
+            onOpen={openTimelineItem}
+            large={large}
+          />
+          <SchoolScheduleList
+            examPeriods={examPeriods}
+            specialEvents={specialEvents}
+            filter={schoolFilter}
+            from={from}
+            to={to}
+            large={large}
+          />
+        </>
       ) : (
         <div className="year-cal-months">
           {months.map((m) => (
@@ -420,6 +473,7 @@ export function YearCalendarView({
               marksByDate={marksByDate}
               genyakuByDate={genyakuByDate}
               schoolBadgesByDate={schoolBadgesByDate}
+              large={large}
               openBadgeKey={popover?.key}
               onOpenBadge={openBadge}
               onSelectDate={onSelectDate}
@@ -759,8 +813,15 @@ function yearCalPageRule(orient) {
   return `\n@media print {\n  @page { size: ${size}; margin: 8mm; }\n}\n`;
 }
 
-// 表の見た目と紙面。段の間 (予備校部 / 現役部) は太い線、週の境は濃い線。
-// 塗り (休校日の黒など) は紙面でも出す (print-color-adjust)
+// 表の見た目と紙面 (2026-10-29 に紙面で読みやすく)。1 日 (日付 + 2 段) を太い枠で
+// 囲み、週の境は濃い線。日付と段の間は細い線、予備校部と現役部の間は点線。
+// border-collapse の表では同じ太さなら実線が点線に勝つので、段の線は上下を
+// 明示して点線どうしをぶつける (予備校部の下の線は引かない)。
+// 塗り (休校日の黒など) は紙面でも出す (print-color-adjust)。紙面ではアプリの
+// 灰色の地を白にする (この <style> はこの画面を開いている間だけ文書にある)。
+// .year-cal-view--large = 紙の大きさ「B4・A3」(字を大きく)
+const DAY_FRAME = "1.5px solid #5f6b7a";
+const WEEK_FRAME = "2px solid #3b4a5a";
 const YEAR_CAL_CSS = `
 .year-cal-months { display: grid; gap: 22px; }
 .year-cal-month-title { margin: 0 0 6px; font-size: 16px; font-weight: 800; }
@@ -770,6 +831,7 @@ const YEAR_CAL_CSS = `
   border-collapse: collapse;
   table-layout: fixed;
   background: #fff;
+  border: ${WEEK_FRAME};
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
@@ -785,10 +847,21 @@ const YEAR_CAL_CSS = `
   border: 1px solid #3b4a5a;
 }
 .year-cal-table thead th:first-child { background: #3b4a5a; }
-.year-cal-table td, .year-cal-table tbody th { border: 1px solid #d6d9de; vertical-align: top; }
+.year-cal-table td, .year-cal-table tbody th {
+  border: 0;
+  border-left: ${DAY_FRAME};
+  border-right: ${DAY_FRAME};
+  vertical-align: top;
+}
 .year-cal-week { break-inside: avoid; page-break-inside: avoid; }
-.year-cal-daterow td, .year-cal-daterow th { border-top: 2px solid #7a8290; }
-.year-cal-date { padding: 2px 4px; font-size: 12px; font-weight: 700; height: 1.6em; }
+/* 週の境 (日付の行の上と、週の最後の段の下) */
+.year-cal-daterow > td, .year-cal-daterow > th { border-top: ${WEEK_FRAME}; }
+.year-cal-week > tr:last-child > td, .year-cal-week > tr:last-child > th { border-bottom: ${WEEK_FRAME}; }
+/* 日付と段の間は細い線、予備校部と現役部の間は点線 */
+.year-cal-lane > td, .year-cal-lane > th { border-top: 1px solid #c3c8d0; }
+.year-cal-lane-yobiko + .year-cal-lane-genyaku > td,
+.year-cal-lane-yobiko + .year-cal-lane-genyaku > th { border-top: 2px dotted #6b7280; }
+.year-cal-date { padding: 2px 4px; font-size: 12px; font-weight: 700; height: 1.6em; background: #f7f8fa; }
 .year-cal-date-inner { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .year-cal-mark { font-size: 9px; font-weight: 600; opacity: .9; }
 .year-cal-add {
@@ -797,14 +870,13 @@ const YEAR_CAL_CSS = `
 }
 .year-cal-add:hover, .year-cal-add:focus-visible { opacity: 1; }
 .year-cal-today { outline: 2px solid #e67a00; outline-offset: -2px; }
-.year-cal-out { background: #f3f4f6; }
+.year-cal-out { background: #eceef1 !important; }
 .year-cal-cell { padding: 2px; height: 2.2em; }
 .year-cal-lane-head {
   font-size: 10px; font-weight: 700; padding: 2px; text-align: center; white-space: nowrap;
   vertical-align: middle !important; line-height: 1.25;
 }
-.year-cal-daterow .year-cal-lane-head { background: #fafafa; }
-.year-cal-lane-genyaku td, .year-cal-lane-genyaku th { border-top: 2px solid #4a5260; }
+.year-cal-daterow .year-cal-lane-head { background: #f7f8fa; }
 @media screen {
   /* 期間の続きの日は薄く (紙面では薄くしない。小さい字がさらに読めなくなる) */
   .year-cal-cont { opacity: .65; }
@@ -814,13 +886,36 @@ const YEAR_CAL_CSS = `
   clip: rect(0 0 0 0); white-space: nowrap;
 }
 .year-cal-print-title { display: none; }
+
+/* B4・A3: 字を大きく */
+.year-cal-view--large .year-cal-table { min-width: 980px; }
+.year-cal-view--large .year-cal-month-title { font-size: 19px; }
+.year-cal-view--large .year-cal-lane-col { width: 5.4em; }
+.year-cal-view--large .year-cal-table thead th { font-size: 13.5px; }
+.year-cal-view--large .year-cal-date { font-size: 15px; }
+.year-cal-view--large .year-cal-mark { font-size: 10.5px; }
+.year-cal-view--large .year-cal-lane-head { font-size: 12px; }
+.year-cal-view--large .year-cal-item { font-size: 12px !important; }
+.year-cal-view--large .ycs-chip { font-size: 12px; height: 20px; }
+.year-cal-view--large .year-cal-legend span,
+.year-cal-view--large .year-cal-legend b { font-size: 12px !important; }
+
 @media print {
+  .app-shell { background: #fff !important; }
   .year-cal-print-title { display: block; margin: 0 0 4px; font-size: 14px; }
   .year-cal-months { display: block; }
   .year-cal-month { overflow: visible; }
   .year-cal-month + .year-cal-month { break-before: page; page-break-before: always; }
-  .year-cal-table { min-width: 0; }
+  .year-cal-table { min-width: 0 !important; }
   .year-cal-item { font-size: 9px !important; }
   .year-cal-today { outline: none; }
+  .year-cal-view--large .year-cal-print-title { font-size: 17px; }
+  .year-cal-view--large .year-cal-month-title { font-size: 20px; }
+  .year-cal-view--large .year-cal-date { font-size: 16px; }
+  .year-cal-view--large .year-cal-item { font-size: 11.5px !important; }
+  .year-cal-view--large .ycs-chip { font-size: 11.5px; height: 18px; padding: 0 4px; }
+  .year-cal-view--large .ycs-line { font-size: 11px; }
+  .year-cal-view--large .ycs-line .ysl-grade,
+  .year-cal-view--large .ycs-line .ysl-optmark { font-size: 10px; line-height: 13px; }
 }
 `;

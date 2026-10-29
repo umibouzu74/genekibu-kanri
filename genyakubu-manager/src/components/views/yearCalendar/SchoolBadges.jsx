@@ -1,4 +1,4 @@
-import { describeSchoolBadge, examDayMark } from "../../../utils/schoolSchedule";
+import { describeSchoolBadge, examDayMark, schoolBadgeDetails } from "../../../utils/schoolSchedule";
 import { fmtMDWeekday } from "../../../utils/dateHelpers";
 import { SCHOOL_COLORS } from "./schoolScheduleStyle";
 
@@ -21,6 +21,37 @@ export function SchoolBadgeStrip({ ds, badges, openKey, onOpen }) {
           open={openKey === `${ds}|${b.school}`}
           onOpen={onOpen}
         />
+      ))}
+    </div>
+  );
+}
+
+// 紙の大きさ「B4・A3」だけ: バッジの下に説明の行 (utils/schoolSchedule.schoolBadgeDetails)。
+//   考査 = 発表日・その月の最初の日・最初の考査日に「2学期期末（高校部）考査 11/26〜12/2」
+//   模試 = 模試の日ごとに学校・対象学年・名前 (希望者・冠模試は点線)
+// 全文はバッジの読み上げ名にあるので、読み上げからは外す (aria-hidden)。
+// 続きの日 (2 日続く模試の 2 日目) は画面だけ薄く (.year-cal-cont)
+export function SchoolBadgeDetails({ ds, badges, monthStart }) {
+  const lines = (badges || []).flatMap((b) => schoolBadgeDetails(b, ds, monthStart));
+  if (lines.length === 0) return null;
+  return (
+    <div className="ycs-details" aria-hidden="true">
+      {lines.map((l) => (
+        <div
+          key={`${l.school}|${l.key}`}
+          className={`ycs-line ycs-line--${l.kind}${l.optional ? " ycs-line--opt" : ""}${
+            l.isStart ? "" : " year-cal-cont"
+          }`}
+        >
+          <b className="ycs-line-school">{l.school}</b>
+          {l.kind === "mock" && (
+            <span className={`ysl-grade ysl-grade--${l.gradeClass}${l.optional ? " ysl-grade--opt" : ""}`}>
+              {l.grade}
+            </span>
+          )}
+          {l.text}
+          {l.optional && <span className="ysl-optmark">希望者</span>}
+        </div>
       ))}
     </div>
   );
