@@ -150,11 +150,31 @@ export function buildKoshuLessons(project, { todayYmd } = {}) {
         index,
       });
     });
+    // 丸ごと合同 (講習の ClassEntity.mergedInto、B4) は相手のクラスと 1 件: 従うクラスの
+    // セル (温存しているだけ) は出さず、相手のクラスの名前・教室に並べる
+    const rawClasses = tab.config?.classes || [];
+    const rawById = new Map(rawClasses.map((c) => [c.id, c]));
+    const leaderOf = (c) => {
+      if (c?.mergedInto == null || c.mergedInto === c.id) return null;
+      const lead = rawById.get(c.mergedInto);
+      return lead && lead.mergedInto == null ? lead : null;
+    };
+    const roomOf = (c) => (typeof c?.room === "string" ? c.room.trim() : "");
     const classById = new Map(
-      (tab.config?.classes || []).map((c, index) => [
-        c.id,
-        { label: c.label, room: typeof c.room === "string" ? c.room.trim() : "", index },
-      ])
+      rawClasses
+        .filter((c) => !leaderOf(c))
+        .map((c, index) => {
+          const followers = rawClasses.filter((x) => leaderOf(x)?.id === c.id);
+          const rooms = [roomOf(c), ...followers.map(roomOf)];
+          return [
+            c.id,
+            {
+              label: [c.label, ...followers.map((x) => x.label)].join("・"),
+              room: followers.length && rooms.some(Boolean) ? rooms.map((r) => r || "?").join("/") : roomOf(c),
+              index,
+            },
+          ];
+        })
     );
 
     const grouped = new Map();

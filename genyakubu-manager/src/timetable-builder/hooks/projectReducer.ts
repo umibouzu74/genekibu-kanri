@@ -38,6 +38,8 @@ import { framePublishState, isPublishState, leastPublished, projectPublishState,
 import { computeCourseSplit, externalSessionContentKey, isExternalOnlyDate, normalizeSessionCourse } from '../utils/externalSessionShape';
 import { normalizeEventName } from '../utils/eventName';
 import { normalizeDayStreakRules, normalizeRegularLink } from '../utils/regularLink';
+import { applyWritesToSchedule } from '../utils/cellTsv';
+import type { CellWrite } from '../utils/cellTsv';
 import type { DayStreakRule, RegularClassLink, TeacherUsage } from '../types';
 import type {
   AvailabilityMark,
@@ -74,6 +76,7 @@ export type ProjectAction =
   | { type: 'config/setSubjectCount'; payload: { subject: string; value: unknown; tabId?: number } }
   | { type: 'config/setClassRoom'; payload: { classId: number; room: string; tabId?: number } }
   | { type: 'config/setClassRegular'; payload: { classId: number; regular: RegularClassLink | null; tabId?: number } }
+  | { type: 'config/setClassMerge'; payload: { classId: number; into: number | null; tabId?: number } }
   | { type: 'config/setClassSubjectCount'; payload: { subject: string; classId: number; value: unknown; tabId?: number } }
   | { type: 'config/setClassSubjectCountsMode'; payload: { tabId: number; enabled: boolean } }
   | { type: 'config/fillSubjectCounts'; payload: { tabId: number; value: unknown } }
@@ -137,7 +140,7 @@ export type ProjectAction =
   | { type: 'schedule/clearUnlocked' }
   | { type: 'schedule/applyPattern'; payload: { pat: Schedule; tabId?: number } }
   | { type: 'schedule/copyFromTab'; payload: { sourceTabId: number } }
-  | { type: 'schedule/importCells'; payload: { writes: Array<{ tabId: number; key: string; subject: string; teacher: string }> } }
+  | { type: 'schedule/importCells'; payload: { writes: CellWrite[] } }
   | { type: 'snapshot/save'; payload: { name: string; createdAt?: string | null } }
   | { type: 'snapshot/apply'; payload: { id: number } }
   | { type: 'snapshot/rename'; payload: { id: number; name: string } }
@@ -670,6 +673,34 @@ function applyAction(project: Project, action: ProjectAction): Project {
             return rest;
           }
           return { ...c, regular: next };
+        });
+        return changed ? { ...t, config: { ...t.config, classes } } : t;
+      });
+      return changed ? { ...project, tabs: newTabs } : project;
+    }
+    case 'config/setClassMerge': {
+      // 丸ごと合同 (B4)。classId を into のクラスに従わせる (null で外す)。従うクラスの
+      // セルは消さない (外すと戻る)。相手が誰かに従っている / 自分に従うクラスがある
+      // 組み合わせ (連鎖) はしない
+      const { classId, into, tabId } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      let changed = false;
+      const newTabs = project.tabs.map(t => {
+        if (t.id !== targetId) return t;
+        const list = t.config.classes || [];
+        const target = list.find(c => c.id === classId);
+        if (!target) return t;
+        if (into != null) {
+          const lead = list.find(c => c.id === into);
+          if (!lead || lead.id === classId || lead.mergedInto != null) return t;
+          if (list.some(c => c.mergedInto === classId)) return t;
+        }
+        const classes = list.map(c => {
+          if (c.id !== classId) return c;
+          if ((c.mergedInto ?? null) === (into ?? null)) return c;
+          changed = true;
+          const { mergedInto: _m, ...rest } = c;
+          return into == null ? rest : { ...rest, mergedInto: into };
         });
         return changed ? { ...t, config: { ...t.config, classes } } : t;
       });
@@ -2154,14 +2185,10 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const newTabs = project.tabs.map(tab => {
         const list = byTab.get(tab.id);
         if (!list) return tab;
-        const schedule = { ...tab.schedule };
-        list.forEach(w => {
-          if (!w.subject && !w.teacher) return;
-          if (schedule[w.key]?.locked) return;
-          schedule[w.key] = { subject: w.subject, teacher: w.teacher };
-          changed = true;
-        });
-        return { ...tab, schedule };
+        // 表の貼り付け (B5) の clear / locked / overrideLock も同じ規則 (cellTsv)
+        const r = applyWritesToSchedule(tab.schedule || {}, list);
+        if (r.changed) changed = true;
+        return { ...tab, schedule: r.schedule };
       });
       if (!changed) return project;
       return cleanSchedule({ ...project, tabs: newTabs });

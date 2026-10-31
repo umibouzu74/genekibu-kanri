@@ -3,6 +3,7 @@ import type { Dispatch } from 'react';
 import { makeKey } from '../utils/scheduleKey';
 import type { ProjectAction } from './projectReducer';
 import type { Schedule } from '../types';
+import type { CellWrite } from '../utils/cellTsv';
 
 type CellField = 'subject' | 'teacher';
 type HeaderType = 'date' | 'period' | 'class';
@@ -73,7 +74,7 @@ export function useScheduleActions(dispatch: Dispatch<ProjectAction>, currentSch
     copyScheduleFromTab: (sourceTabId: number) =>
       dispatch({ type: 'schedule/copyFromTab', payload: { sourceTabId } }),
     // 前の講習の時間割を写す (utils/timetableCopy.planTimetableCopy の writes)
-    importScheduleCells: (writes: Array<{ tabId: number; key: string; subject: string; teacher: string }>) =>
+    importScheduleCells: (writes: CellWrite[]) =>
       dispatch({ type: 'schedule/importCells', payload: { writes } }),
   }), [dispatch, currentSchedule]);
 }

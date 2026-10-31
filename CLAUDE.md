@@ -739,6 +739,28 @@ Provider、読むのは `planningContextValue.usePlanning`)。自動作成は wo
   (`resolveDateLabelsYmd` で年ごと解く。日曜など授業の無い日をはさむと途切れる)。違反は
   ⚠ の内訳に (`computeStreakViolations`、→ で最初の日のセルへ)、自動作成ではハード制約
 
+## 講習のクラスの丸ごと合同・セルの表 (2026-10-31)
+
+- **丸ごと合同 (B4)**: `ClassEntity.mergedInto` = 同じタブの相手のクラス id (3A404 →
+  3A403。⚙ 基本設定の「🏫 クラスと教室」の「丸ごと合同」)。科目単位の合同
+  (`combinedGroups`) とは別物で、全科目・全日程。`scheduleKey.mergedClassesForTab` が
+  従うクラスを外し、相手に `mergedWith` (保存しない) を付ける。**`effectiveConfigForTab`
+  がこれを通す**ので、時間割の列・自動作成・分析・講師の計 (`tabUsage`)・Excel・配布用・
+  本体の月間 (`builderLessons`) は 1 件 (名前は「3A403・3A404」、教室は「403/404」、
+  `classRoom.classDisplayLabel` / `classLabelWithRoom`)。従うクラスのセルは消さずに
+  `tab.schedule` に残る (`cleanSchedule` は `tab.config.classes` を見る) ので、外すと戻る。
+  **クラスの名前・一覧を書き戻す画面は `tab.config.classes` を使う** (effective のクラスを
+  書き戻すと従うクラスが消える。BasicSettings の `rawClasses`)。連鎖 (従うクラスに従う) は
+  作らない (reducer と migrate で止める)。スナップショットはセルだけなので、合同の切替とは独立
+- **セルの表 (B5)**: `utils/cellTsv` + `components/CellTsvDialog` (タブの「⋯ タブの操作」→
+  「📋 セルを表で書き出す・貼り付ける」)。列は タブ / 日付 / 時限 / クラス / 科目 / 講師 /
+  ロック。書き出しは使う日・時限の全部のセル (空も)。貼り付けは貼った行のセルだけ、科目と
+  講師を両方空にした行は空に。ロックの列があればその通り (ロックしたセルも書き換える)、
+  無ければロックしたセルは書き換えない。「確認」で行ごとの結果と、貼った後に**新しく増える**
+  NG・講師の重なり・日上限を出す。適用は `schedule/importCells` の 1 アクション (Undo 1 回)。
+  `importCells` の書き込みは `cellTsv.applyWritesToSchedule` の規則 (clear / locked /
+  overrideLock。旗の無い従来の書き込みは従来どおり)。合同の伝播はしない (行で明示する)
+
 ## 講習時間割作成の罫線・ボタンの土台 (2026-10-09)
 
 講習時間割作成は Tailwind の preflight を読み込んでいない (親アプリへの波及を

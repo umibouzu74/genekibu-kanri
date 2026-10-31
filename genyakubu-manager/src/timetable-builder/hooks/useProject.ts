@@ -140,6 +140,11 @@ export function useProject(options: HistoryStackOptions) {
     dispatch({ type: 'config/setClassRegular', payload: { classId, regular, tabId } });
   }, [dispatch]);
 
+  // 丸ごと合同 (B4)。into = 従わせる相手のクラス id (null で外す)
+  const handleSetClassMerge = useCallback((classId: number, into: number | null, tabId?: number) => {
+    dispatch({ type: 'config/setClassMerge', payload: { classId, into, tabId } });
+  }, [dispatch]);
+
   // tabId 省略時はアクティブタブを更新 (従来挙動)。タブ別に編集する画面は
   // 対象タブの id を明示で渡す。
   const handleSubjectCountChange = useCallback((subject: string, value: unknown, tabId?: number) => {
@@ -321,6 +326,7 @@ export function useProject(options: HistoryStackOptions) {
     handleListConfigChange,
     handleSetClassRoom,
     handleSetClassRegular,
+    handleSetClassMerge,
     handleSubjectCountChange,
     handleClassSubjectCountChange,
     setClassSubjectCountsMode,

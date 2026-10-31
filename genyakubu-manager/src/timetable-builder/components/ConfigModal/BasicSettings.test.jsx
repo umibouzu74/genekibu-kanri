@@ -323,7 +323,7 @@ describe('BasicSettings — クラスと教室', () => {
 
   it('教室は欄を離れたときに handleSetClassRoom(クラス id, 教室) で確定する', () => {
     const handleSetClassRoom = vi.fn();
-    renderSettings({ overrides: { currentConfig: { classes }, handleSetClassRoom, handleRenameHeader: vi.fn() } });
+    renderSettings({ overrides: { currentConfig: { classes }, activeTab: { id: 1, name: 'tab', config: { classes } }, handleSetClassRoom, handleRenameHeader: vi.fn() } });
     const room = screen.getByLabelText('クラス「3A」の教室');
     expect(room).toHaveValue('403');
     fireEvent.change(room, { target: { value: '404' } });
@@ -334,7 +334,7 @@ describe('BasicSettings — クラスと教室', () => {
 
   it('クラス名を直すと handleRenameHeader で改名する (コマ・合同を引き継ぐ)。同じ名前は止める', () => {
     const handleRenameHeader = vi.fn();
-    const { uiValue } = renderSettings({ overrides: { currentConfig: { classes }, handleSetClassRoom: vi.fn(), handleRenameHeader } });
+    const { uiValue } = renderSettings({ overrides: { currentConfig: { classes }, activeTab: { id: 1, name: 'tab', config: { classes } }, handleSetClassRoom: vi.fn(), handleRenameHeader } });
     const name = screen.getByLabelText('クラス「3S401」の名前');
     fireEvent.change(name, { target: { value: '3S' } });
     fireEvent.keyDown(name, { key: 'Enter' });
@@ -347,7 +347,7 @@ describe('BasicSettings — クラスと教室', () => {
 
   it('Esc で編集を取り消す', () => {
     const handleSetClassRoom = vi.fn();
-    renderSettings({ overrides: { currentConfig: { classes }, handleSetClassRoom, handleRenameHeader: vi.fn() } });
+    renderSettings({ overrides: { currentConfig: { classes }, activeTab: { id: 1, name: 'tab', config: { classes } }, handleSetClassRoom, handleRenameHeader: vi.fn() } });
     const room = screen.getByLabelText('クラス「3A」の教室');
     fireEvent.change(room, { target: { value: '999' } });
     fireEvent.keyDown(room, { key: 'Escape' });

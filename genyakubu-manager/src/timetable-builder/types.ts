@@ -115,6 +115,14 @@ export interface ClassEntity extends Entity {
    * 例: 3S401 → {grade: "中3", classes: ["SS", "S"]}、1附属 → {grade: "附中1", classes: []}
    */
   regular?: RegularClassLink;
+  /**
+   * 丸ごと合同 (B4 2026-10-31、任意): このクラスを同じタブの id のクラスに従わせる
+   * (3A404 → 3A403)。オンの間はこのクラスの列を出さず、講師の計・NG・Excel・本体の
+   * 月間では相手のクラスと 1 件。このクラスの自前のセルは消さずに持っておき、外すと戻る
+   */
+  mergedInto?: number;
+  /** effectiveConfigForTab が付ける (保存しない): このクラスに従うクラス */
+  mergedWith?: ClassEntity[];
 }
 
 export interface RegularClassLink {

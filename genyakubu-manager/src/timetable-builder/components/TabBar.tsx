@@ -3,6 +3,7 @@ import { useUI } from '../contexts/uiContextValue';
 import { effectiveConfigForTab } from '../utils/scheduleKey';
 import { frameOfTab } from '../utils/frames';
 import { useEffect, useRef, useState } from 'react';
+import CellTsvDialog from './CellTsvDialog';
 
 export default function TabBar() {
   const {
@@ -23,6 +24,8 @@ export default function TabBar() {
   // sourceTabId: 右クリックしたタブ (そのタブからの複製を先頭に出す)
   const [menu, setMenu] = useState<{ x: number; y: number; tabId: number | null } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // セルを表 (TSV) で書き出す・貼り付ける (B5)
+  const [tsvOpen, setTsvOpen] = useState(false);
   useEffect(() => {
     if (!menu) return undefined;
     const onDown = (e: MouseEvent) => {
@@ -286,6 +289,13 @@ export default function TabBar() {
                 className="block w-full text-left px-3 py-1 hover:bg-builder-info-soft text-sm"
               >⧉ 「{t.name}」から複製…</button>
             ))}
+            <div className="my-1 border-t border-builder-border" />
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setMenu(null); setTsvOpen(true); }}
+              className="block w-full text-left px-3 py-1 hover:bg-builder-info-soft text-sm"
+            >📋 セルを表で書き出す・貼り付ける…</button>
             {target && (
               <>
                 <div className="my-1 border-t border-builder-border" />
@@ -308,6 +318,7 @@ export default function TabBar() {
           </div>
         );
       })()}
+      {tsvOpen && <CellTsvDialog onClose={() => setTsvOpen(false)} />}
     </div>
   );
 }
