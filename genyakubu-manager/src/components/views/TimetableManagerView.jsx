@@ -553,6 +553,7 @@ export function TimetableManagerView({
       <div id={timetableSectionAnchorId(TIMETABLE_SECTION.COHORT_CUTOFF)} style={anchorStyle}>
         <CohortCutoffEditor
           slots={slots}
+          timetables={timetables}
           displayCutoff={displayCutoff}
           onSave={onSaveDisplayCutoff}
           isAdmin={isAdmin}

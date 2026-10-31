@@ -552,6 +552,11 @@ export interface CohortCutoff {
   label: string; // 表示用 (例: "高1 高松西", "中1 火金")
   grade: string; // 対象学年 (グルーピング・表示用)
   date: string | null; // "YYYY-MM-DD" 終講日。null = グループ設定にフォールバック
+  // この終講日が効く時間割 (A1、2026-10-31)。付いていればその時間割のコマにだけ
+  // 効く (前の期の終講日を残したまま次の期を作れる)。無い旧データはどの時間割の
+  // コマにも効く。読み込みのたびに cohorts.resolveCohortTimetables が補い、
+  // コース別終講日の画面で保存したときに書かれる
+  timetableId?: number;
 }
 
 export interface DisplayCutoff {

@@ -86,6 +86,7 @@ import {
   listOrphanDetection,
 } from "./utils/orphanCleanup";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { resolveCohortTimetables } from "./utils/cohorts";
 import { useAppData } from "./hooks/useAppData";
 import { usePrintJobs } from "./hooks/usePrintJobs";
 import "./styles/appShell.css";
@@ -289,7 +290,7 @@ export default function App() {
     saveAdjustments,
     timetables,
     saveTimetables,
-    displayCutoff,
+    displayCutoff: storedDisplayCutoff,
     saveDisplayCutoff,
     examPeriods,
     saveExamPeriods,
@@ -337,6 +338,14 @@ export default function App() {
     eventVisibility,
     saveEventVisibility,
   } = appData;
+
+  // コース別終講日のうち時間割の付いていない旧データに、終講日の時点の時間割を
+  // 補ったもの (A1。保存はしない)。どの画面もこちらを見る。コース別終講日の画面で
+  // 保存すると補った値ごと書かれる (utils/cohorts.resolveCohortTimetables)
+  const displayCutoff = useMemo(
+    () => resolveCohortTimetables(storedDisplayCutoff, timetables, slots),
+    [storedDisplayCutoff, timetables, slots]
+  );
 
   // 講習時間割作成 (builder) の季節ごと (春期 / 夏期 / 冬期) の project を
   // 読み取り専用で購読し、個人月間スケジュール (MonthView) に載せる講習コマへ

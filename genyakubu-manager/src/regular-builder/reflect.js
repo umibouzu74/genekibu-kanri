@@ -282,8 +282,10 @@ export function buildSwitchPlan({
           `（時間割管理 → 表示期間設定で延ばしてください）`
       );
     }
+    // 時間割の付いた終講日 (A1) は前の時間割のコマにしか効かないので、
+    // 新しい期を止めない。止めるのは時間割の付いていない旧データだけ
     const endedCohorts = (displayCutoff?.cohorts || []).filter(
-      (c) => c.date && c.date < startDate
+      (c) => c.date && c.date < startDate && c.timetableId == null
     );
     if (endedCohorts.length > 0) {
       warnings.push(
@@ -407,7 +409,10 @@ export function buildCutoffFollowUp({
   const groupLabels = groups
     .filter((g) => g.date && g.date < startDate)
     .map((g) => g.label);
-  const staleCohorts = cohorts.filter((c) => c.date && c.date < startDate);
+  // 時間割の付いた終講日 (A1) は前の期のまま残す (新しい期のコマには効かない)
+  const staleCohorts = cohorts.filter(
+    (c) => c.date && c.date < startDate && c.timetableId == null
+  );
   // 「オリエンを外す」の対象は、いま有効になっているグループだけ
   // (未設定 = 中学部のみ有効の既定にも追従する)。
   const orientationLabels = clearOrientation
@@ -424,7 +429,6 @@ export function buildCutoffFollowUp({
     return { ...empty, groupLabels, cohortCount: staleCohorts.length };
   }
 
-  const staleIds = new Set(staleCohorts.map((c) => c.id));
   const nextGroups = groups.map((g) => {
     const patch = {};
     if (followDates && g.date && g.date < startDate) patch.date = endDate || null;
@@ -436,7 +440,7 @@ export function buildCutoffFollowUp({
     next: {
       ...(displayCutoff || {}),
       groups: nextGroups,
-      cohorts: followDates ? cohorts.filter((c) => !staleIds.has(c.id)) : cohorts,
+      cohorts: followDates ? cohorts.filter((c) => !staleCohorts.includes(c)) : cohorts,
     },
     groupLabels,
     cohortCount: staleCohorts.length,

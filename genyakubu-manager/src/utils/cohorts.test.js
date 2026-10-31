@@ -259,3 +259,47 @@ describe("findCohortCutoff", () => {
     );
   });
 });
+
+describe("終講日と時間割 (A1)", () => {
+  it("時間割の付いた終講日はその時間割のコマにだけ効き、旧データより優先する", async () => {
+    const { findCohortCutoff } = await import("./cohorts");
+    const cohorts = [
+      { id: "M|中1|火金", date: "2026-12-18", timetableId: 3 },
+      { id: "M|中1|火金", date: "2026-07-17" }, // 旧データ (時間割なし)
+    ];
+    const t2 = { grade: "中1", day: "火", subj: "英語", timetableId: 3 };
+    const t3 = { grade: "中1", day: "火", subj: "英語", timetableId: 4 };
+    expect(findCohortCutoff(t2, cohorts).date).toBe("2026-12-18");
+    expect(findCohortCutoff(t3, cohorts).date).toBe("2026-07-17");
+    expect(findCohortCutoff(t3, [cohorts[0]])).toBe(null);
+  });
+
+  it("resolveCohortTimetables: 終講日の時点で有効な時間割を補う (保存はしない)", async () => {
+    const { resolveCohortTimetables } = await import("./cohorts");
+    const timetables = [
+      { id: 3, name: "2学期", startDate: "2026-09-01", endDate: "2026-12-21", grades: [] },
+      { id: 4, name: "3学期", startDate: "2027-01-07", endDate: null, grades: ["中1", "中2"] },
+    ];
+    const slots = [
+      { id: 1, grade: "中1", day: "火", subj: "英語", timetableId: 3 },
+      { id: 2, grade: "中1", day: "火", subj: "英語", timetableId: 4 },
+      { id: 3, grade: "中1-3", day: "土", subj: "プレップ", timetableId: 3 },
+    ];
+    const dc = {
+      groups: [],
+      cohorts: [
+        { id: "M|中1|火", date: "2026-12-18" },
+        { id: "M|中1-3|土", date: "2026-12-12" },
+        // 期と期の間の日付 = その日までに始まって最後に終わった時間割
+        { id: "M|中1|火", date: "2026-12-25", label: "gap" },
+        { id: "M|中1|火", date: null },
+      ],
+    };
+    const out = resolveCohortTimetables(dc, timetables, slots);
+    expect(out).not.toBe(dc);
+    expect(out.cohorts.map((c) => c.timetableId)).toEqual([3, 3, 3, undefined]);
+    // 全部付いていれば同じものを返す
+    const done = { groups: [], cohorts: [{ id: "M|中1|火", date: "2026-12-18", timetableId: 3 }] };
+    expect(resolveCohortTimetables(done, timetables, slots)).toBe(done);
+  });
+});

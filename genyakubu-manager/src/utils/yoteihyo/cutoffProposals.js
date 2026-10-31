@@ -50,10 +50,31 @@ export function lastHeldDate(course) {
  * }}
  */
 export function proposeCohortCutoffs({ merged, mapping, slots, displayCutoff }) {
-  const cohorts = deriveCohortsFromSlots(slots);
+  // コースは時間割ごとに作る (終講日は時間割に結び付く。A1)。key = 時間割 + コース
+  const byTimetable = new Map();
+  for (const s of slots || []) {
+    const tt = s.timetableId ?? 1;
+    if (!byTimetable.has(tt)) byTimetable.set(tt, []);
+    byTimetable.get(tt).push(s);
+  }
   const cohortBySlot = new Map();
-  for (const c of cohorts) for (const id of c.slotIds || []) cohortBySlot.set(id, c);
-  const saved = new Map((displayCutoff?.cohorts || []).filter((c) => c?.id).map((c) => [c.id, c]));
+  const cohortByKey = new Map();
+  for (const [tt, ttSlots] of byTimetable) {
+    for (const c of deriveCohortsFromSlots(ttSlots)) {
+      const entry = { ...c, timetableId: tt, key: cutoffKey(tt, c.id) };
+      cohortByKey.set(entry.key, entry);
+      for (const id of c.slotIds || []) cohortBySlot.set(id, entry);
+    }
+  }
+  const savedFor = (cohort) => {
+    let legacy = null;
+    for (const c of displayCutoff?.cohorts || []) {
+      if (!c || c.id !== cohort.id) continue;
+      if (c.timetableId === cohort.timetableId) return c;
+      if (c.timetableId == null && !legacy) legacy = c;
+    }
+    return legacy;
+  };
   const days = subjectDays(slots);
   const byCohort = new Map();
   const noCohort = [];
@@ -64,7 +85,7 @@ export function proposeCohortCutoffs({ merged, mapping, slots, displayCutoff }) 
     if (!last) continue;
     const keys = new Set(m.subjects);
     const mapped = (slots || []).filter((s) => keys.has(subjectKey(s.grade, s.subj)));
-    const ids = new Set(mapped.map((s) => cohortBySlot.get(s.id)?.id).filter(Boolean));
+    const ids = new Set(mapped.map((s) => cohortBySlot.get(s.id)?.key).filter(Boolean));
     if (!ids.size) {
       noCohort.push({ key: course.key, subjects: [...keys] });
       continue;
@@ -73,22 +94,24 @@ export function proposeCohortCutoffs({ merged, mapping, slots, displayCutoff }) 
     const family = merged.families?.get(course.family);
     const coverageEnd = (family?.ranges || []).map((r) => r.end).sort().pop() || last;
     for (const id of ids) {
-      if (!byCohort.has(id)) byCohort.set(id, { cohort: cohorts.find((c) => c.id === id), courses: [] });
+      if (!byCohort.has(id)) byCohort.set(id, { cohort: cohortByKey.get(id), courses: [] });
       byCohort.get(id).courses.push({ key: course.key, last, coverageEnd });
     }
   }
   const proposals = [];
   let unchanged = 0;
-  for (const [id, { cohort, courses }] of byCohort) {
+  for (const [key, { cohort, courses }] of byCohort) {
     const latest = courses.reduce((a, b) => (b.last > a.last ? b : a));
     const proposed = latest.last;
-    const current = saved.get(id)?.date || null;
+    const current = savedFor(cohort)?.date || null;
     if (current === proposed) {
       unchanged++;
       continue;
     }
     proposals.push({
-      cohortId: id,
+      key,
+      cohortId: cohort.id,
+      timetableId: cohort.timetableId,
       label: cohort.label,
       grade: cohort.grade,
       current,
@@ -110,21 +133,57 @@ export function proposeCohortCutoffs({ merged, mapping, slots, displayCutoff }) 
  */
 export function applyCohortCutoffs(displayCutoff, chosen) {
   const base = displayCutoff || { groups: [], cohorts: [] };
-  const ids = new Set(chosen.map((p) => p.cohortId));
-  const rest = (Array.isArray(base.cohorts) ? base.cohorts : []).filter((c) => !ids.has(c?.id));
+  const keys = new Set(chosen.map(proposalKey));
+  // 同じ時間割・コースの終講日を置き換える。時間割の付いていない旧データは
+  // ほかの時間割にも効いているので消さない (時間割の付いた方が優先される)
+  const rest = (Array.isArray(base.cohorts) ? base.cohorts : []).filter(
+    (c) => !(c && c.timetableId != null && keys.has(cutoffKey(c.timetableId, c.id)))
+  );
   return {
     ...base,
-    cohorts: [...rest, ...chosen.map((p) => ({ id: p.cohortId, label: p.label, grade: p.grade, date: p.proposed }))],
+    cohorts: [
+      ...rest,
+      ...chosen.map((p) => ({
+        id: p.cohortId,
+        label: p.label,
+        grade: p.grade,
+        date: p.proposed,
+        ...(p.timetableId != null ? { timetableId: p.timetableId } : {}),
+      })),
+    ],
   };
 }
 
+/** 時間割 + コース の key (proposals の key と同じ形) */
+export function cutoffKey(timetableId, cohortId) {
+  return `${timetableId ?? "*"}::${cohortId}`;
+}
+
+function proposalKey(p) {
+  return p.key || cutoffKey(p.timetableId, p.cohortId);
+}
+
+/** 「元に戻す」のために、案が置き換える今の終講日エントリを控える */
+export function previousCohortCutoffs(displayCutoff, chosen) {
+  const keys = new Set(chosen.map(proposalKey));
+  return (displayCutoff?.cohorts || []).filter(
+    (c) => c && keys.has(cutoffKey(c.timetableId, c.id))
+  );
+}
+
 /**
- * 「元に戻す」: ids のコースの終講日を previous (書き換える前のエントリ) に戻す。
+ * 「元に戻す」: 案 (chosen) の時間割・コースの終講日を previous (書き換える前の
+ * エントリ。previousCohortCutoffs) に戻す。
  * 前に無かったコースは消す。
  */
-export function restoreCohortCutoffs(displayCutoff, ids, previous = []) {
+export function restoreCohortCutoffs(displayCutoff, chosen, previous = []) {
   const base = displayCutoff || { groups: [], cohorts: [] };
-  const set = new Set(ids);
-  const rest = (Array.isArray(base.cohorts) ? base.cohorts : []).filter((c) => !set.has(c?.id));
-  return { ...base, cohorts: [...rest, ...previous.filter((c) => c && set.has(c.id))] };
+  const keys = new Set(chosen.map(proposalKey));
+  const rest = (Array.isArray(base.cohorts) ? base.cohorts : []).filter(
+    (c) => !(c && keys.has(cutoffKey(c.timetableId, c.id)))
+  );
+  return {
+    ...base,
+    cohorts: [...rest, ...previous.filter((c) => c && keys.has(cutoffKey(c.timetableId, c.id)))],
+  };
 }
