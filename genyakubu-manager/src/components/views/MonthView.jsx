@@ -1,3 +1,4 @@
+import { staffShiftPeriods } from "../../utils/examPrepHelpers";
 import { describeTeacherChange, listTeacherChanges } from "../../utils/teacherChangePlan";
 import { useCallback, useMemo } from "react";
 import {
@@ -244,12 +245,8 @@ export function MonthView({
       if (!sch) continue;
       for (const day of sch.days || []) {
         if (day.date < ep.startDate || day.date > ep.endDate) continue;
-        const nos = day.assignments?.[teacher];
-        if (!Array.isArray(nos) || nos.length === 0) continue;
-        const set = new Set(nos);
-        const shifts = (day.periods || [])
-          .filter((p) => set.has(p.no))
-          .sort((a, b) => a.no - b.no);
+        // 途中入り・途中抜け (staffTimes) で切り詰めた時刻 (examPrepHelpers)
+        const shifts = staffShiftPeriods(day, teacher);
         if (shifts.length > 0) m.set(day.date, shifts);
       }
     }

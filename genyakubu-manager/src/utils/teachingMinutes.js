@@ -32,6 +32,7 @@
 // 払う運用があるため)。種別ごとの分は選択に関係なく行に持っておき、合計・
 // コマ数・出勤日数は summarizeTeacherRow で選んだ種別だけから出す。
 
+import { staffShiftPeriods } from "./examPrepHelpers";
 import { activeTeachersOnDate } from "./absenceHelpers";
 import {
   buildAdjustmentIndex,
@@ -413,20 +414,17 @@ export function computeTeachingMinutes(args) {
       const d = day?.date;
       if (!inRange(d)) continue;
       if (d < ep.startDate || d > ep.endDate) continue;
-      const periodByNo = new Map((day.periods || []).map((p) => [p.no, p]));
-      for (const [name, nos] of Object.entries(day.assignments || {})) {
-        if (!Array.isArray(nos)) continue;
-        for (const no of nos) {
-          const p = periodByNo.get(no);
-          if (!p) continue;
+      // 途中入り・途中抜け (staffTimes) で切り詰めた時刻で数える (examPrepHelpers)
+      for (const name of Object.keys(day.assignments || {})) {
+        for (const p of staffShiftPeriods(day, name)) {
           const time = p.start && p.end ? `${p.start}-${p.end}` : p.start || "";
           add(
             name,
             d,
             time,
             "prep",
-            `${ep.name || "テスト期間"} 特訓 ${no}校時`,
-            `prep:${ep.id}:${no}`
+            `${ep.name || "テスト期間"} 特訓 ${p.no}校時${p.trimmed ? " (途中から・途中まで)" : ""}`,
+            `prep:${ep.id}:${p.no}`
           );
         }
       }

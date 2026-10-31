@@ -196,6 +196,8 @@ export interface ExamPrepDay {
   periods: ExamPrepPeriod[];
   // assignments[staffName] = 出勤する校時 no の配列
   assignments: Record<string, number[]>;
+  // 途中入り・途中抜け (C1)。空欄 = 校時どおり (utils/examPrepHelpers.staffShiftPeriods)
+  staffTimes?: Record<string, { from?: string; to?: string }>;
 }
 
 export interface ExamPrepSchedule {

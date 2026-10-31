@@ -519,6 +519,15 @@ export function isExamPrepSchedule(x: unknown): x is ExamPrepSchedule {
         if (!v.every((n) => isNumber(n))) return false;
       }
     }
+    // 途中入り・途中抜け (C1): { 名前: { from?, to? } }
+    if (d.staffTimes !== undefined) {
+      if (!isObject(d.staffTimes)) return false;
+      for (const v of Object.values(d.staffTimes)) {
+        if (!isObject(v)) return false;
+        if (v.from !== undefined && !isString(v.from)) return false;
+        if (v.to !== undefined && !isString(v.to)) return false;
+      }
+    }
   }
   return true;
 }

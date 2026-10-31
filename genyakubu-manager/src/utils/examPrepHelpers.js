@@ -9,6 +9,9 @@
 //           date: "YYYY-MM-DD",
 //           periods: [{ no, start: "HH:MM", end: "HH:MM" }, ...],
 //           assignments: { [staffName]: number[] }, // no の配列
+//           // 途中入り・途中抜け (任意。C1 2026-10-31)。空欄 = 校時どおり。
+//           // チェックした校時を from〜to で切り詰める (staffShiftPeriods)
+//           staffTimes?: { [staffName]: { from?: "HH:MM", to?: "HH:MM" } },
 //         },
 //         ...
 //       ],
@@ -44,13 +47,9 @@ export function getExamPrepShiftsForStaff(
     const sch = findScheduleByExamPeriodId(schedules, ep.id);
     const day = findDay(sch, dateStr);
     if (!day) continue;
-    const nos = day.assignments?.[staffName];
-    if (!Array.isArray(nos) || nos.length === 0) continue;
-    const set = new Set(nos);
-    for (const p of day.periods || []) {
-      if (set.has(p.no)) {
-        out.push({ no: p.no, start: p.start, end: p.end, examPeriodId: ep.id });
-      }
+    // 途中入り・途中抜け (staffTimes) で切り詰めた時刻
+    for (const p of staffShiftPeriods(day, staffName)) {
+      out.push({ ...p, examPeriodId: ep.id });
     }
   }
   // no 昇順
@@ -181,7 +180,8 @@ export function removeStaffFromSchedules(schedules, staffName) {
           if (!d.assignments || !(staffName in d.assignments)) return d;
           const { [staffName]: _removed, ...rest } = d.assignments;
           void _removed;
-          return { ...d, assignments: rest };
+          // 出勤を外したら来る・帰る時刻も消す
+          return withoutOrphanStaffTimes({ ...d, assignments: rest });
         })
         .filter((d) => (d.periods || []).length > 0);
       return { ...s, days };
@@ -228,8 +228,166 @@ export function copyDay(schedules, examPeriodId, fromDate, toDates) {
       assignments: Object.fromEntries(
         Object.entries(from.assignments || {}).map(([k, v]) => [k, [...v]])
       ),
+      // 途中入り・途中抜けの時刻も写す
+      ...(from.staffTimes && Object.keys(from.staffTimes).length > 0
+        ? {
+            staffTimes: Object.fromEntries(
+              Object.entries(from.staffTimes).map(([k, v]) => [k, { ...v }])
+            ),
+          }
+        : {}),
     };
     next = upsertDay(next, examPeriodId, cloned);
   }
   return next;
+}
+
+// ─── 途中入り・途中抜け (day.staffTimes、C1 2026-10-31) ────────────────
+// 紙の割当表の「18:30〜」「〜20:40」をそのまま持つ。講師ごとに来る時刻 (from) と
+// 帰る時刻 (to) を 1 組 (どちらか片方だけも可)。いったん抜けて戻る人は校時の
+// チェックで表す (1・2・5 校時)。実際の時間はチェックした各校時を from〜to で
+// 切り詰めたもので、切り詰めて 0 分になる校時は出さない。端を切るだけなので
+// 校時の間の空き (= バイト出勤表の「かたまり」) は変わらない。
+// **特訓の時刻を読むところ (月間・週間・授業時間の集計) は staffShiftPeriods を
+// 通す** (day.assignments と校時の時刻を直に組み合わせない)。
+
+const pad2 = (n) => String(n).padStart(2, "0");
+const minToStr = (m) => `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
+
+/**
+ * 時刻の入力を "HH:MM" にそろえる ("1830" / "18：30" / "9:5" → "09:05")。
+ * 読めなければ null、空なら ""。
+ */
+export function normalizeShiftTime(raw) {
+  const t = String(raw ?? "")
+    .normalize("NFKC")
+    .trim();
+  if (!t) return "";
+  let m = t.match(/^(\d{1,2}):(\d{1,2})$/);
+  if (!m) m = t.match(/^(\d{1,2})(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const mm = Number(m[2]);
+  if (h > 23 || mm > 59) return null;
+  return `${pad2(h)}:${pad2(mm)}`;
+}
+
+/** その日のその講師の来る・帰る時刻 ({from?, to?})。無ければ {} */
+export function staffTimeOf(day, staffName) {
+  const t = day?.staffTimes?.[staffName];
+  return t && typeof t === "object" ? t : {};
+}
+
+/**
+ * その日のその講師の出勤 (チェックした校時を来る・帰る時刻で切り詰めたもの)。
+ * @returns {{no: number, start: string, end: string, trimmed: boolean,
+ *            periodStart: string, periodEnd: string}[]} no 昇順
+ */
+export function staffShiftPeriods(day, staffName) {
+  const nos = day?.assignments?.[staffName];
+  if (!Array.isArray(nos) || nos.length === 0) return [];
+  const set = new Set(nos);
+  const { from, to } = staffTimeOf(day, staffName);
+  const fromMin = timeStrToMin(from);
+  const toMin = timeStrToMin(to);
+  const out = [];
+  for (const p of day.periods || []) {
+    if (!set.has(p.no)) continue;
+    const ps = timeStrToMin(p.start);
+    const pe = timeStrToMin(p.end);
+    if (Number.isNaN(ps) || Number.isNaN(pe)) {
+      out.push({ no: p.no, start: p.start, end: p.end, trimmed: false, periodStart: p.start, periodEnd: p.end });
+      continue;
+    }
+    const s0 = Number.isNaN(fromMin) ? ps : Math.max(ps, fromMin);
+    const e0 = Number.isNaN(toMin) ? pe : Math.min(pe, toMin);
+    if (s0 >= e0) continue;
+    out.push({
+      no: p.no,
+      start: minToStr(s0),
+      end: minToStr(e0),
+      trimmed: s0 !== ps || e0 !== pe,
+      periodStart: p.start,
+      periodEnd: p.end,
+    });
+  }
+  out.sort((a, b) => a.no - b.no);
+  return out;
+}
+
+/**
+ * 来る・帰る時刻を書いた day を返す。from / to が両方空ならその講師の分を消す。
+ * staffTimes が空になったらキーごと消す (RTDB は空のオブジェクトを消す)。
+ */
+export function setStaffTime(day, staffName, { from = "", to = "" } = {}) {
+  const entry = {};
+  if (from) entry.from = from;
+  if (to) entry.to = to;
+  const rest = { ...(day.staffTimes || {}) };
+  delete rest[staffName];
+  if (entry.from || entry.to) rest[staffName] = entry;
+  const { staffTimes: _drop, ...base } = day;
+  void _drop;
+  return Object.keys(rest).length > 0 ? { ...base, staffTimes: rest } : base;
+}
+
+/** 出勤 (assignments) の無い講師の来る・帰る時刻を消した day */
+export function withoutOrphanStaffTimes(day) {
+  if (!day?.staffTimes) return day;
+  const assigned = day.assignments || {};
+  let changed = false;
+  const rest = {};
+  for (const [name, t] of Object.entries(day.staffTimes)) {
+    if (Array.isArray(assigned[name]) && assigned[name].length > 0) rest[name] = t;
+    else changed = true;
+  }
+  if (!changed) return day;
+  const { staffTimes: _drop, ...base } = day;
+  void _drop;
+  return Object.keys(rest).length > 0 ? { ...base, staffTimes: rest } : base;
+}
+
+/**
+ * 来る・帰る時刻の注意 (保存は止めない)。
+ *   - order:   来る ≥ 帰る
+ *   - outside: チェックした校時の範囲の外 (来る時刻に最後の校時が終わっている /
+ *              帰る時刻に最初の校時が始まっていない)
+ *   - dropped: 切り詰めて 0 分になった校時がある (その校時は出さない)
+ * @returns {{name: string, kind: "order"|"outside"|"dropped", message: string}[]}
+ */
+export function staffTimeWarnings(day) {
+  const out = [];
+  for (const [name, t] of Object.entries(day?.staffTimes || {})) {
+    const nos = day.assignments?.[name];
+    if (!Array.isArray(nos) || nos.length === 0) continue;
+    const f = timeStrToMin(t?.from);
+    const e = timeStrToMin(t?.to);
+    if (!Number.isNaN(f) && !Number.isNaN(e) && f >= e) {
+      out.push({ name, kind: "order", message: `${name}: 来る時刻 ${t.from} が帰る時刻 ${t.to} 以後です` });
+      continue;
+    }
+    const checked = (day.periods || []).filter((p) => nos.includes(p.no));
+    const starts = checked.map((p) => timeStrToMin(p.start)).filter((x) => !Number.isNaN(x));
+    const ends = checked.map((p) => timeStrToMin(p.end)).filter((x) => !Number.isNaN(x));
+    if (starts.length === 0) continue;
+    const firstStart = Math.min(...starts);
+    const lastEnd = Math.max(...ends);
+    if ((!Number.isNaN(f) && f >= lastEnd) || (!Number.isNaN(e) && e <= firstStart)) {
+      out.push({
+        name,
+        kind: "outside",
+        message: `${name}: 来る・帰る時刻 (${t.from || ""}〜${t.to || ""}) がチェックした校時の範囲 (${minToStr(firstStart)}〜${minToStr(lastEnd)}) の外です`,
+      });
+      continue;
+    }
+    const shown = staffShiftPeriods(day, name).length;
+    if (shown < checked.length) {
+      out.push({
+        name,
+        kind: "dropped",
+        message: `${name}: 来る・帰る時刻 (${t.from || ""}〜${t.to || ""}) の外になる校時が ${checked.length - shown} つあります (その校時は出勤に数えません)`,
+      });
+    }
+  }
+  return out;
 }
