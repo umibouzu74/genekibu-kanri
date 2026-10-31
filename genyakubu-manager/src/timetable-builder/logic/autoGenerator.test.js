@@ -1045,3 +1045,51 @@ describe('generateSinglePattern — 講師個別の上限 (L3a/L3b)', () => {
     expect(r.solution).not.toBeNull();
   });
 });
+
+// ─── B1・B2・B3: 組み方の手がかり (planning) ─────────────────────────
+describe('generateSinglePattern — planning (B1・B2・B3)', () => {
+  const T = (name) => ({ name, subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] });
+
+  it('B3: 使わない講師は候補にしない、控えめの講師は後回し、未定は最後', () => {
+    const project = makeProject({ teachers: [T('未定'), T('南條'), T('竹内'), T('小松')] });
+    const planning = { usage: { 南條: 'never', 竹内: 'reserve' } };
+    for (let seed = 1; seed <= 5; seed++) {
+      const r = generateSinglePattern({ project, activeTabId: 1, seed, planning });
+      expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('小松');
+    }
+    const onlyReserve = makeProject({ teachers: [T('未定'), T('南條'), T('竹内')] });
+    const r = generateSinglePattern({ project: onlyReserve, activeTabId: 1, seed: 1, planning });
+    expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('竹内');
+  });
+
+  it('B1: 普段の担当を先に試す', () => {
+    const project = makeProject({ teachers: [T('堀上'), T('河野'), T('石原')] });
+    for (let seed = 1; seed <= 5; seed++) {
+      const r = generateSinglePattern({ project, activeTabId: 1, seed, planning: { usual: { '1:英語': ['河野'] } } });
+      expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('河野');
+    }
+  });
+
+  it('B2: 連続出勤日数の上限を超える割当はしない (暦日、隣の日だけ連続)', () => {
+    const project = makeProject({
+      teachers: [T('小松'), T('仙波')],
+      dates: ['1/4(月)', '1/5(火)', '1/6(水)'],
+      subjectCounts: { 英語: 3 },
+    });
+    project.updatedAt = '2026-12-01T00:00:00Z';
+    const planning = {
+      usage: { 仙波: 'reserve' },
+      streaks: [{
+        maxDays: 2,
+        teachers: ['小松'],
+        tabIds: null,
+        periodIds: [1],
+        dayIndexByDateId: [[1, 100], [2, 101], [3, 102]],
+      }],
+    };
+    const r = generateSinglePattern({ project, activeTabId: 1, seed: 1, planning });
+    const days = [1, 2, 3].map((d) => r.solution[makeKey(d, 1, 1)]?.teacher);
+    expect(days.filter((t) => t === '小松')).toHaveLength(2);
+    expect(days).toContain('仙波');
+  });
+});

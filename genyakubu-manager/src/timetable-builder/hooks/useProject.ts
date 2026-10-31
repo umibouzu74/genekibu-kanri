@@ -135,6 +135,11 @@ export function useProject(options: HistoryStackOptions) {
     dispatch({ type: 'config/setClassRoom', payload: { classId, room, tabId } });
   }, [dispatch]);
 
+  // 通常授業のクラスとの対応 (B1)。null / 学年が空でクリア
+  const handleSetClassRegular = useCallback((classId: number, regular: { grade: string; classes: string[] } | null, tabId?: number) => {
+    dispatch({ type: 'config/setClassRegular', payload: { classId, regular, tabId } });
+  }, [dispatch]);
+
   // tabId 省略時はアクティブタブを更新 (従来挙動)。タブ別に編集する画面は
   // 対象タブの id を明示で渡す。
   const handleSubjectCountChange = useCallback((subject: string, value: unknown, tabId?: number) => {
@@ -315,6 +320,7 @@ export function useProject(options: HistoryStackOptions) {
     // タブ別 config
     handleListConfigChange,
     handleSetClassRoom,
+    handleSetClassRegular,
     handleSubjectCountChange,
     handleClassSubjectCountChange,
     setClassSubjectCountsMode,

@@ -31,6 +31,8 @@ import {
   DEFAULT_NUM_PATTERNS as CONST_DEFAULT_NUM_PATTERNS,
 } from '../utils/constants';
 import type { CombinedGroup, Entity, Project, Schedule, ScheduleEntry, Teacher } from '../types';
+import type { PlanningHints } from '../utils/planningHints';
+import { streakLengthWith } from '../utils/planningHints';
 
 /** onProgress で通知する探索の途中経過 (E2f live progress) */
 export interface GenerationProgress {
@@ -212,12 +214,19 @@ export function generateSinglePattern({
   seed = 0,
   onProgress,
   restartInterval = null,
+  planning = null,
 }: {
   project: Project;
   activeTabId: number;
   seed?: number;
   onProgress?: (p: GenerationProgress) => void;
   restartInterval?: number | null;
+  /**
+   * 組み方の手がかり (B1・B2・B3、utils/planningHints.buildPlanningHints)。
+   * 普段の担当を先に・控えめを後に試し、使わない講師は候補にしない。連続出勤日数の
+   * 上限はハード制約。worker は hostData を持たないので呼び出し側が解いて渡す
+   */
+  planning?: PlanningHints | null;
 }): GenerationResult {
   const activeTab = project.tabs.find(t => t.id === activeTabId) || project.tabs[0];
   const currentSchedule = activeTab.schedule;
@@ -341,6 +350,44 @@ export function generateSinglePattern({
     });
   }
 
+  // B2: 連続出勤日数の上限。ルールごとに 講師 → 暦日の通し番号 → 入っているコマ数。
+  // 既存の割当 (全タブ) で埋めてから、solver の割当・バックトラックで増減する
+  const streakRules = (planning?.streaks || [])
+    .filter(r => !r.tabIds || r.tabIds.includes(activeTab.id))
+    .map(r => ({
+      maxDays: r.maxDays,
+      teachers: new Set(r.teachers),
+      tabIds: r.tabIds ? new Set(r.tabIds) : null,
+      periodIds: new Set(r.periodIds),
+      dayOf: new Map(r.dayIndexByDateId),
+    }));
+  const seedStreaks = () => streakRules.map(r => {
+    const byTeacher = new Map<string, Map<number, number>>();
+    for (const tab of project.tabs || []) {
+      if (r.tabIds && !r.tabIds.has(tab.id)) continue;
+      const cfg = tab.id === activeTab.id ? currentConfig : effectiveConfigForTab(project, tab);
+      const dIds = new Set(cfg.dates.map(x => x.id));
+      const pIds = new Set(cfg.periods.map(x => x.id));
+      for (const [key, e] of Object.entries(tab.schedule || {})) {
+        if (!e?.teacher || !r.teachers.has(e.teacher)) continue;
+        const m = key.match(/^d(\d+)-p(\d+)-c\d+$/);
+        if (!m) continue;
+        const dId = Number(m[1]);
+        const pId = Number(m[2]);
+        if (!dIds.has(dId) || !pIds.has(pId) || !r.periodIds.has(pId)) continue;
+        const day = r.dayOf.get(dId);
+        if (day == null) continue;
+        if (!byTeacher.has(e.teacher)) byTeacher.set(e.teacher, new Map());
+        const bd = byTeacher.get(e.teacher)!;
+        bd.set(day, (bd.get(day) || 0) + 1);
+      }
+    }
+    return byTeacher;
+  });
+  // 使い方 (B3) と普段の担当 (B1)
+  const usageOf = (name: string) => planning?.usage?.[name] || 'normal';
+  const usualFor = (classId: number, subject: string) => planning?.usual?.[`${classId}:${subject}`] || [];
+
   // 未充填スロットを構築
   // slot には d/p/c の entity ({id, label}) と cIdx (tempCnt index) を保持。
   // F5w: 空 + ロック済みセルは「この枠は空けておく」の意思表示なので生成
@@ -394,6 +441,8 @@ export function generateSinglePattern({
     let runBestPartial: Schedule | null = null;
     let runBestFilled = -1;
     const iter = { c: 0 };
+    // run ごとに既存の割当から数え直す (解が見つかった run は途中で抜けるので)
+    const streakState = seedStreaks();
 
     const solve = (
       idx: number,
@@ -522,6 +571,8 @@ export function generateSinglePattern({
         // 有効な講師を検索 (subject 担当・NG slot/class・合同セカンダリ NG class)
         const secondaryClassNames = group ? secondarySlots.map(ss => ss.className) : [];
         const validT = project.teachers.filter(t =>
+          // B3: 使わない講師は候補にしない (NG とは別物。日時によらない講師の扱い)
+          usageOf(t.name) !== 'never' &&
           isTeacherCandidateFor({
             teacher: t,
             subject: s,
@@ -533,12 +584,23 @@ export function generateSinglePattern({
           })
         );
 
+        // 試す順: 普段の担当 (B1、クラス × 科目) → 優先クラス → 標準 → 控えめ (B3)
+        // → 未定。控えめは「ほかで埋まらないときだけ」なので最後に回す (試す順を
+        // 変えるだけで、解けるかどうかは変えない = ROADMAP L3c の範囲)
+        const usual = usualFor(c.id, s);
+        const usualGroup: Teacher[] = [];
         const priorityGroup: Teacher[] = [];
         const neutralGroup: Teacher[] = [];
+        const reserveGroup: Teacher[] = [];
+        const placeholderGroup: Teacher[] = [];
         validT.forEach(t => {
-          if (t.priorityClasses?.includes(c.label)) priorityGroup.push(t);
+          if (t.name === DAILY_LIMIT_EXEMPT_TEACHER) placeholderGroup.push(t);
+          else if (usual.includes(t.name)) usualGroup.push(t);
+          else if (usageOf(t.name) === 'reserve') reserveGroup.push(t);
+          else if (t.priorityClasses?.includes(c.label)) priorityGroup.push(t);
           else neutralGroup.push(t);
         });
+        usualGroup.sort((a, b) => usual.indexOf(a.name) - usual.indexOf(b.name));
 
         // 講師の試行順は priority 群 → neutral 群のシャッフルのまま。
         // K5e (日次負荷の軽い順 = load balancing) は 2026-07-03 に実測の上で
@@ -546,8 +608,11 @@ export function generateSinglePattern({
         // 並べ替えコストだけ iteration 単価 +30% になった。詳細は
         // ROADMAP K5e の記録を参照
         let shuffledT = [
+          ...usualGroup,
           ...seededShuffle(priorityGroup, rng),
-          ...seededShuffle(neutralGroup, rng)
+          ...seededShuffle(neutralGroup, rng),
+          ...seededShuffle(reserveGroup, rng),
+          ...placeholderGroup,
         ];
         // 合同の別クラスに講師が確定済みなら、その講師以外は候補にしない
         if (groupTeacher) {
@@ -613,6 +678,28 @@ export function generateSinglePattern({
             maxConsecutive: resolveTeacherConsecutive(tObj, maxConsecutive),
           })) continue;
 
+          // B2: 連続出勤日数の上限。その日にまだ入っていなければ、入れたときの
+          // 連続が上限を超えないか
+          const streakHits: Array<{ bd: Map<number, number>; day: number }> = [];
+          let streakBlocked = false;
+          if (isRealTeacher) {
+            for (let ri = 0; ri < streakRules.length; ri++) {
+              const r = streakRules[ri];
+              if (!r.teachers.has(tName) || !r.periodIds.has(p.id)) continue;
+              const day = r.dayOf.get(d.id);
+              if (day == null) continue;
+              const st = streakState[ri];
+              if (!st.has(tName)) st.set(tName, new Map());
+              const bd = st.get(tName)!;
+              if (!bd.get(day) && streakLengthWith(new Set([...bd.entries()].filter(([, n]) => n > 0).map(([k]) => k)), day) > r.maxDays) {
+                streakBlocked = true;
+                break;
+              }
+              streakHits.push({ bd, day });
+            }
+          }
+          if (streakBlocked) continue;
+
           // プライマリスロットを割り当て (locked フラグは既存の値を保持する。
           // 「科目だけ事前指定 + ロック」のセルを solver が埋める際に lock が
           // 落ちないようにする)
@@ -634,8 +721,10 @@ export function generateSinglePattern({
             }
           });
 
+          for (const h of streakHits) h.bd.set(h.day, (h.bd.get(h.day) || 0) + 1);
           solve(idx + 1, tempSch, tempCnt, tempDaily, tempTotal);
           if (runSolution !== null) return;
+          for (const h of streakHits) h.bd.set(h.day, (h.bd.get(h.day) || 1) - 1);
 
           // バックトラック: プライマリスロット (locked 保持)。
           // 「空 + locked」は F5w で slot 化されなくなったため、locked が

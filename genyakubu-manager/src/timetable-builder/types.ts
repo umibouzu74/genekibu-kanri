@@ -63,6 +63,34 @@ export interface Teacher {
   maxTotalHours?: number;
   /** N3a: 講師個別の連続コマ数上限。未設定/0 = project 全体値を使う */
   maxConsecutivePeriods?: number;
+  /**
+   * 講習での使い方 (B3 2026-10-31、任意)。未設定は標準 (所属が予備校部で
+   * Project.yobikoReserve が付いていれば控えめ)。NG とは別物 (日時ではなく講師の扱い)
+   *   - reserve: 控えめ。ほかで埋まらないときだけ候補に出す (プルダウンの下・自動作成で後回し)
+   *   - never:   使わない。候補に出さない (入っているセルでは出す)
+   *   - normal:  標準 (所属からの既定を上書きして標準にする)
+   */
+  usage?: TeacherUsage;
+}
+
+export type TeacherUsage = 'normal' | 'reserve' | 'never';
+
+/**
+ * 連続出勤日数の上限 (B2 2026-10-31)。「予備校部の先生は中1・2 の夜 (18:30〜) に
+ * 3 日以上続けて入れない」。暦日で数える (日曜をはさむと途切れる)
+ */
+export interface DayStreakRule {
+  id: number;
+  /** 対象: 本体の講師の所属 (key) と講師名。どちらかに当たる講師 */
+  categories?: string[];
+  teachers?: string[];
+  /** 数えるタブ (null / 空 = 全部のタブ) */
+  tabIds?: number[] | null;
+  /** 時間帯 "HH:MM" (この時刻より後に終わる時限 / この時刻より前に始まる時限を数える) */
+  fromTime?: string;
+  toTime?: string;
+  /** 続けて入れる日数の上限 (2 なら 3 日続くと違反) */
+  maxDays: number;
 }
 
 export interface ScheduleEntry {
@@ -81,6 +109,17 @@ export type Schedule = Record<string, ScheduleEntry>;
  */
 export interface ClassEntity extends Entity {
   room?: string;
+  /**
+   * 通常授業のどのクラスか (任意、B1 2026-10-31)。本体の時間割から科目ごとの
+   * 「普段の担当」を引く (utils/usualTeachers)。classes 空 = その学年の全部。
+   * 例: 3S401 → {grade: "中3", classes: ["SS", "S"]}、1附属 → {grade: "附中1", classes: []}
+   */
+  regular?: RegularClassLink;
+}
+
+export interface RegularClassLink {
+  grade: string;
+  classes: string[];
 }
 
 export interface TabConfig {
@@ -303,6 +342,10 @@ export interface Project {
   maxDailyHours?: number;
   maxIterations?: number;
   maxConsecutivePeriods?: number;
+  /** B2: 連続出勤日数の上限 (任意) */
+  dayStreakRules?: DayStreakRule[];
+  /** B3: 所属が予備校部の講師を既定で「控えめ」にする (講師ごとの使い方が優先) */
+  yobikoReserve?: boolean;
   generationSeed?: number;
 }
 

@@ -16,7 +16,7 @@ const ctx = self as unknown as {
 };
 
 ctx.addEventListener('message', (e) => {
-  const { project, activeTabId, numPatterns, baseSeed } = e.data || {};
+  const { project, activeTabId, numPatterns, baseSeed, planning } = e.data || {};
   if (!project || typeof numPatterns !== 'number') {
     ctx.postMessage({ type: 'error', message: 'invalid request' });
     return;
@@ -30,6 +30,7 @@ ctx.addEventListener('message', (e) => {
         project,
         activeTabId,
         seed,
+        planning,
         // 探索の途中経過を逐次通知 (E2f live progress)
         onProgress: (p) => ctx.postMessage({ type: 'progress', index: i, progress: p }),
       });

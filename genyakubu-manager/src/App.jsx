@@ -45,7 +45,7 @@ import {
   filterSlotsCurrentOrUpcoming,
 } from "./utils/timetable";
 import { useToday } from "./hooks/useToday";
-import { slotWeight, formatCount, isSlotForTeacher, slotsOnDate } from "./utils/biweekly";
+import { slotWeight, formatCount, isSlotForTeacher, slotTeacherNamesEver, slotsOnDate } from "./utils/biweekly";
 import { visibilityForTeacher } from "./utils/teacherTags";
 import { buildKoshuLessonsForSeasons } from "./utils/builderLessons";
 import {
@@ -587,6 +587,20 @@ export default function App() {
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const todayStr = useToday();
+  // 講習時間割作成へ渡す講師の所属 (前年度・今年度・来年度。講習の初日の年度で引く)
+  const builderTeacherCategories = useMemo(() => {
+    const names = new Set(partTimeStaffNames);
+    for (const s of slots) for (const t of slotTeacherNamesEver(s)) names.add(t);
+    for (const c of teacherAffiliations || []) if (c?.name) names.add(c.name);
+    const fy = fiscalYearOf(todayStr);
+    const out = {};
+    for (const year of [fy - 1, fy, fy + 1]) {
+      const m = {};
+      for (const n of names) m[n] = resolveAffiliation(affiliationIndex, n, year, partTimeNameSet).category;
+      out[year] = m;
+    }
+    return out;
+  }, [slots, partTimeStaffNames, teacherAffiliations, affiliationIndex, partTimeNameSet, todayStr]);
   // 講師の所属で今年度「退職・非表示」の講師 (講習時間割作成へ読み取り専用で渡す)
   const retiredTeacherNames = useMemo(
     () => [...retiredNamesForYear(teacherAffiliations, fiscalYearOf(todayStr))],
@@ -2032,6 +2046,10 @@ export default function App() {
               partTimeStaffNames={partTimeStaffNames}
               retiredTeacherNames={retiredTeacherNames}
               specialEvents={specialEvents}
+              // 普段の担当 (B1) と講師の所属 (B2・B3) の読み取り用
+              regularSlots={slots}
+              regularTimetables={timetables}
+              teacherCategoriesByYear={builderTeacherCategories}
             />
           )}
           {view === VIEWS.REGULAR_BUILDER && !selected && (

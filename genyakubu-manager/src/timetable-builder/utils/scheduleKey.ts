@@ -21,8 +21,9 @@
 // ここから constants.js を import すると循環になる。import してよいのは
 // 無依存モジュール (generationParams / dateGenerate / dateLabelUnify /
 // availabilityShape / carriedTimetable / publishState / externalSessionShape /
-// frameShape) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
+// frameShape / regularLink) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
 // availabilityShape の無依存モジュールのみ。
+import { normalizeDayStreakRules, normalizeRegularLink } from './regularLink';
 import { clampGenerationParam } from './generationParams';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { unifyDateLabelWeekdays } from './dateLabelUnify';
@@ -610,6 +611,39 @@ export function migrateProject(project: any): Project {
     }
   }
 
+  // 連続出勤日数の上限 (任意、B2): 形の崩れたルールは落とす
+  if ('dayStreakRules' in result) {
+    const rules = normalizeDayStreakRules(result.dayStreakRules);
+    if (rules.length === 0) {
+      const { dayStreakRules: _r, ...rest } = result;
+      result = rest;
+    } else if (JSON.stringify(rules) !== JSON.stringify(result.dayStreakRules)) {
+      result = { ...result, dayStreakRules: rules };
+    }
+  }
+
+  // 通常授業のクラスとの対応 (任意、B1): 学年の無いものは落とす
+  {
+    let tabsChanged = false;
+    const normalizedTabs = result.tabs.map((tab: any) => {
+      const classes = tab?.config?.classes;
+      if (!Array.isArray(classes) || !classes.some((c: any) => c && 'regular' in c)) return tab;
+      let changed = false;
+      const next = classes.map((c: any) => {
+        if (!c || !('regular' in c)) return c;
+        const link = normalizeRegularLink(c.regular);
+        if (link && JSON.stringify(link) === JSON.stringify(c.regular)) return c;
+        changed = true;
+        const { regular: _r, ...rest } = c;
+        return link ? { ...rest, regular: link } : rest;
+      });
+      if (!changed) return tab;
+      tabsChanged = true;
+      return { ...tab, config: { ...tab.config, classes: next } };
+    });
+    if (tabsChanged) result = { ...result, tabs: normalizedTabs };
+  }
+
   // クラスの教室 (任意): 文字列でない / 空白だけの room は落とす (表示で
   // "[object Object]" や空の括弧を出さない)
   {
@@ -814,6 +848,12 @@ export function normalizeTeacherFields(teachers: any): Teacher[] | any {
         nt[key] = [];
         changed = true;
       }
+    }
+    // B3: 講習での使い方。知らない値は落とす
+    if ('usage' in nt && nt.usage !== 'normal' && nt.usage !== 'reserve' && nt.usage !== 'never') {
+      if (nt === t) nt = { ...t };
+      delete nt.usage;
+      changed = true;
     }
     // 出勤可能調査の回答: 形の崩れたマス・日付は落とす (render の
     // Object.keys / 記号の表示分岐で未知値が漏れないように)。メモは文字列のみ

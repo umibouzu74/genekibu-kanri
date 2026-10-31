@@ -713,6 +713,32 @@ Claude in Chrome で講習時間割作成を操作して出た問題と、作成
   `knownTeacherNames`)
 - 授業時間の集計にはまだ数えていない (要件が出たら `teachingMinutes` に種別を足す)
 
+## 講習の組み方の手がかり (普段の担当・使い方・連続出勤日数、2026-10-31)
+
+どれも時間割のデータと人の設定から決める (使用履歴は使わない、A18)。本体のデータは
+hostData から読み取り専用 (`regularSlots` / `regularTimetables` /
+`teacherCategoriesByYear`)。作業領域で 1 回だけ作る (`contexts/usualTeachersContext` の
+Provider、読むのは `planningContextValue.usePlanning`)。自動作成は worker が hostData を
+持たないので、`utils/planningHints.buildPlanningHints` で名前の集合まで解いて渡す。
+
+- **普段の担当 (B1)**: 講習のクラスに通常授業の学年・クラス (`ClassEntity.regular =
+  {grade, classes}`、classes 空 = その学年の全部) を結び付け (⚙ 基本設定の「🏫 クラスと
+  教室」、「📚 普段のクラスを推定」は一度きりの入力補助)、本体の時間割から科目ごとの担当を
+  引く (本体の `utils/usualTeachers`。講習の初日の「今の時間割」+ その日の担当 (担当の
+  切り替えも)。合同 "S/AB"・"SS〜C"・隔週の相手と "英/数" の組の科目も)。使い道: 講師
+  プルダウンの ★ と並び・「普段の担当と違うセル」の一覧 (`UsualTeacherCheck`、基本設定と
+  前の講習の時間割を写した後)・写すときの「講師は普段の担当で入れ直す」(NG の人は飛ばし、
+  いなければ講師を空に)・自動作成で最初に試す
+- **使い方 (B3)**: `Teacher.usage` = 標準 / 控えめ / 使わない (講師マスタの「使い方」)。
+  `Project.yobikoReserve` で「本体の所属が予備校部の講師は既定で控えめ」。講師ごとの設定が
+  優先 (`resolveTeacherUsage`)。控えめはプルダウンの最後の「控えめ」のまとまり・自動作成で
+  後回し (試す順を変えるだけ = ROADMAP L3c の範囲で、解けるかは変えない)。使わないは
+  候補に出さない (入っているセルでは出す)。**NG とは別物**。「未定」は自動作成で最後に試す
+- **連続出勤日数の上限 (B2)**: `Project.dayStreakRules` (対象 = 所属 / 講師名・タブ・
+  時間帯・上限の日数、講師マスタの画面の「📅 連続出勤日数の上限」)。暦日で数える
+  (`resolveDateLabelsYmd` で年ごと解く。日曜など授業の無い日をはさむと途切れる)。違反は
+  ⚠ の内訳に (`computeStreakViolations`、→ で最初の日のセルへ)、自動作成ではハード制約
+
 ## 講習時間割作成の罫線・ボタンの土台 (2026-10-09)
 
 講習時間割作成は Tailwind の preflight を読み込んでいない (親アプリへの波及を

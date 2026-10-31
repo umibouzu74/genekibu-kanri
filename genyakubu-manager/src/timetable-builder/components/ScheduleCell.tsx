@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
+import { usePlanning } from '../contexts/planningContextValue';
 import { getSubjectColor, toCircleNum, CONFLICT_CELL_BG, resolveGenerationParams } from '../utils/constants';
 import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup, findEntityById, isPrimaryCombinedClass } from '../utils/scheduleKey';
 import { quotaForClass } from '../utils/subjectQuota';
@@ -37,16 +38,40 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   // subject 未選択: 通常の教科別分類で全講師を見せる。
   // filter は useMemo 内で実行 (毎回新しい配列リテラルになって memo が
   // 効かないのを防ぐ — code-review P2)。
+  const planning = usePlanning();
+  // 普段の担当 (B1): このクラス・科目の通常授業の担当。プルダウンで上に並べて ★ を付ける
+  const usualNames = useMemo(
+    () => (entry.subject ? planning.usual.forClass(project.activeTabId, classId, entry.subject) : []),
+    [planning.usual, project.activeTabId, classId, entry.subject],
+  );
   const teacherGroups = useMemo(() => {
-    const candidates = entry.subject
+    // 講師の使い方 (B3): 使わない講師は出さない (入っているセルでは出す)、
+    // 控えめの講師は最後の「控えめ」のまとまりへ
+    const usageOf = planning.usageOf;
+    const all = entry.subject
       ? project.teachers.filter(t => t.subjects.includes(entry.subject))
       : project.teachers;
-    return groupTeachersBySubject(
-      candidates,
+    const shown = all.filter(t => usageOf(t.name) !== 'never' || t.name === entry.teacher);
+    const reserve = shown.filter(t => usageOf(t.name) === 'reserve' && t.name !== '未定');
+    const main = shown.filter(t => !reserve.includes(t));
+    const groups = groupTeachersBySubject(
+      main,
       project.subjects,
       entry.subject ? { flattenIntoSingleSubject: entry.subject } : undefined,
-    );
-  }, [project.teachers, project.subjects, entry.subject]);
+    ).map(g => {
+      if (usualNames.length === 0) return g;
+      const rank = (n: string) => {
+        const i = usualNames.indexOf(n);
+        return i < 0 ? usualNames.length : i;
+      };
+      // 普段の担当を先に (同じ順位は講師マスタの順のまま)
+      return { ...g, teachers: [...g.teachers].sort((a, b) => rank(a.name) - rank(b.name)) };
+    });
+    if (reserve.length > 0) {
+      groups.push({ key: '__reserve', label: '控えめ (ほかで埋まらないとき)', teachers: reserve });
+    }
+    return groups;
+  }, [project.teachers, project.subjects, entry.subject, entry.teacher, planning.usageOf, usualNames]);
 
   // タッチ長押しで右クリック相当のコンテキストメニューを開く (E1f)。
   // hooks-rules を守るため早期 return より前で呼ぶ。
@@ -293,7 +318,9 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
                 const autoEntry = analysis.autoNgByTeacher?.get(t.name)?.get(ngKey);
                 const isAuto = !!autoEntry;
                 const isNg = isManual || isAuto;
-                let label = t.name;
+                const isUsual = usualNames.includes(t.name);
+                let label = isUsual ? `★${t.name}` : t.name;
+                if (planning.usageOf(t.name) === 'never') label += ' (使わない)';
                 if (t.name !== "未定") {
                   // 自動NG の由来は「他学年」(他学年セッション) / 「調査」(出勤可能調査の ×)
                   if (isNg) label += isAuto && !isManual ? ` (NG:${autoNgSourceLabel(autoEntry)})` : " (NG)";

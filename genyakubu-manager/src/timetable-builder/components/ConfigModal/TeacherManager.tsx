@@ -7,6 +7,10 @@ import { groupTeachersBySubject } from '../../utils/groupTeachersBySubject';
 import { readParentTeachers } from '../../utils/parentTeachers';
 import { buildTeachersCsvTemplate, downloadCsvFile } from '../../utils/csvTemplates';
 import DraftNumberInput from './DraftNumberInput';
+import DayStreakRulesEditor from './DayStreakRulesEditor';
+import { usePlanning } from '../../contexts/planningContextValue';
+import { TEACHER_USAGE_LABEL, resolveTeacherUsage } from '../../utils/planningHints';
+import type { TeacherUsage } from '../../types';
 
 const CSV_PLACEHOLDER = `name,subjects
 堀上,英語
@@ -70,8 +74,11 @@ export default function TeacherManager() {
     renameTeacher,
     toggleTeacherSubject,
     setTeacherLimit,
+    setTeacherUsage,
+    setYobikoReserve,
     addSubjects,
   } = useProjectContext();
+  const planning = usePlanning();
   const { showConfirm, showInput, showToast } = useUI();
   const { retiredTeacherNames } = useHostData();
   const [csvPanelOpen, setCsvPanelOpen] = useState(false);
@@ -415,6 +422,18 @@ export default function TeacherManager() {
       </div>
       {/* 高さは絞らない (モーダル本体がスクロールするので、内側にもう 1 つ
           スクロール枠を作ると 3 名ほどしか見えなかった) */}
+      <label className="flex items-center gap-1 text-xs mb-1">
+        <input
+          type="checkbox"
+          checked={!!project.yobikoReserve}
+          onChange={(e) => setYobikoReserve(e.target.checked)}
+        />
+        本体の講師の所属が「予備校部」の講師は、既定で「控えめ」にする (現役部を優先して組む)
+        {Object.keys(planning.categories).length === 0 && (
+          <span className="text-builder-ink-muted">(本体の所属が読めないときは効きません)</span>
+        )}
+      </label>
+      <DayStreakRulesEditor />
       <div className="border border-builder-border rounded bg-builder-bg p-2">
         <table className="w-full text-sm">
           <thead>
@@ -425,6 +444,10 @@ export default function TeacherManager() {
                 className="text-left p-1 text-builder-ink-muted whitespace-nowrap"
                 title="この講師だけの上限。1日 = 空欄なら ⚡自動生成 の全体設定 / 通算 = 講習全体 (全タブ + 他学年コマ) の合計上限、空欄なら無制限 / 連続 = 連続コマ数の上限、空欄なら全体設定"
               >上限 (1日/通算/連続)</th>
+              <th
+                className="text-left p-1 text-builder-ink-muted whitespace-nowrap"
+                title="講習での使い方。控えめ = ほかで埋まらないときだけ候補 (プルダウンの下・自動作成で後回し) / 使わない = 候補に出さない。NG とは別物"
+              >使い方</th>
               <th className="w-8"></th>
             </tr>
           </thead>
@@ -441,7 +464,7 @@ export default function TeacherManager() {
               .map(group => (
               <Fragment key={group.key}>
                 <tr className="bg-builder-bg">
-                  <td colSpan={4} className="px-2 py-1 text-[11px] font-bold text-builder-ink-muted">
+                  <td colSpan={5} className="px-2 py-1 text-[11px] font-bold text-builder-ink-muted">
                     ━━ {group.label} ({teacherFilter.trim() && group.teachers.length !== group.totalCount ? `${group.teachers.length}/${group.totalCount}` : group.totalCount})
                   </td>
                 </tr>
@@ -510,6 +533,23 @@ export default function TeacherManager() {
                               >⚠️</span>
                             )}
                           </span>
+                        )}
+                      </td>
+                      <td className="p-2 whitespace-nowrap">
+                        {t.name !== '未定' && (
+                          <select
+                            value={t.usage || ''}
+                            onChange={(e) => setTeacherUsage(t.name, (e.target.value || null) as TeacherUsage | null)}
+                            aria-label={`${t.name} の講習での使い方`}
+                            className="border border-builder-border rounded px-1 py-0.5 text-xs bg-builder-surface"
+                          >
+                            <option value="">
+                              {`既定 (${TEACHER_USAGE_LABEL[resolveTeacherUsage({ name: t.name }, project, planning.categories)]})`}
+                            </option>
+                            <option value="normal">標準</option>
+                            <option value="reserve">控えめ</option>
+                            <option value="never">使わない</option>
+                          </select>
                         )}
                       </td>
                       <td className="p-2 text-center">

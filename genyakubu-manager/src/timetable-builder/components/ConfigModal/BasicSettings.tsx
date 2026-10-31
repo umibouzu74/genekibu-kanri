@@ -1,3 +1,6 @@
+import { guessRegularClass } from '../../../utils/usualTeachers';
+import { useUsualTeachers } from '../../contexts/planningContextValue';
+import { UsualTeacherCheck } from '../UsualTeacherCheck';
 import { useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
@@ -25,10 +28,12 @@ export default function BasicSettings() {
     handleToggleTabPeriod,
     handleSetAllTabPeriods,
     handleSetClassRoom,
+    handleSetClassRegular,
     handleRenameHeader,
     setFramePeriods,
   } = useProjectContext();
   const { showConfirm, showToast } = useUI();
+  const usualIndex = useUsualTeachers();
 
   // v4(Y): project.dates は全タブ共通の『日付プール』。activeTab.config.activeDateIds
   // で「この学年が使う日」を選ぶ (未指定=全日)。NG はプール全日に設定できる。
@@ -632,7 +637,10 @@ export default function BasicSettings() {
             <thead>
               <tr className="text-builder-ink-muted">
                 <th className="text-left font-normal pr-2">クラス名</th>
-                <th className="text-left font-normal">教室</th>
+                <th className="text-left font-normal pr-2">教室</th>
+                <th className="text-left font-normal" title="本体の時間割の学年とクラス。科目ごとの普段の担当を引きます (講師プルダウンの ★)">
+                  普段のクラス (学年 / クラス)
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -667,10 +675,57 @@ export default function BasicSettings() {
                       onCommit={(v) => handleSetClassRoom(c.id, v)}
                     />
                   </td>
+                  <td className="py-0.5 pl-2 whitespace-nowrap">
+                    <DraftLineInput
+                      value={c.regular?.grade || ''}
+                      ariaLabel={`クラス「${c.label}」の普段の学年`}
+                      placeholder="中3"
+                      className={`${inputCls} w-16`}
+                      onCommit={(v) => handleSetClassRegular(c.id, String(v).trim() ? { grade: String(v).trim(), classes: c.regular?.classes || [] } : null)}
+                    />
+                    <DraftLineInput
+                      value={(c.regular?.classes || []).join('・')}
+                      ariaLabel={`クラス「${c.label}」の普段のクラス`}
+                      placeholder="SS・S (空 = 全部)"
+                      className={`${inputCls} w-28 ml-1`}
+                      onCommit={(v) => {
+                        if (!c.regular?.grade) return;
+                        const classes = String(v).split(/[・,、\s]+/).map(x => x.trim()).filter(Boolean);
+                        handleSetClassRegular(c.id, { grade: c.regular.grade, classes });
+                      }}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              className="text-xs px-2 py-1 border border-builder-border rounded hover:bg-builder-info-soft"
+              onClick={() => {
+                let n = 0;
+                for (const c of currentConfig.classes) {
+                  if (c.regular?.grade) continue;
+                  const g = guessRegularClass(activeTab.name, c.label, usualIndex.grades);
+                  if (g) {
+                    handleSetClassRegular(c.id, g);
+                    n++;
+                  }
+                }
+                showToast(n > 0 ? `${n} クラスの普段のクラスを推定しました (違っていれば直してください)` : '推定できるクラスがありませんでした', n > 0 ? 'success' : 'warning', 4000);
+              }}
+              title="クラス名とタブ名から、まだ入れていないクラスの普段の学年・クラスを推定します (一度きりの入力補助)"
+            >
+              📚 普段のクラスを推定
+            </button>
+            <span className="text-[11px] text-builder-ink-muted">
+              {usualIndex.refYmd
+                ? `普段の担当は ${usualIndex.refYmd} (講習の初日) の本体の時間割から引きます`
+                : '本体の時間割から普段の担当を引きます'}
+            </span>
+          </div>
+          {usualIndex.hasLinks && <UsualTeacherCheck />}
         </div>
       )}
 
