@@ -1,5 +1,5 @@
 import { WEEKDAYS } from "../constants/schools";
-import { isSlotForTeacher } from "./biweekly";
+import { hasTeacherChanges, isSlotForTeacher, isTeacherActiveOnDate } from "./biweekly";
 import { isSlotOffOnDate } from "./scheduleHelpers";
 import { isSlotBeyondCutoff, isTimetableActiveForDate } from "./timetable";
 import { isSlotCancelledOnDate } from "./slotCancel";
@@ -150,6 +150,13 @@ export function staffMonthlyRegularDates(
   // 特別時程の部分休講・コマ休講)。1 つでも成立すれば出勤日。
   const isHeld = (slot, dateStr) => {
     if (isSlotOffOnDate(slot, dateStr, holidays, examPeriods)) return false;
+    // 担当の切り替え (A5): その日に担当していなければ出勤日にしない
+    if (
+      hasTeacherChanges(slot) &&
+      !isTeacherActiveOnDate(slot, staffName, dateStr, [], [], [])
+    ) {
+      return false;
+    }
     if (hasTimetables) {
       const tt = timetables.find((t) => t.id === (slot.timetableId ?? 1));
       if (!isTimetableActiveForDate(tt, dateStr, slot.grade)) return false;

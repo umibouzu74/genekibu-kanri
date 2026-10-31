@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { DAY_COLOR as DC, dateToDay, gradeColor as GC } from "../../../data";
 import { ICON_BTN_CLASS, S } from "../../../styles/common";
 import { sortTeacherNames } from "../../../utils/teacherKana";
-import { getSlotTeachers } from "../../../utils/biweekly";
+import { getSlotTeachers, slotOnDate } from "../../../utils/biweekly";
 import { fmtDateWeekday, fmtIsoLocal } from "../../../utils/dateHelpers";
 import { groupTeacherNames } from "../../../utils/groupTeacherNames";
 import { useListPeriod } from "../../../hooks/useListPeriod";
@@ -53,7 +53,7 @@ export function OverrideListTab({
     if (fTeacher) {
       r = r.filter((o) => {
         const slot = slotMap[o.slotId];
-        return slot && getSlotTeachers(slot).includes(fTeacher);
+        return slot && getSlotTeachers(slotOnDate(slot, o.date)).includes(fTeacher);
       });
     }
     if (fMode) r = r.filter((o) => o.mode === fMode);
@@ -235,7 +235,8 @@ export function OverrideListTab({
             </thead>
             <tbody>
               {filtered.map((ov, i) => {
-                const slot = slotMap[ov.slotId];
+                // その日の担当 (担当の切り替え) で出す
+                const slot = slotMap[ov.slotId] && slotOnDate(slotMap[ov.slotId], ov.date);
                 const gc = slot ? GC(slot.grade) : { b: "#eee", f: "#888" };
                 const dow = dateToDay(ov.date);
                 return (

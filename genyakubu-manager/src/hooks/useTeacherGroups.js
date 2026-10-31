@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { compareTeacherNames, teacherMatchesQuery } from "../utils/teacherKana";
-import { getSlotTeachers } from "../utils/biweekly";
+import { getSlotTeachers, hasTeacherChanges, slotTeacherNamesEver } from "../utils/biweekly";
 import {
   LEAVE_CATEGORY,
   PART_TIME_CATEGORY,
@@ -98,7 +98,12 @@ export function buildTeacherGroups({
   // 全教員を列挙 (slots + partTimeStaff)
   const allTeachers = new Set();
   const slotTeachers = new Set();
-  for (const s of slots) for (const t of getSlotTeachers(s)) slotTeachers.add(t);
+  // 担当の切り替え (A5) の前後の担当も並べる (これから担当する人の月間を開けるように)
+  for (const s of slots) {
+    for (const t of hasTeacherChanges(s) ? slotTeacherNamesEver(s) : getSlotTeachers(s)) {
+      slotTeachers.add(t);
+    }
+  }
   for (const t of slotTeachers) allTeachers.add(t);
   for (const s of partTimeStaff) allTeachers.add(s.name);
   // 高校・予備校の講習だけの講師 (時間割にもバイト一覧にもいない)

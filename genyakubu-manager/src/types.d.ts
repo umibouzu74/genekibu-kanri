@@ -30,6 +30,16 @@ export interface Slot {
   // sessionStartNumber: その期の最初の回を第N回から数える (2 学期は⑨から)
   separateWeekdayCount?: boolean;
   sessionStartNumber?: number;
+  // 担当の切り替え (utils/biweekly の slotOnDate、A5)。その日の担当 = from が
+  // その日以前で一番新しい切り替えの teacher、無ければ teacher。from の昇順
+  teacherChanges?: TeacherChange[];
+}
+
+export interface TeacherChange {
+  from: string; // "YYYY-MM-DD" この日から
+  teacher: string; // 講師欄と同じ書き方 (複数担当は "·" 区切り)
+  partner?: string; // 隔週の B 週の相手 (無ければ note の「隔週(◯◯)」のまま)
+  memo?: string;
 }
 
 export interface Holiday {

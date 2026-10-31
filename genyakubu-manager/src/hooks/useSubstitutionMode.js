@@ -1,3 +1,4 @@
+import { slotsOnDate } from "../utils/biweekly";
 import { useCallback, useMemo, useState } from "react";
 import { activeTeachersOnDate } from "../utils/absenceHelpers";
 import { dateToDay } from "../data";
@@ -63,7 +64,8 @@ export function useSubstitutionMode({
   // Filtered slots for the specific date (timetable-aware)
   const dateFilteredSlots = useMemo(() => {
     if (!subDate) return slots;
-    return filterSlotsForDate(slots, subDate, timetables);
+    // 代行日の担当 (担当の切り替え、A5) を当てる
+    return slotsOnDate(filterSlotsForDate(slots, subDate, timetables), subDate);
   }, [slots, subDate, timetables]);
 
   // Holiday/exam-cancelled slots (+ 特別時程の部分休講・コマ休講)

@@ -871,6 +871,64 @@ Claude in Chrome で講習時間割作成を操作して出た問題と、作成
 - 古い端末に残った `genyakubu-active-timetable` は起動時に消す。バックアップにも
   書き出さない (旧バックアップの値は読み込みで無視)
 
+## 担当の切り替え (学期の途中からの担当変更、2026-10-31)
+
+コマの担当が学期の途中から変わる (10/27 から 高1 桜井・第一 数学 小見山 → 福江)
+のを **`Slot.teacherChanges = [{from, teacher, partner?, memo?}]`** で表す。その日の
+担当 = from がその日以前で一番新しい切り替えの teacher、無ければ `slot.teacher`
+(切り替え前の担当)。期間限定の変更は戻す行 (from = 戻る日, teacher = 元の担当)。
+コマ id が変わらないので代行・振替・回数補正・休講の例外はそのまま。
+
+- **決まりは `utils/biweekly` の 1 か所** (`slotOnDate` / `slotsOnDate` /
+  `teacherChangeOn` / `slotTeacherNamesEver` / `slotTeacherNamesBetween` /
+  `normalizeTeacherChanges`)。`biweeklyActiveTeacher` と `isTeacherActiveOnDate` が
+  先に切り替えを当てるので、`activeTeachersOnDate` を通る代行の元講師・講師の重なり・
+  授業時間の集計・バイト出勤表・欠勤登録はそのまま切り替え後の担当になる
+- **日付のある画面は入口で `slotsOnDate(slots, date)` を通す** (日別ダッシュボードの
+  DashDayRow・タイムテーブルの表示日・代行モード (`useSubstitutionMode`)・欠勤登録 /
+  代行登録 (`getAbsenceDaySlots`)・講師の月間 / 週間の各日・一覧の各レコードの日)。
+  `slot.teacher` を日付のある処理で直に読まない
+- 日によって担当が変わるかの前段は **`teacherVariesByDate`** (隔週 or 切り替え)。
+  `isBiweekly(note) && !isTeacherActiveOnDate(...)` の形で書かない (切り替えだけの
+  コマが日で絞られない)
+- 日付の無い絞り込み (`isSlotForTeacher`)・名前を並べる一覧 (サイドバー・Cmd+K・
+  代行候補・特訓シフトの候補・削除の件数) は**切り替えの前後の全員**。サイドバーの
+  コマ数・全講師一覧 (`currentSlots`) は**今日の担当**
+- **`slotOnDate` の結果 (その日のコマ) を保存に使わない** (切り替えが外れ、元の担当が
+  書き換わる)。コマの編集は App の `editSlotRaw` が id で保存済みのコマを引き直す。
+  振替で入るコマのカードは teacherChanges を外す (振替先の日でもう一度解かない)
+- 第N回・隔週の週送り (biweeklyAnchors) は担当を見ないので変えない
+- 登録はコースマスター管理の「👤 担当変更」タブ (`TeacherChangeTab` +
+  `utils/teacherChangePlan`)。旧担当・開始日・新担当 (・◯日まで・メモ) → 対象のコマを
+  時間割・学年・曜日・科目・学校で絞ってチェック → まとめて付ける (6 秒の「元に戻す」)。
+  開始日以降の旧担当の代行・振替を知らせ、代行者が新担当と同じ代行はまとめて解除できる。
+  一覧はコマの編集画面 (外すだけ) と講師の月間の「担当の変更:」の行 (新旧両方に出す)
+- 通常時間割作成の取込は切り替え前の担当 (`slot.teacher`) を読み、置き換え反映は
+  既定で切り替えを持ち越す (「下書きの担当で確定して消す」を選べる)
+- iCal は日ごとの判定 (`isTaughtOn`) で担当でない日を EXDATE にする
+
+## 対象学年に合わないコマ (2026-10-31)
+
+時間割の対象学年 (`timetable.grades`、空 = 全学年) に無い学年のコマは、エラーも出ずに
+どの画面にも出ない。`timetable.findSlotsOutsideTimetableGrades` /
+`gradesOutsideTimetable` で、時間割管理の一覧・コマの編集画面・置き換え反映
+(「対象学年に ◯◯ を加える」、既定オン) で知らせる。置き換え反映の名前の欄は空欄
+(= 据え置き) から始める。
+
+## コース別終講日は時間割に結び付く (2026-10-31)
+
+`CohortCutoff.timetableId` が付いた終講日はその時間割のコマにだけ効く
+(`cohorts.findCohortCutoff`。同じコースに両方あれば時間割の付いた方)。前の期の終講日を
+残したまま次の期を作れる (期切替の追従でも消さない)。
+
+- 時間割の付いていない旧データは、App が読み込みのたびに
+  `cohorts.resolveCohortTimetables` で補う (終講日の時点で有効な時間割、無ければその日
+  までに始まって最後に終わった時間割。決まらなければ従来どおり全部の時間割に効く)。
+  **保存はしない**。コース別終講日の画面で保存したときに補った値ごと書かれる
+- コース別終講日の画面は時間割を 1 つ選んで編集する。時間割の付いていない終講日を
+  その画面で変えた / 消したときは、ほかの時間割には分けて残す
+- 予定表から終講日を設定は、時間割ごとのコース (key = 時間割 + コース) で案を出す
+
 ## 授業セットと第N回の束ね (2026-08-18 確定)
 
 「第N回」は**コマ単体ではなくコースごとに通算する**。どのコマを 1 本の

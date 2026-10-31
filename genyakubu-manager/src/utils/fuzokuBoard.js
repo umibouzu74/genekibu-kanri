@@ -14,6 +14,7 @@
 // ダッシュボード・タイムテーブルと同じ経路なので、ここで 50分にした日は
 // 他の画面でも 17:00 開始に見える。
 
+import { slotOnDate, slotsOnDate } from "./biweekly";
 import { dateToDay, eachDateStrInRange } from "./dateHelpers";
 import { filterSlotsForDate, findGroupForGrade, isSlotBeyondCutoff } from "./timetable";
 import { getSlotCountStartDate, isSlotHeldOnDate } from "./sessionCount";
@@ -174,7 +175,7 @@ export function buildFuzokuMonth({
           status: "moved",
           reason: `振替 → ${describeRescheduleTarget(out, {
             short: true,
-            originalTeacher: s.teacher,
+            originalTeacher: slotOnDate(s, d).teacher,
             originalRoom: s.room,
           })}`,
         };
@@ -250,7 +251,7 @@ export function buildFuzokuMonth({
         });
       }
     }
-    const rooms = findNewConflicts(occupying, (s) => {
+    const rooms = findNewConflicts(slotsOnDate(occupying, d), (s) => {
       const st = slotStatus(s, d);
       return st.remapped ? { time: st.time } : null;
     }).filter((c) => c.kind === "room" && (isFuzokuGrade(c.a.grade) || isFuzokuGrade(c.b.grade)));

@@ -16,6 +16,7 @@ import {
   projectGrades,
 } from "./reflect";
 import {
+  scopeMatcher as scopeMatcherOf,
   countUntouchedSlots,
   describeScope,
   isScopeLimited,
@@ -110,6 +111,8 @@ export function ReflectDialog({
   // 置き換え先の対象学年に無い学年を、反映と一緒に加えるか (既定は加える。
   // 加えないと反映したコマがどの画面にも出ない)
   const [addMissingGrades, setAddMissingGrades] = useState(true);
+  // 置き換え先のコマの担当の切り替え (A5) を持ち越すか (既定) / 下書きの担当で確定するか
+  const [dropTeacherChanges, setDropTeacherChanges] = useState(false);
   const [rawScope, setRawScope] = useState({ days: [], grades: [] });
   // タブを消した後に古い選択が残ると「何も反映されない理由が分からない」
   // 状態になるので、プロジェクトの語彙に正規化してから使う
@@ -133,6 +136,18 @@ export function ReflectDialog({
     [mode, timetables, targetId]
   );
   // 下書きの (範囲内の) 学年のうち、置き換え先の対象学年に無いもの
+  // 置き換え先 (範囲内) で担当の切り替えを持つコマの数
+  const changedTeacherCount = useMemo(() => {
+    if (!replaceTarget) return 0;
+    const inScope = scoped ? scopeMatcherOf(scope) : () => true;
+    return slots.filter(
+      (s) =>
+        (s.timetableId ?? 1) === replaceTarget.id &&
+        inScope(s) &&
+        Array.isArray(s.teacherChanges) &&
+        s.teacherChanges.length > 0
+    ).length;
+  }, [replaceTarget, slots, scoped, scope]);
   const missingGrades = useMemo(() => {
     if (!replaceTarget) return [];
     const draftGrades = buildReflectionPlan(project, {
@@ -150,6 +165,7 @@ export function ReflectDialog({
       if (startDate) base.startDate = startDate;
       if (endDate) base.endDate = endDate;
       if (addMissingGrades && missingGrades.length > 0) base.addGrades = missingGrades;
+      if (dropTeacherChanges) base.dropTeacherChanges = true;
     } else {
       base.startDate = startDate || null;
       base.endDate = endDate || null;
@@ -158,7 +174,7 @@ export function ReflectDialog({
     }
     if (scoped) base.scope = scope;
     return base;
-  }, [mode, name, startDate, endDate, targetId, limitGrades, grades, switchTerm, closeId, scoped, scope, addMissingGrades, missingGrades]);
+  }, [mode, name, startDate, endDate, targetId, limitGrades, grades, switchTerm, closeId, scoped, scope, addMissingGrades, missingGrades, dropTeacherChanges]);
   const plan = useMemo(() => buildReflectionPlan(project, opts), [project, opts]);
   // 期切替の計画 (旧時間割に入れる終了日と、その検証)
   const switchPlan = useMemo(
@@ -418,6 +434,32 @@ export function ReflectDialog({
               </span>
             </span>
           </label>
+        )}
+
+        {mode === "replace" && changedTeacherCount > 0 && (
+          <fieldset style={{ border: "1px solid #dde3f0", borderRadius: 8, padding: 8, margin: 0 }}>
+            <legend style={{ fontWeight: 700, fontSize: 12 }}>
+              担当の切り替えがあるコマ（{changedTeacherCount} コマ）
+            </legend>
+            <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input
+                type="radio"
+                name="reflect-teacher-changes"
+                checked={!dropTeacherChanges}
+                onChange={() => setDropTeacherChanges(false)}
+              />
+              持ち越す（講師欄は切り替え前の担当、開始日から新しい担当のまま）
+            </label>
+            <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input
+                type="radio"
+                name="reflect-teacher-changes"
+                checked={dropTeacherChanges}
+                onChange={() => setDropTeacherChanges(true)}
+              />
+              下書きの担当で確定して、切り替えを消す
+            </label>
+          </fieldset>
         )}
 
         <label style={{ fontWeight: 600 }}>

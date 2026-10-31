@@ -18,7 +18,7 @@
 // ように分けたくなったら、ここに足せば画面・保存の形はそのまま使える
 // (保存は区分の key の文字列なので、知らない key も読み捨てずに残す)。
 
-import { getSlotTeachers, biweeklyPartner } from "./biweekly";
+import { slotTeacherNamesBetween } from "./biweekly";
 import { isValidDateStr } from "./dateHelpers";
 
 /**
@@ -314,9 +314,8 @@ export function teacherNamesForYear(slots, timetables, year) {
       if (tt.startDate && isValidDateStr(tt.startDate) && tt.startDate > end) continue;
       if (tt.endDate && isValidDateStr(tt.endDate) && tt.endDate < start) continue;
     }
-    for (const t of getSlotTeachers(s)) names.add(t);
-    const partner = biweeklyPartner(s.note);
-    if (partner) names.add(partner);
+    // 年度の中の担当 (担当の切り替えの前後どちらも)
+    for (const t of slotTeacherNamesBetween(s, start, end)) names.add(t);
   }
   return names;
 }

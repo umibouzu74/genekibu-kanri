@@ -548,7 +548,11 @@ export function applyReflection(plan, opts, { timetables, slots }) {
   // slot 側にある未知のフィールドは残す (下書きが知らない情報を消さない)
   const updatedById = new Map();
   for (const { slot, draft } of [...match.unchanged, ...match.changed]) {
-    updatedById.set(slot.id, { ...slot, ...draft, id: slot.id, timetableId });
+    const merged = { ...slot, ...draft, id: slot.id, timetableId };
+    // 担当の切り替え (slot.teacherChanges、A5) は既定で持ち越す (下書きの講師欄は
+    // 切り替え前の担当として取り込んでいる)。「下書きの担当で確定」なら外す
+    if (opts.dropTeacherChanges) delete merged.teacherChanges;
+    updatedById.set(slot.id, merged);
   }
   const keptSlots = existing
     .filter((s) => updatedById.has(s.id))

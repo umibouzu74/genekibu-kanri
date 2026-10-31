@@ -1,3 +1,4 @@
+import { slotTeacherNamesEver } from "../utils/biweekly";
 import { useToasts } from "./useToasts";
 import { useConfirm } from "./useConfirm";
 import { nextNumericId } from "../utils/schema";
@@ -45,7 +46,8 @@ export function useStaffCrud({
     const usedInSubs = subs.some(
       (s) => s.originalTeacher === name || s.substitute === name
     );
-    const assignedSlots = slots.filter((s) => s.teacher === name);
+    // 講師欄 (複数担当・隔週の相手) と担当の切り替え (A5) の中の名前も数える
+    const assignedSlots = slots.filter((s) => slotTeacherNamesEver(s).includes(name));
     const prepDayCount = (examPrepSchedules || []).reduce(
       (acc, sch) =>
         acc +

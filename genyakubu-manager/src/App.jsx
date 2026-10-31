@@ -45,7 +45,7 @@ import {
   filterSlotsCurrentOrUpcoming,
 } from "./utils/timetable";
 import { useToday } from "./hooks/useToday";
-import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
+import { slotWeight, formatCount, isSlotForTeacher, slotsOnDate } from "./utils/biweekly";
 import { visibilityForTeacher } from "./utils/teacherTags";
 import { buildKoshuLessonsForSeasons } from "./utils/builderLessons";
 import {
@@ -480,6 +480,13 @@ export default function App() {
   }, [view, selected]);
   const [monthOff, setMonthOff] = useState(0);
   const [editSlot, setEditSlot] = useState(null);
+  // 編集するコマは保存されているものを id で引き直す。日付のある画面は
+  // 担当の切り替えを当てた「その日のコマ」(biweekly.slotOnDate) を描くので、
+  // それを編集に渡すと切り替えが消え、元の担当が書き換わる
+  const editSlotRaw =
+    editSlot && editSlot !== "new"
+      ? slots.find((s) => s.id === editSlot.id) || editSlot
+      : editSlot;
   const [editSub, setEditSub] = useState(null);
   // 代行フォームで直前に作ったレコード (授業管理の月フィルタ追従用)
   const [createdSubs, setCreatedSubs] = useState(null);
@@ -721,8 +728,10 @@ export default function App() {
   // 今の時間割のコマ (日付を持たない画面用。サイドバーの講師ごとのコマ数・
   // 講師の週計・全講師一覧)。日付を持つ画面 (ダッシュボード・月間・週間) は
   // 全コマを渡し、画面の側で日ごとに時間割の有効期間を見る。
+  // 今日の担当 (担当の切り替え、A5) を当てる。サイドバーのコマ数・全講師一覧は
+  // 今日の担当で数える (編集は editSlotRaw が保存済みのコマを引き直す)
   const currentSlots = useMemo(
-    () => filterSlotsCurrentOn(slots, timetables, todayStr),
+    () => slotsOnDate(filterSlotsCurrentOn(slots, timetables, todayStr), todayStr),
     [slots, timetables, todayStr]
   );
   // 講師の名前を並べる一覧 (サイドバー・まとめて印刷・講師ごとのタグの導出) は
@@ -1684,6 +1693,8 @@ export default function App() {
               displayCutoff={displayCutoff}
               adjustments={adjustments}
               sessionOverrides={sessionOverrides}
+              subs={subs}
+              saveSubs={saveSubs}
               tab={masterTab}
               onTabChange={setMasterTab}
             />
@@ -2260,8 +2271,8 @@ export default function App() {
           onClose={() => setEditSlot(null)}
         >
           <SlotForm
-            slot={editSlot === "new" ? null : editSlot}
-            onSave={(f) => slotsCrud.save(editSlot, f, setEditSlot)}
+            slot={editSlot === "new" ? null : editSlotRaw}
+            onSave={(f) => slotsCrud.save(editSlotRaw, f, setEditSlot)}
             onCancel={() => setEditSlot(null)}
             suggestions={slotsCrud.suggestions}
             timetables={timetables}

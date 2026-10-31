@@ -3,7 +3,8 @@ import { splitTeacherField } from "../utils/biweekly";
 import { DAYS } from "../data";
 import { S } from "../styles/common";
 import { colors } from "../styles/tokens";
-import { isBiweekly } from "../utils/biweekly";
+import { isBiweekly, withTeacherChanges } from "../utils/biweekly";
+import { describeTeacherChange, listTeacherChanges } from "../utils/teacherChangePlan";
 import { dateToDay, fmtDateWeekday } from "../utils/dateHelpers";
 import { normalizeSlotCountFields } from "../utils/slotDates";
 import { gradesOutsideTimetable } from "../utils/timetable";
@@ -183,6 +184,14 @@ export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, defa
           </div>
         );
       })()}
+      {Array.isArray(f.teacherChanges) && f.teacherChanges.length > 0 && (
+        <TeacherChangesSection
+          slot={f}
+          onRemove={(from) =>
+            setF((prev) => withTeacherChanges(prev, (prev.teacherChanges || []).filter((c) => c.from !== from)))
+          }
+        />
+      )}
       {isBiweekly(f.note) && (
         <BiweeklyAnchorSection
           anchors={f.biweeklyAnchors}
@@ -485,3 +494,31 @@ const checkRow = {
   cursor: "pointer",
   lineHeight: 1.5,
 };
+
+// 担当の切り替え (A5)。登録はコースマスター管理の「担当変更」タブ。ここでは
+// 一覧と取り消しだけ (保存はこのフォームの保存と一緒)
+function TeacherChangesSection({ slot, onRemove }) {
+  const items = listTeacherChanges([slot]);
+  return (
+    <div style={{ background: "#f4f6fb", border: "1px solid #dde3f0", borderRadius: 6, padding: 8, fontSize: 12 }}>
+      <div style={{ fontWeight: 700, marginBottom: 4 }}>担当の切り替え</div>
+      <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>
+        講師欄は切り替え前の担当です。追加はコースマスター管理の「担当変更」タブから。
+      </div>
+      {items.map((item) => (
+        <div key={item.change.from} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span>{describeTeacherChange(item)}</span>
+          {item.change.memo && <span style={{ color: "#666" }}>{item.change.memo}</span>}
+          <button
+            type="button"
+            onClick={() => onRemove(item.change.from)}
+            aria-label={`${describeTeacherChange(item)} の切り替えを外す`}
+            style={{ ...S.btn(false), fontSize: 11, padding: "1px 6px" }}
+          >
+            外す
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}

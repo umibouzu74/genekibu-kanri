@@ -189,6 +189,7 @@ export const MAIN_MENU = Object.freeze([
       masterTab(MASTER_TAB.LIST, "時間割のコマを追加・編集する"),
       masterTab(MASTER_TAB.BIWEEKLY, "隔週コマの A 週・B 週の基準日"),
       masterTab(MASTER_TAB.EXCEL, "曜日ごとの時間割を表で見る"),
+      masterTab(MASTER_TAB.TEACHER_CHANGE, "学期の途中から担当が変わるコマに開始日つきで付ける"),
       navItem(VIEWS.REGULAR_BUILDER, "次の期の時間割を組んで本体へ反映する"),
       koshuSeason("spring", "講習時間割作成: 3 月末〜4 月頭の講習"),
       koshuSeason("summer", "講習時間割作成: 7〜8 月の講習"),

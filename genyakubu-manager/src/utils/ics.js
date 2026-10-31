@@ -23,6 +23,8 @@ import {
   isBiweekly,
   isSlotForTeacher,
   isTeacherActiveOnDate,
+  teacherVariesByDate,
+  slotOnDate,
 } from "./biweekly";
 import { fmtDate, parseLocalDate } from "./dateHelpers";
 import { escapeIcal } from "./escape";
@@ -153,7 +155,7 @@ function slotActiveRange(slot, ctx) {
 //     (isSlotHeldOnDate は見ない。日まるごと振替と同じ組み合わせ)
 function isTaughtOn(slot, probe, teacher, dateStr, ctx) {
   if (
-    isBiweekly(slot.note) &&
+    teacherVariesByDate(slot) &&
     !isTeacherActiveOnDate(
       slot, teacher, dateStr, ctx.biweeklyAnchors || [], ctx.holidays, ctx.examPeriods
     )
@@ -171,6 +173,8 @@ function isTaughtOn(slot, probe, teacher, dateStr, ctx) {
 //              B 週パートナーには B 週側の科目
 //   - teacher 表記: 該当週に実際に実施する人だけを書く
 function effectiveSubjectAndTeacher(slot, teacher, dateStr, ctx) {
+  // 担当の切り替え (A5) はその日の担当で書く
+  slot = slotOnDate(slot, dateStr);
   if (!isBiweekly(slot.note)) {
     return { subject: slot.subj, teacherDisplay: slot.teacher };
   }

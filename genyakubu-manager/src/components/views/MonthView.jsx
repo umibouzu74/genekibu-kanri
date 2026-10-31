@@ -1,3 +1,4 @@
+import { describeTeacherChange, listTeacherChanges } from "../../utils/teacherChangePlan";
 import { useCallback, useMemo } from "react";
 import {
   ADJ_COLOR,
@@ -47,6 +48,10 @@ import {
   isBiweekly,
   isSlotForTeacher,
   isTeacherActiveOnDate,
+  teacherVariesByDate,
+  splitTeacherField,
+  slotOnDate,
+  slotsOnDate,
 } from "../../utils/biweekly";
 import { buildSessionCountMap, formatSessionNumber } from "../../utils/sessionCount";
 import {
@@ -460,6 +465,20 @@ export function MonthView({
     [specialEvents, visibility, specialEventDisplay]
   );
   const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+  // この月に始まる担当の切り替えのうち、この講師が新旧どちらかのもの
+  const monthTeacherChanges = useMemo(() => {
+    if (!teacher) return [];
+    return listTeacherChanges(slots).filter((item) => {
+      if (!item.change.from.startsWith(monthKey)) return false;
+      const names = [
+        ...splitTeacherField(item.change.teacher),
+        ...splitTeacherField(item.prevTeacher),
+        item.change.partner,
+        item.prevPartner,
+      ];
+      return names.includes(teacher);
+    });
+  }, [slots, teacher, monthKey]);
   const bandSpecialEvents = useMemo(
     () =>
       showSpecial
@@ -502,7 +521,7 @@ export function MonthView({
       if (isSlotBeyondCutoff(ds, slot, displayCutoff)) return false;
       // 隔週スロットは「その週に実施する側の講師」のビューにだけ載せる。
       if (
-        isBiweekly(slot.note) &&
+        teacherVariesByDate(slot) &&
         !isTeacherActiveOnDate(slot, teacher, ds, biweeklyAnchors, holidays, examPeriods)
       ) {
         return false;
@@ -554,7 +573,7 @@ export function MonthView({
     const dayCutoff = cutoffKind != null;
     const sl = isFullOff || dayCutoff
       ? []
-      : (dayMap[dn] || []).filter((s) => isTeacherAttending(s, ds));
+      : slotsOnDate((dayMap[dn] || []).filter((s) => isTeacherAttending(s, ds)), ds);
     // 振替で当日に来る予定のコマ (この teacher が担当する分)。
     // adj.targetTeacher 指定時はその講師、未指定時は振替元の日の担当
     // (複数担当・隔週の A/B を解決した後。rescheduleTargetTeachers)。
@@ -676,7 +695,8 @@ export function MonthView({
         const st = sub ? subStateMeta(sub) : null;
         const hostSlotId = hostByAbsorbedKey.get(`${ds}|${s.id}`);
         const absorbed = hostSlotId != null;
-        const hostSlot = absorbed ? slotById.get(hostSlotId) : null;
+        const hostSlotRaw = absorbed ? slotById.get(hostSlotId) : null;
+        const hostSlot = hostSlotRaw ? slotOnDate(hostSlotRaw, ds) : null;
         const hostedIds = absorbedByHostKey.get(`${ds}|${s.id}`);
         const isHost = !absorbed && !!hostedIds;
         // 特別時程の時刻読み替え (個別 move 優先)。cancelled は
@@ -1702,6 +1722,36 @@ export function MonthView({
             onAddCardForget={onEditCardForget}
             style={{ marginLeft: "auto" }}
           />
+        </div>
+      )}
+      {/* 担当の切り替え (A5): この月に始まる、この講師に関わる担当の変更。
+          新旧どちらの講師の月間にも出す。紙面・画像にも載せる */}
+      {monthTeacherChanges.length > 0 && (
+        <div
+          className="month-print-band"
+          style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginBottom: 8 }}
+        >
+          <span style={{ fontSize: 11, fontWeight: 800, color: "#555" }}>担当の変更:</span>
+          {monthTeacherChanges.map((item) => (
+            <span
+              key={`${item.slot.id}-${item.change.from}`}
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                padding: "1px 8px",
+                borderRadius: 4,
+                background: "#eef3fb",
+                color: "#2a4a8e",
+                borderLeft: "3px solid #2a4a8e",
+              }}
+            >
+              {describeTeacherChange(item)}{" "}
+              <span style={{ fontWeight: 400 }}>
+                {item.slot.day} {item.slot.grade}
+                {item.slot.cls && item.slot.cls !== "-" ? item.slot.cls : ""} {item.slot.subj}
+              </span>
+            </span>
+          ))}
         </div>
       )}
       {/* 長い期間の特別イベントは日のセルではなくここに 1 回だけ出す。

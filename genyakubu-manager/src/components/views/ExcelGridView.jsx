@@ -10,7 +10,7 @@ import {
 } from "../../data";
 import { getDashSections } from "../../constants/schedule";
 import { shiftDate } from "./dashboardHelpers";
-import { getSlotTeachers } from "../../utils/biweekly";
+import { getSlotTeachers, slotsOnDate } from "../../utils/biweekly";
 import { absentTeachersForSlot } from "../../utils/absenceHelpers";
 import { needsSubstitute } from "../../utils/substituteState";
 import { cutoffBannerText } from "../../constants/cutoffMessages";
@@ -197,6 +197,7 @@ export function ExcelGridView({
 
   // 曜日タブ・欠勤先生のパネルの母集合。代行モードでは代行日に有効な時間割の
   // コマ (今の時間割に無い曜日の日を代行日にしても「コマなし」にしない)
+  // (代行モードは代行日の担当 = 担当の切り替えを当てたコマ。useSubstitutionMode)
   const poolSlots = subMode.isSubMode ? subMode.dateFilteredSlots : filteredSlots;
 
   // Check which days have slots
@@ -436,9 +437,15 @@ export function ExcelGridView({
   ]);
 
   // Sub mode > dashboard (date-filtered) > timetable-filtered slots
-  const rawDisplaySlots = subMode.isSubMode
+  // 表示日の担当 (担当の切り替え、A5) を当てたコマ。セル・講師パネル・重なりは
+  // これで描く (編集は id で保存済みのコマを引き直す)
+  const rawDisplaySlotsBase = subMode.isSubMode
     ? subMode.dateFilteredSlots
     : dashboardVisibleSlots;
+  const rawDisplaySlots = useMemo(
+    () => slotsOnDate(rawDisplaySlotsBase, displayDate),
+    [rawDisplaySlotsBase, displayDate]
+  );
 
   // 同一コホートで担任だけ異なる並列スロット (例: 中3 火 確認テスト 藤田 + 大屋敷)
   // を 1 コマにまとめる。groupTeacherMap は代表スロットに「藤田・大屋敷」を割当。

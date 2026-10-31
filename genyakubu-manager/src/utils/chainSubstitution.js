@@ -1,6 +1,15 @@
 // ─── 玉突き代行 提案ロジック ──────────────────────────────────────
 import { dateToDay, timeToMin } from "../data";
-import { biweeklyPartner, getSlotTeachers, getSlotWeekType, isBiweekly } from "./biweekly";
+import {
+  biweeklyPartner,
+  getSlotTeachers,
+  getSlotWeekType,
+  hasTeacherChanges,
+  isBiweekly,
+  slotOnDate,
+  slotsOnDate,
+  slotTeacherNamesEver,
+} from "./biweekly";
 import { makeEventHelpers } from "../components/views/dashboardHelpers";
 import { filterSlotsForDate } from "./timetable";
 import { pickSubjectId, getTeacherSubjectIds } from "./subjectMatch";
@@ -88,6 +97,16 @@ export function classifySlotForTeacher(
   holidays,
   examPeriods
 ) {
+  // 担当の切り替え (A5): その日の担当で見る。切り替えで外れた人は担当外
+  if (hasTeacherChanges(slot)) {
+    const day = slotOnDate(slot, date);
+    const onDay = getSlotTeachers(day);
+    const partnerOnDay = biweeklyPartner(day.note);
+    if (!onDay.includes(name) && name !== partnerOnDay) {
+      return { status: "cancelled", reason: "担当の切り替え" };
+    }
+    slot = day;
+  }
   if (isBiweekly(slot.note)) {
     const wt = getSlotWeekType(date, slot, biweeklyAnchors, holidays, examPeriods);
     const mainTeachers = getSlotTeachers(slot);
@@ -174,9 +193,8 @@ function collectTeacherSlots(daySlots) {
 export function collectAllTeacherNames(allSlots, partTimeStaff) {
   const names = new Set();
   for (const slot of allSlots || []) {
-    for (const t of getSlotTeachers(slot)) names.add(t);
-    const partner = biweeklyPartner(slot.note);
-    if (partner) names.add(partner);
+    // 担当の切り替えの前後の担当も入れる
+    for (const t of slotTeacherNamesEver(slot)) names.add(t);
   }
   for (const s of partTimeStaff || []) if (s?.name) names.add(s.name);
   return names;
@@ -244,7 +262,8 @@ export function computeAvailableTeachers(
   const includeIdle = !!opts?.includeIdleTeachers;
 
   const staffNameSet = new Set(partTimeStaff.map((s) => s.name));
-  const daySlots = filterSlotsForDate(allSlots, date, timetables).filter(
+  // その日の担当 (担当の切り替え) を当てたコマ
+  const daySlots = slotsOnDate(filterSlotsForDate(allSlots, date, timetables), date).filter(
     (s) => s.day === day
   );
   const holidayHelpers = makeEventHelpers(holidays, examPeriods);

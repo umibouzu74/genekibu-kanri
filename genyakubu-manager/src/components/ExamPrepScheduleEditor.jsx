@@ -15,7 +15,7 @@ import {
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
 import { compareTeacherNames, teacherMatchesQuery } from "../utils/teacherKana";
-import { getSlotTeachers } from "../utils/biweekly";
+import { getSlotTeachers, hasTeacherChanges, slotTeacherNamesEver } from "../utils/biweekly";
 import { pickSubjectId } from "../utils/subjectMatch";
 
 // 各日のデフォルト雛形（添付画像の平日枠: 4 校時 18:00-21:50）。
@@ -112,7 +112,8 @@ export function ExamPrepScheduleEditor({
     for (const slot of slots) {
       const sid = pickSubjectId(slot.subj, subjects);
       if (sid == null) continue;
-      for (const t of getSlotTeachers(slot)) {
+      // 担当の切り替え (A5) の前後の担当も候補に入れる
+      for (const t of hasTeacherChanges(slot) ? slotTeacherNamesEver(slot) : getSlotTeachers(slot)) {
         if (!t) continue;
         if (!fromSlotsByName.has(t)) fromSlotsByName.set(t, new Set());
         fromSlotsByName.get(t).add(sid);

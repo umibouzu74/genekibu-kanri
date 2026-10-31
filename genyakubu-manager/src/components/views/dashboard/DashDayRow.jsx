@@ -14,6 +14,7 @@ import { RescheduleInBanner } from "../../RescheduleInBanner";
 import { RescheduleOutBanner } from "../../RescheduleOutBanner";
 import { SlotCancelBanner } from "../../SlotCancelBanner";
 import { collectCancelledSlots } from "../../../utils/slotCancel";
+import { slotsOnDate } from "../../../utils/biweekly";
 import { SectionColumn } from "./SectionColumn";
 import { fmtDateWeekday, getSubsForSlot } from "../../../data";
 import {
@@ -31,7 +32,7 @@ export function DashDayRow({
   date,
   dow,
   holidays: hols,
-  slots,
+  slots: slotsProp,
   subs,
   adjustments = [],
   examPeriodsForDate = [],
@@ -52,6 +53,8 @@ export function DashDayRow({
   // 追加授業バナーの行クリックで編集へ (省略時はクリック不可の素の行)
   onEditExtraLesson,
 }) {
+  // その日の担当 (担当の切り替えを当てたコマ)。この行の表示・講師の重なりは全部これで
+  const slots = useMemo(() => slotsOnDate(slotsProp, date), [slotsProp, date]);
   const sessionCountMap = useMemo(() => {
     if (!sessionCtx || !sessionCtx.displayCutoff) return null;
     return buildSessionCountMap(slots, date, sessionCtx);
