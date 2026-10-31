@@ -28,7 +28,7 @@
 //
 // 既存の「出勤日数」(summarizeTeacherRow().days) は日付の数のままにしてある。
 
-import { biweeklyPartner, splitTeacherField } from "./biweekly";
+import { slotTeacherNamesBetween } from "./biweekly";
 import { DAYS } from "../constants/schools";
 import { dateToDay, isValidDateStr } from "./dateHelpers";
 import { gradeToDept } from "./scheduleHelpers";
@@ -395,9 +395,11 @@ export function buildDutyHints({ slots = [], timetables = [], staffNames = [], d
     if (!active) continue;
     const token = dutyTokenOf(slot);
     if (!token) continue;
-    const people = new Set(splitTeacherField(slot.teacher));
-    const partner = biweeklyPartner(slot.note);
-    if (partner) people.add(partner);
+    // 期間の中の担当 (担当の切り替えの前後どちらも担当に入れる)
+    const sorted = [...dayDates].sort();
+    const people = new Set(
+      slotTeacherNamesBetween(slot, sorted[0], sorted[sorted.length - 1])
+    );
     for (const name of people) {
       if (!names.has(name)) continue;
       if (!acc.has(name)) acc.set(name, new Map());

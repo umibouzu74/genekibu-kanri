@@ -13,7 +13,7 @@
 import ExcelJS from 'exceljs';
 import { cleanSchedule, getSubjectColor } from './constants';
 import type { Project } from '../types';
-import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, makeNgKey, effectiveConfigForTab } from './scheduleKey';
+import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, makeNgKey, effectiveConfigForTab, mergedClassesForTab } from './scheduleKey';
 import { quotaForClass } from './subjectQuota';
 import { computeGlobalUsage, makeSubjectOrderMarker } from './analysisHelpers';
 import { computeAutoNgByTeacher } from './autoNg';
@@ -368,7 +368,7 @@ export function computeSubjectStats(project: Project, subject: string) {
 
   (project.tabs || []).forEach(tab => {
     // §N: 必要コマ数はクラス別上書きを考慮してクラスごとに解決して合算
-    const needed = (tab.config?.classes || []).reduce(
+    const needed = mergedClassesForTab(tab).reduce(
       (sum, c) => sum + quotaForClass(tab.config, c.id, subject), 0);
     let filled = 0;
     // v4(Y)+E-3: そのタブが使う日・使う時限だけを集計対象にする。
@@ -376,7 +376,7 @@ export function computeSubjectStats(project: Project, subject: string) {
 
     dates.forEach(d => {
       periods.forEach(p => {
-        (tab.config?.classes || []).forEach(c => {
+        mergedClassesForTab(tab).forEach(c => {
           const e = tab.schedule?.[makeKey(d.id, p.id, c.id)];
           if (!e || e.subject !== subject) return;
           filled++;
@@ -603,7 +603,7 @@ export function buildTeacherRows(project: Project, teacherName: string): Teacher
     const orderMark = makeSubjectOrderMarker(effective, tab.schedule);
     dates.forEach((d) => {
       periods.forEach((p) => {
-        tab.config.classes.forEach((c) => {
+        mergedClassesForTab(tab).forEach((c) => {
           const k = makeKey(d.id, p.id, c.id);
           const entry = tab.schedule[k];
           if (entry && entry.teacher === teacherName) {
@@ -731,7 +731,7 @@ export function computeTeacherClassCounts(project: Project): TeacherClassCounts 
   const countsByTeacher = new Map<string, { lesson: number[]; test: number[] }>();
 
   (project.tabs || []).forEach(tab => {
-    const classes = tab.config?.classes || [];
+    const classes = mergedClassesForTab(tab);
     if (classes.length === 0) return;
     // 同名タブが並んでも別の span になるようタブ単位で積む (ヘッダ結合が
     // 別タブのクラスを巻き込まない)

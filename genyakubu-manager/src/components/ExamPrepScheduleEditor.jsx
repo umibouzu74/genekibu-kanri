@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Modal } from "./Modal";
+import { ExamPrepTsvDialog } from "./ExamPrepTsvDialog";
 import { S, TOGGLE_LABEL_CLASS, VISUALLY_HIDDEN } from "../styles/common";
 import { colors } from "../styles/tokens";
 import { eachDateStrInRange, fmtDateWeekday } from "../utils/dateHelpers";
@@ -9,13 +10,19 @@ import {
   findDay,
   isTimeRangeValid,
   nextPeriodNo,
+  normalizeShiftTime,
+  setStaffTime,
   sortDayPeriodsByTime,
+  staffShiftPeriods,
+  staffTimeOf,
+  staffTimeWarnings,
   timeStrToMin,
+  withoutOrphanStaffTimes,
 } from "../utils/examPrepHelpers";
 import { useConfirm } from "../hooks/useConfirm";
 import { useToasts } from "../hooks/useToasts";
 import { compareTeacherNames, teacherMatchesQuery } from "../utils/teacherKana";
-import { getSlotTeachers } from "../utils/biweekly";
+import { getSlotTeachers, hasTeacherChanges, slotTeacherNamesEver } from "../utils/biweekly";
 import { pickSubjectId } from "../utils/subjectMatch";
 
 // 各日のデフォルト雛形（添付画像の平日枠: 4 校時 18:00-21:50）。
@@ -68,6 +75,8 @@ export function ExamPrepScheduleEditor({
   );
 
   const [activeDate, setActiveDate] = useState(rangeDates[0] || "");
+  // 表 (TSV) で書き出す・貼り付ける (C2)
+  const [tsvOpen, setTsvOpen] = useState(false);
   const [copyTargets, setCopyTargets] = useState([]);
   // コピー先の一覧には表示中の日が出ないので、選択に残っていても数えない。
   // 選択そのものは消さない (コピー先を選んだあと、その日を覗いて戻ってきた
@@ -112,7 +121,8 @@ export function ExamPrepScheduleEditor({
     for (const slot of slots) {
       const sid = pickSubjectId(slot.subj, subjects);
       if (sid == null) continue;
-      for (const t of getSlotTeachers(slot)) {
+      // 担当の切り替え (A5) の前後の担当も候補に入れる
+      for (const t of hasTeacherChanges(slot) ? slotTeacherNamesEver(slot) : getSlotTeachers(slot)) {
         if (!t) continue;
         if (!fromSlotsByName.has(t)) fromSlotsByName.set(t, new Set());
         fromSlotsByName.get(t).add(sid);
@@ -209,11 +219,21 @@ export function ExamPrepScheduleEditor({
   }, [activeDay]);
 
   const hasDay = activeDay != null;
+  // 来る・帰る時刻の注意 (保存は止めない)
+  const staffWarnings = useMemo(
+    () => (activeDay ? staffTimeWarnings(activeDay) : []),
+    [activeDay]
+  );
 
+  // 書き込む時点のその日の設定に当てる (crud.updateDay)。続けて操作しても
+  // 前の操作を消さない。updateDay の無い crud (テストの差し替え) は従来どおり
   const updateActiveDay = (updater) => {
+    if (crud.updateDay) {
+      crud.updateDay(examPeriod.id, activeDate, updater, blankDay(activeDate));
+      return;
+    }
     const base = activeDay || blankDay(activeDate);
-    const next = updater(base);
-    crud.upsertDay(examPeriod.id, next, { successMsg: null });
+    crud.upsertDay(examPeriod.id, withoutOrphanStaffTimes(updater(base)), { successMsg: null });
   };
 
   const handleInitDay = () => {
@@ -302,6 +322,11 @@ export function ExamPrepScheduleEditor({
     });
   };
 
+  // 来る・帰る時刻 (途中入り・途中抜け)。空欄 = 校時どおり
+  const handleSetStaffTime = (staffName, times) => {
+    updateActiveDay((d) => setStaffTime(d, staffName, times));
+  };
+
   const handleToggleAllForStaff = (staffName) => {
     updateActiveDay((d) => {
       const allNos = d.periods.map((p) => p.no);
@@ -367,6 +392,28 @@ export function ExamPrepScheduleEditor({
       onClose={onClose}
       width="min(900px, 95vw)"
     >
+      {crud.replaceDays && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+          <button
+            type="button"
+            onClick={() => setTsvOpen(true)}
+            style={{ ...S.btn(false), fontSize: 11 }}
+            title="テスト期間の特訓シフトを表 (TSV) で書き出す・貼り付ける"
+          >
+            📋 表で書き出す・貼り付ける
+          </button>
+        </div>
+      )}
+      {tsvOpen && (
+        <ExamPrepTsvDialog
+          examPeriod={examPeriod}
+          schedule={schedule}
+          candidateNames={staffEntries.map((e) => e.name)}
+          compareNames={compareTeacherNames(teacherKana)}
+          crud={crud}
+          onClose={() => setTsvOpen(false)}
+        />
+      )}
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
         {/* 左ペイン: 日付リスト。講師の一覧を下へスクロールしても次の日を
             選べるよう、左右 2 段組の画面ではモーダル内で固定する
@@ -700,11 +747,23 @@ export function ExamPrepScheduleEditor({
                           );
                         })}
                         <th scope="col" className="exam-prep-sticky-th" style={stickyThStyle}>全て</th>
+                        <th
+                          scope="col"
+                          className="exam-prep-sticky-th"
+                          style={stickyThStyle}
+                          title="校時の途中から来る・途中で帰るときだけ入れる (空欄 = 校時どおり)"
+                        >
+                          来る〜帰る
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredStaffEntries.map((entry, idx) => {
                         const nos = activeDay.assignments?.[entry.name] || [];
+                        const shiftByNo = new Map(
+                          staffShiftPeriods(activeDay, entry.name).map((x) => [x.no, x])
+                        );
+                        const st = staffTimeOf(activeDay, entry.name);
                         const allOn =
                           activeDay.periods.length > 0 &&
                           activeDay.periods.every((p) => nos.includes(p.no));
@@ -777,14 +836,28 @@ export function ExamPrepScheduleEditor({
                             </td>
                             {activeDay.periods.map((p) => {
                               const checked = nos.includes(p.no);
+                              // 途中から・途中までの校時は薄く塗り、時刻を添える
+                              const shift = checked ? shiftByNo.get(p.no) : null;
+                              const partial = checked && (!shift || shift.trimmed);
                               return (
                                 <td
                                   key={p.no}
                                   style={{
                                     ...tdStyle,
                                     padding: 0,
-                                    background: checked ? CHECKED_BG : undefined,
+                                    background: checked
+                                      ? partial
+                                        ? PARTIAL_BG
+                                        : CHECKED_BG
+                                      : undefined,
                                   }}
+                                  title={
+                                    partial
+                                      ? shift
+                                        ? `${shift.start}〜${shift.end} (途中から・途中まで)`
+                                        : "来る・帰る時刻の外 (出勤に数えません)"
+                                      : undefined
+                                  }
                                 >
                                   {/* セル全体をクリック範囲にする (小さな
                                       チェックボックスを狙わなくてよい) */}
@@ -816,6 +889,18 @@ export function ExamPrepScheduleEditor({
                                 {allOn ? "全解除" : "全選択"}
                               </button>
                             </td>
+                            <td style={{ ...tdStyle, whiteSpace: "nowrap" }}>
+                              {nos.length > 0 ? (
+                                <StaffTimeInputs
+                                  name={entry.name}
+                                  from={st.from || ""}
+                                  to={st.to || ""}
+                                  onChange={(next) => handleSetStaffTime(entry.name, next)}
+                                />
+                              ) : (
+                                <span style={{ color: "#bbb", fontSize: 10 }}>—</span>
+                              )}
+                            </td>
                           </tr>
                         );
                       })}
@@ -824,6 +909,14 @@ export function ExamPrepScheduleEditor({
                   </div>
                 )}
               </div>
+
+              {staffWarnings.length > 0 && (
+                <div role="alert" style={{ fontSize: 11, color: "#9a6b00", lineHeight: 1.7 }}>
+                  {staffWarnings.map((w) => (
+                    <div key={`${w.name}-${w.kind}`}>⚠ {w.message}</div>
+                  ))}
+                </div>
+              )}
 
               {/* 別日へのコピー */}
               <div
@@ -942,6 +1035,46 @@ const stickyThStyle = {
 
 // 出勤を入れた校時のセル
 const CHECKED_BG = "#fff4d6";
+// 途中から・途中までの校時 (来る・帰る時刻で切り詰めた校時)
+const PARTIAL_BG = "#fffaec";
+
+// 1 行ぶんの来る・帰る時刻。入力中はこの欄だけで持ち、欄を離れたときに
+// "HH:MM" にそろえて保存する ("1830" / "18：30" も読む)
+function StaffTimeInputs({ name, from, to, onChange }) {
+  const [draft, setDraft] = useState(null);
+  const cur = draft || { from, to };
+  const commit = (next) => {
+    const f = normalizeShiftTime(next.from);
+    const t = normalizeShiftTime(next.to);
+    setDraft(null);
+    if (f === null || t === null) return; // 読めない時刻は保存しない (元に戻る)
+    if (f === (from || "") && t === (to || "")) return;
+    onChange({ from: f, to: t });
+  };
+  const input = (field, label) => (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={cur[field]}
+      placeholder={field === "from" ? "来る" : "帰る"}
+      aria-label={`${name} の${label}`}
+      onChange={(e) => setDraft({ ...cur, [field]: e.target.value })}
+      onBlur={() => draft && commit(cur)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit(cur);
+        if (e.key === "Escape") setDraft(null);
+      }}
+      style={{ ...S.input, width: 52, fontSize: 11, padding: "2px 4px" }}
+    />
+  );
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 2 }}>
+      {input("from", "来る時刻")}
+      <span style={{ fontSize: 10, color: "#888" }}>〜</span>
+      {input("to", "帰る時刻")}
+    </span>
+  );
+}
 
 const cellLabelStyle = {
   display: "flex",

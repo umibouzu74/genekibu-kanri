@@ -1,4 +1,4 @@
-import { parseKey, findCombinedGroup, effectiveConfigForTab } from './scheduleKey';
+import { parseKey, findCombinedGroup, effectiveConfigForTab, mergedClassesForTab } from './scheduleKey';
 import type { ParsedKey } from './scheduleKey';
 import type { CombinedGroup, Entity, ScheduleEntry, Tab } from '../types';
 
@@ -44,7 +44,8 @@ export function forEachCountedAssignment(
   const eff = effectiveConfigForTab({ dates, periods }, tab);
   const dateById = new Map(eff.dates.map(d => [d.id, d]));
   const periodById = new Map(eff.periods.map(p => [p.id, p]));
-  const classById = new Map((tab.config?.classes || []).map(c => [c.id, c]));
+  // 丸ごと合同 (B4) で従うクラスの温存セルは数えない (相手のクラスと 1 件)
+  const classById = new Map(mergedClassesForTab(tab).map(c => [c.id, c]));
   const seenCombined = new Set<string>();
 
   Object.entries(tab.schedule || {}).forEach(([key, entry]) => {

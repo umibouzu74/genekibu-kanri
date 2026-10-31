@@ -184,10 +184,86 @@ export function buildSlotCohortIndex(slots) {
 export function findCohortCutoff(slot, cohortCutoffs) {
   if (!Array.isArray(cohortCutoffs) || cohortCutoffs.length === 0) return null;
   if (!slot || !slot.grade) return null;
+  // 時間割の付いた終講日 (timetableId) はその時間割のコマにだけ効く (A1)。
+  // 前の期の終講日を残したまま次の期を作っても、次の期のコマを止めない。
+  // 時間割の付いていない旧データはどの時間割のコマにも効く (従来どおり)。
+  // 同じコースに両方あれば、時間割の付いた方を優先する
+  const ttId = slot.timetableId ?? 1;
+  let legacy = null;
   for (const c of cohortCutoffs) {
-    if (c && c.id && cohortIdMatchesSlot(c.id, slot)) return c;
+    if (!c || !c.id || !cohortIdMatchesSlot(c.id, slot)) continue;
+    if (c.timetableId == null) {
+      if (!legacy) legacy = c;
+    } else if (c.timetableId === ttId) {
+      return c;
+    }
   }
-  return null;
+  return legacy;
+}
+
+/**
+ * コホート id が slot に当たるか (findCohortCutoff の照合をそのまま公開)。
+ * @param {string} id
+ * @param {import("../types").Slot} slot
+ */
+export function cohortIdMatches(id, slot) {
+  return !!id && !!slot && cohortIdMatchesSlot(id, slot);
+}
+
+/**
+ * 時間割の付いていない終講日 (A1 より前のデータ) に、時間割を補う。
+ * 「そのコースのコマを持ち、終講日の時点で有効な時間割」が 1 つに決まれば
+ * それを付ける。どの時間割も有効でない日 (期と期の間) は、その日までに
+ * 始まっていて最後に終わった時間割。決まらないもの (日付なし・2 つの時間割が
+ * 同時に有効・コマが無い) は時間割なしのまま (従来どおり全部の時間割に効く)。
+ *
+ * **保存はしない** (読み込みのたびに補う)。複数の端末が同時に書き戻さない
+ * ように。コース別終講日の画面で保存するときに、補った値ごと書かれる
+ * (= そこで移行が済む)。同じものを返す (=== ) なら何も補っていない。
+ * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
+ * @param {import("../types").Timetable[]} timetables
+ * @param {import("../types").Slot[]} slots
+ * @returns {import("../types").DisplayCutoff | null | undefined}
+ */
+export function resolveCohortTimetables(displayCutoff, timetables, slots) {
+  const cohorts = displayCutoff?.cohorts;
+  if (!Array.isArray(cohorts) || cohorts.length === 0) return displayCutoff;
+  if (!cohorts.some((c) => c && c.timetableId == null)) return displayCutoff;
+  if (!Array.isArray(timetables) || timetables.length === 0) return displayCutoff;
+  const ttById = new Map(timetables.map((t) => [t.id, t]));
+  let changed = false;
+  const next = cohorts.map((c) => {
+    if (!c || c.timetableId != null || !c.id || !c.date) return c;
+    const candidateIds = new Set();
+    for (const s of slots || []) {
+      if (cohortIdMatchesSlot(c.id, s)) candidateIds.add(s.timetableId ?? 1);
+    }
+    const candidates = [...candidateIds].map((id) => ttById.get(id)).filter(Boolean);
+    const started = candidates.filter((t) => !t.startDate || t.startDate <= c.date);
+    const active = started.filter((t) => !t.endDate || c.date <= t.endDate);
+    let pick = null;
+    if (active.length === 1) pick = active[0];
+    else if (active.length === 0 && started.length > 0) {
+      const sorted = [...started].sort((a, b) =>
+        (a.endDate || "") < (b.endDate || "") ? 1 : (a.endDate || "") > (b.endDate || "") ? -1 : 0
+      );
+      if (sorted.length === 1 || sorted[0].endDate !== sorted[1].endDate) pick = sorted[0];
+    }
+    if (!pick) return c;
+    changed = true;
+    return { ...c, timetableId: pick.id };
+  });
+  return changed ? { ...displayCutoff, cohorts: next } : displayCutoff;
+}
+
+/**
+ * 終講日エントリが「この時間割のコースの終講日」か。時間割の付いていない
+ * 旧データはどの時間割にも効くので、どの時間割から見ても当たる。
+ * @param {import("../types").CohortCutoff} c
+ * @param {number} timetableId
+ */
+export function cohortCutoffAppliesToTimetable(c, timetableId) {
+  return !!c && (c.timetableId == null || c.timetableId === timetableId);
 }
 
 // コホート ID (`<種別>|<学年>|<キー>[|<スコープ>]`) が slot に一致するか。

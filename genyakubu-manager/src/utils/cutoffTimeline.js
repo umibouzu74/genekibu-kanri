@@ -185,11 +185,17 @@ export function buildCutoffTimeline({
     for (const c of cohorts) {
       if (!c.date) continue;
       if (findGroupForGrade(c.grade, groups)?.label !== g.label) continue;
+      // 時間割に結び付いた終講日 (A1) は時間割の名前を添える (同じコースが
+      // 期ごとに並ぶので)。時間割が 1 つだけなら添えない
+      const tt =
+        c.timetableId != null && timetables.length > 1
+          ? timetables.find((t) => t.id === c.timetableId)
+          : null;
       rows.push({
-        key: `cohort-${c.id}`,
+        key: `cohort-${c.timetableId ?? "*"}-${c.id}`,
         kind: "cohort",
         label: c.label,
-        sub: "",
+        sub: tt ? tt.name : "",
         startDate: g.startDate || null,
         endDate: c.date,
         openStart: !g.startDate,

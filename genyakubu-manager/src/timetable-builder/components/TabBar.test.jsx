@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import TabBar from './TabBar';
 import { ProjectContext } from '../contexts/projectContextValue';
 import { UIContext } from '../contexts/uiContextValue';
@@ -222,13 +222,23 @@ describe('TabBar — 空タブ badge (L1b)', () => {
 });
 
 describe('TabBar — タブ間複製 (K4a)', () => {
-  it('非アクティブタブの ⧉ で confirm 後に copyScheduleFromTab が呼ばれる', async () => {
+  it('タブ名の横には ⧉ を置かない (誤クリック防止)。「⋯ タブの操作」から複製する', async () => {
     const copyScheduleFromTab = vi.fn();
     renderTabBar({ projectOverrides: { copyScheduleFromTab } });
-    // アクティブタブ (高3) には複製ボタンは出ない
-    expect(screen.queryByLabelText('高3 タブの割当を現在のタブへ複製')).toBeNull();
-    fireEvent.click(screen.getByLabelText('高2 タブの割当を現在のタブへ複製'));
+    expect(screen.queryByLabelText('高2 タブの割当を現在のタブへ複製')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /タブの操作/ }));
+    const menu = screen.getByRole('menu', { name: 'タブの操作' });
+    // 今のタブ (高3) 自身は複製元に出ない
+    expect(within(menu).queryByRole('menuitem', { name: /「高3」から複製/ })).toBeNull();
+    fireEvent.click(within(menu).getByRole('menuitem', { name: /「高2」から複製/ }));
     await waitFor(() => expect(copyScheduleFromTab).toHaveBeenCalledWith(2));
+  });
+
+  it('タブの右クリックでもメニューが開く', () => {
+    renderTabBar();
+    fireEvent.contextMenu(screen.getByRole('tab', { name: /高2/ }));
+    const menu = screen.getByRole('menu', { name: 'タブの操作' });
+    expect(within(menu).getByRole('menuitem', { name: /「高2」の名前を変更/ })).toBeInTheDocument();
   });
 
   it('confirm をキャンセルすると複製しない', async () => {
@@ -238,7 +248,8 @@ describe('TabBar — タブ間複製 (K4a)', () => {
       projectOverrides: { copyScheduleFromTab },
       uiOverrides: { showConfirm },
     });
-    fireEvent.click(screen.getByLabelText('高2 タブの割当を現在のタブへ複製'));
+    fireEvent.click(screen.getByRole('button', { name: /タブの操作/ }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /「高2」から複製/ }));
     await waitFor(() => expect(showConfirm).toHaveBeenCalled());
     expect(copyScheduleFromTab).not.toHaveBeenCalled();
   });

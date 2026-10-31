@@ -3,6 +3,7 @@ import GeneratorWorker from './autoGenerator.worker?worker';
 import { generateSinglePattern } from './autoGenerator';
 import type { GenerationProgress, GenerationResult } from './autoGenerator';
 import type { Project } from '../types';
+import type { PlanningHints } from '../utils/planningHints';
 
 export interface GeneratorHandle {
   done: Promise<void>;
@@ -14,6 +15,8 @@ interface RunGeneratorArgs {
   activeTabId: number;
   numPatterns: number;
   baseSeed?: number;
+  /** 組み方の手がかり (B1・B2・B3)。worker へそのまま送る */
+  planning?: PlanningHints | null;
   onPattern?: (index: number, result: GenerationResult) => void;
   onProgress?: (index: number, progress: GenerationProgress) => void;
   onError?: (message: string) => void;
@@ -31,13 +34,14 @@ export function runGeneratorInWorker({
   activeTabId,
   numPatterns,
   baseSeed = Date.now(),
+  planning = null,
   onPattern,
   onProgress,
   onError,
 }: RunGeneratorArgs): GeneratorHandle {
   // typeof Worker チェックで test 環境を判別 (jsdom には Worker がない)
   if (typeof Worker === 'undefined') {
-    return runGeneratorSync({ project, activeTabId, numPatterns, baseSeed, onPattern, onProgress, onError });
+    return runGeneratorSync({ project, activeTabId, numPatterns, baseSeed, planning, onPattern, onProgress, onError });
   }
 
   const worker = new GeneratorWorker();
@@ -69,7 +73,7 @@ export function runGeneratorInWorker({
     worker.terminate();
     resolveDone();
   });
-  worker.postMessage({ project, activeTabId, numPatterns, baseSeed });
+  worker.postMessage({ project, activeTabId, numPatterns, baseSeed, planning });
 
   return {
     done,
@@ -88,6 +92,7 @@ function runGeneratorSync({
   activeTabId,
   numPatterns,
   baseSeed,
+  planning,
   onPattern,
   onProgress,
   onError,
@@ -102,6 +107,7 @@ function runGeneratorSync({
           project,
           activeTabId,
           seed,
+          planning,
           onProgress: onProgress ? (p) => onProgress(i, p) : undefined,
         });
         onPattern?.(i, result);

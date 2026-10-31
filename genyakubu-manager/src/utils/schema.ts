@@ -53,7 +53,7 @@ import type {
 import { SPECIAL_EVENT_TYPE_BY_KEY } from "../constants/specialEvents";
 import { upgradeSpecialEventTypes } from "./specialEventTypes";
 
-export const CURRENT_SCHEMA_VERSION = 28;
+export const CURRENT_SCHEMA_VERSION = 29;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -85,7 +85,12 @@ export function isSlot(x: unknown): x is Slot {
     (x.sessionStartNumber === undefined || isNumber(x.sessionStartNumber)) &&
     (x.onlyDates === undefined ||
       (Array.isArray(x.onlyDates) &&
-        (x.onlyDates as unknown[]).every((d) => isIsoDate(d))))
+        (x.onlyDates as unknown[]).every((d) => isIsoDate(d)))) &&
+    (x.teacherChanges === undefined ||
+      (Array.isArray(x.teacherChanges) &&
+        (x.teacherChanges as unknown[]).every(
+          (c) => isObject(c) && isIsoDate(c.from) && isString(c.teacher)
+        )))
   );
 }
 
@@ -512,6 +517,15 @@ export function isExamPrepSchedule(x: unknown): x is ExamPrepSchedule {
       for (const v of Object.values(d.assignments)) {
         if (!Array.isArray(v)) return false;
         if (!v.every((n) => isNumber(n))) return false;
+      }
+    }
+    // 途中入り・途中抜け (C1): { 名前: { from?, to? } }
+    if (d.staffTimes !== undefined) {
+      if (!isObject(d.staffTimes)) return false;
+      for (const v of Object.values(d.staffTimes)) {
+        if (!isObject(v)) return false;
+        if (v.from !== undefined && !isString(v.from)) return false;
+        if (v.to !== undefined && !isString(v.to)) return false;
       }
     }
   }
@@ -1217,6 +1231,13 @@ export function migrateExportBundle(raw: unknown): unknown {
 
   // v27 → v28: seniorKoshu (高校部・予備校の講習: 期・時限・担当) を追加。既定値で
   //             埋めない (無ければ現状維持)。
+
+  // v28 → v29: Slot.teacherChanges (担当の切り替え: 開始日つきの担当変更)、
+  //             CohortCutoff.timetableId (終講日の時間割)、特訓シフトの
+  //             ExamPrepDay.staffTimes (途中入り・途中抜けの時刻) を追加。どれも
+  //             足すだけで既存データの変換は不要 (v26 と同じく「理解する schema」の
+  //             切れ目として版を上げる)。古い版の端末は切り替え・時刻を知らないので、
+  //             リリース後は全端末で再読み込みしてもらう。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;

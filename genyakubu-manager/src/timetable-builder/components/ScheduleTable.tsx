@@ -204,6 +204,12 @@ export default function ScheduleTable({ isCompact, onContextMenu, highlightTeach
                 onContextMenu={(e) => onContextMenu(e, null, null, null, 'class', c.label)}
                 onLongPressOpen={(e) => onContextMenu(e, null, null, null, 'class', c.label)}>
                 {c.label}
+                {/* 丸ごと合同 (B4): 従うクラスの名前も並べる */}
+                {c.mergedWith?.length ? (
+                  <span className="block text-[10px] font-normal" title="丸ごと合同 (⚙ 設定 > 基本設定 の「クラスと教室」で外せます)">
+                    ・{c.mergedWith.map(x => x.label).join('・')} と合同
+                  </span>
+                ) : null}
                 {/* 教室 (クラス名とは別に持つ。⚙ 設定 > 基本設定 の「クラスと教室」) */}
                 {classRoomOf(c) && (
                   <span className="block text-[10px] font-normal opacity-80">{classRoomOf(c)}</span>

@@ -30,6 +30,16 @@ export interface Slot {
   // sessionStartNumber: その期の最初の回を第N回から数える (2 学期は⑨から)
   separateWeekdayCount?: boolean;
   sessionStartNumber?: number;
+  // 担当の切り替え (utils/biweekly の slotOnDate、A5)。その日の担当 = from が
+  // その日以前で一番新しい切り替えの teacher、無ければ teacher。from の昇順
+  teacherChanges?: TeacherChange[];
+}
+
+export interface TeacherChange {
+  from: string; // "YYYY-MM-DD" この日から
+  teacher: string; // 講師欄と同じ書き方 (複数担当は "·" 区切り)
+  partner?: string; // 隔週の B 週の相手 (無ければ note の「隔週(◯◯)」のまま)
+  memo?: string;
 }
 
 export interface Holiday {
@@ -186,6 +196,8 @@ export interface ExamPrepDay {
   periods: ExamPrepPeriod[];
   // assignments[staffName] = 出勤する校時 no の配列
   assignments: Record<string, number[]>;
+  // 途中入り・途中抜け (C1)。空欄 = 校時どおり (utils/examPrepHelpers.staffShiftPeriods)
+  staffTimes?: Record<string, { from?: string; to?: string }>;
 }
 
 export interface ExamPrepSchedule {
@@ -552,6 +564,11 @@ export interface CohortCutoff {
   label: string; // 表示用 (例: "高1 高松西", "中1 火金")
   grade: string; // 対象学年 (グルーピング・表示用)
   date: string | null; // "YYYY-MM-DD" 終講日。null = グループ設定にフォールバック
+  // この終講日が効く時間割 (A1、2026-10-31)。付いていればその時間割のコマにだけ
+  // 効く (前の期の終講日を残したまま次の期を作れる)。無い旧データはどの時間割の
+  // コマにも効く。読み込みのたびに cohorts.resolveCohortTimetables が補い、
+  // コース別終講日の画面で保存したときに書かれる
+  timetableId?: number;
 }
 
 export interface DisplayCutoff {

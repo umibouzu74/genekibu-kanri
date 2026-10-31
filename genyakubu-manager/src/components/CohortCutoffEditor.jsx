@@ -1,8 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { S } from "../styles/common";
 import { DAYS } from "../constants/schools";
-import { deriveCohortsFromSlots, firstSubjToken } from "../utils/cohorts";
-import { findGroupForGrade } from "../utils/timetable";
+import {
+  cohortCutoffAppliesToTimetable,
+  cohortIdMatches,
+  deriveCohortsFromSlots,
+  firstSubjToken,
+} from "../utils/cohorts";
+import {
+  defaultTimetableIdOn,
+  filterSlotsOfTimetable,
+  findGroupForGrade,
+  getTimetableStatusOn,
+} from "../utils/timetable";
+import { fmtDate } from "../data";
 import { fmtDateWeekday, fmtMDWeekday } from "../utils/dateHelpers";
 import { findLastSessionOnOrBefore } from "../utils/lastSessionDate";
 import { useConfirm } from "../hooks/useConfirm";
@@ -31,14 +42,83 @@ const BULK_CONFIRM_LIMIT = 10;
 // 変わる値 (token)。変わったら折りたたみを全部開く (「他 N コースを表示」の
 // 裏にあるコースを探せるように)。null は要求なし
 export function CohortCutoffEditor({
-  slots,
-  displayCutoff,
-  onSave,
+  slots: allSlots,
+  displayCutoff: fullCutoff,
+  onSave: onSaveFull,
+  timetables,
   isAdmin,
   sessionCtx,
   expandRequest = null,
 }) {
   const confirm = useConfirm();
+  // ── 時間割ごとの終講日 (A1) ──
+  // 終講日は時間割に結び付けて持つ (CohortCutoff.timetableId)。この画面は
+  // 時間割を 1 つ選んで、その時間割のコマのコースと終講日を並べる。既定は
+  // 今の時間割のうちコマの多いもの。時間割の付いていない旧データの終講日は
+  // どの時間割のコマにも効くので、どの時間割を選んでも並ぶ
+  const multiTimetable = Array.isArray(timetables) && timetables.length > 1;
+  const today = fmtDate(new Date());
+  const [pickedTimetableId, setPickedTimetableId] = useState(null);
+  const timetableId = useMemo(() => {
+    if (!multiTimetable) return null;
+    if (pickedTimetableId != null && timetables.some((t) => t.id === pickedTimetableId)) {
+      return pickedTimetableId;
+    }
+    return defaultTimetableIdOn(allSlots || [], timetables, today) ?? timetables[0].id;
+  }, [multiTimetable, pickedTimetableId, timetables, allSlots, today]);
+  const slots = useMemo(
+    () => (timetableId == null ? allSlots : filterSlotsOfTimetable(allSlots || [], timetableId)),
+    [allSlots, timetableId]
+  );
+  const displayCutoff = useMemo(
+    () =>
+      timetableId == null
+        ? fullCutoff
+        : {
+            ...(fullCutoff || {}),
+            cohorts: (fullCutoff?.cohorts || []).filter((c) =>
+              cohortCutoffAppliesToTimetable(c, timetableId)
+            ),
+          },
+    [fullCutoff, timetableId]
+  );
+  // 選んだ時間割の中での編集結果を、全体の終講日へ戻す。
+  //   - ほかの時間割の終講日はそのまま
+  //   - この画面で作った / 変えた終講日には、選んだ時間割を付ける
+  //   - 時間割の付いていない旧データで、そのまま残ったものは触らない。
+  //     この画面で変えた / 消したものは、ほかの時間割には今までどおり効く
+  //     ように、そのコースのコマを持つほかの時間割ごとの終講日に分けて残す
+  const onSave = (next) => {
+    if (timetableId == null) {
+      onSaveFull(next);
+      return;
+    }
+    const before = displayCutoff?.cohorts || [];
+    const after = next?.cohorts || [];
+    const afterSet = new Set(after);
+    const others = (fullCutoff?.cohorts || []).filter(
+      (c) => c && c.timetableId != null && c.timetableId !== timetableId
+    );
+    const out = [...others];
+    for (const c of after) {
+      if (c.timetableId == null && before.includes(c)) out.push(c);
+      else out.push({ ...c, timetableId });
+    }
+    for (const c of before) {
+      if (c.timetableId != null || afterSet.has(c)) continue;
+      const otherIds = new Set();
+      for (const s of allSlots || []) {
+        const tt = s.timetableId ?? 1;
+        if (tt !== timetableId && cohortIdMatches(c.id, s)) otherIds.add(tt);
+      }
+      for (const tt of otherIds) {
+        if (!out.some((o) => o.id === c.id && o.timetableId === tt)) {
+          out.push({ ...c, timetableId: tt });
+        }
+      }
+    }
+    onSaveFull({ ...(next || {}), cohorts: out });
+  };
   const [query, setQuery] = useState("");
   const [unsetOnly, setUnsetOnly] = useState(false);
   const [expandedGrades, setExpandedGrades] = useState(() => new Set());
@@ -205,8 +285,13 @@ export function CohortCutoffEditor({
   // クラス削除・改名で取り残された設定。掃除できるよう別枠で出す。
   const orphans = useMemo(() => {
     const currentIds = new Set(cohorts.map((c) => c.id));
-    return (displayCutoff?.cohorts || []).filter((c) => !currentIds.has(c.id));
-  }, [cohorts, displayCutoff]);
+    return (displayCutoff?.cohorts || []).filter(
+      (c) =>
+        !currentIds.has(c.id) &&
+        // 時間割の付いていない旧データは、ほかの時間割のコマに当たるなら未使用ではない
+        (c.timetableId != null || !(allSlots || []).some((s) => cohortIdMatches(c.id, s)))
+    );
+  }, [cohorts, displayCutoff, allSlots]);
 
   const setCohortDate = (cohort, date) => {
     if (!isAdmin) return;
@@ -341,6 +426,27 @@ export function CohortCutoffEditor({
             学校別（高校）・曜日別（中学 火木 / 水金）に終講日を設定します。
             未設定のコースは上の「表示期間設定」の終了日に従います。
           </div>
+          {multiTimetable && (
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 6, fontSize: 12, fontWeight: 700 }}>
+              時間割
+              <select
+                aria-label="終講日を設定する時間割"
+                value={String(timetableId)}
+                onChange={(e) => setPickedTimetableId(Number(e.target.value))}
+                style={{ ...S.input, width: "auto", fontSize: 12, padding: "3px 6px" }}
+              >
+                {timetables.map((tt) => (
+                  <option key={tt.id} value={String(tt.id)}>
+                    {tt.name}
+                    {getTimetableStatusOn(tt, today) === "active" ? "（今日有効）" : ""}
+                  </option>
+                ))}
+              </select>
+              <span style={{ fontSize: 10, color: "#888", fontWeight: 400 }}>
+                終講日はこの時間割のコマにだけ効きます（前の期の終講日を残したまま次の期を作れます）
+              </span>
+            </label>
+          )}
         </div>
         {cohorts.length > 0 && (
           <span

@@ -19,8 +19,8 @@ export function CutoffProposalPanel({ plan, courses, onApply }) {
   // 選ばない案 (cohortId)。既定は、続きの予定表がありそうな案だけ外す
   const [unchecked, setUnchecked] = useState(null);
   const proposals = useMemo(() => plan?.proposals ?? [], [plan]);
-  const off = unchecked ?? new Set(proposals.filter((p) => p.mayContinue).map((p) => p.cohortId));
-  const chosen = proposals.filter((p) => !off.has(p.cohortId));
+  const off = unchecked ?? new Set(proposals.filter((p) => p.mayContinue).map((p) => p.key));
+  const chosen = proposals.filter((p) => !off.has(p.key));
   const toggle = (id) => {
     const next = new Set(off);
     if (next.has(id)) next.delete(id);
@@ -78,12 +78,12 @@ export function CutoffProposalPanel({ plan, courses, onApply }) {
                   </thead>
                   <tbody>
                     {proposals.map((p) => (
-                      <tr key={p.cohortId}>
+                      <tr key={p.key}>
                         <td style={td}>
                           <input
                             type="checkbox"
-                            checked={!off.has(p.cohortId)}
-                            onChange={() => toggle(p.cohortId)}
+                            checked={!off.has(p.key)}
+                            onChange={() => toggle(p.key)}
                             aria-label={`${p.label} の終講日を ${dateLabel(p.proposed)} にする`}
                           />
                         </td>

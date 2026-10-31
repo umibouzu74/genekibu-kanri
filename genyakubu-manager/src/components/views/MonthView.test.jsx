@@ -833,3 +833,36 @@ describe("MonthView 高校・予備校の講習 (本体に登録したもの)", 
     expect(onOpen).toHaveBeenCalled();
   });
 });
+
+describe("MonthView 担当の切り替え (A5)", () => {
+  const slot = {
+    id: 624,
+    day: "火",
+    time: "19:40-20:40",
+    grade: "高1",
+    cls: "",
+    room: "",
+    subj: "高松桜井 数学",
+    teacher: "小見山",
+    note: "",
+    teacherChanges: [{ from: "2026-10-27", teacher: "福江" }],
+  };
+  const cardDates = () =>
+    [...document.querySelectorAll(".month-print-card")]
+      .filter((c) => c.textContent.includes("桜井"))
+      .length;
+
+  it("開始日より前は旧担当、開始日からは新担当の月間に出し、両方に変更の 1 行を出す", () => {
+    render(<MonthView {...baseProps} teacher="福江" slots={[slot]} year={2026} month={10} />);
+    // 10 月の火曜は 6・13・20・27 → 福江は 27 日の 1 回だけ
+    expect(cardDates()).toBe(1);
+    expect(screen.getByText(/10\/27〜 福江（前：小見山）/)).toBeInTheDocument();
+    cleanup();
+    render(<MonthView {...baseProps} teacher="小見山" slots={[slot]} year={2026} month={10} />);
+    expect(cardDates()).toBe(3);
+    expect(screen.getByText(/10\/27〜 福江（前：小見山）/)).toBeInTheDocument();
+    cleanup();
+    render(<MonthView {...baseProps} teacher="小見山" slots={[slot]} year={2026} month={11} />);
+    expect(cardDates()).toBe(0);
+  });
+});

@@ -265,6 +265,9 @@ export function buildIncomingCards(adjustments, dateStr, slots, ctx = {}) {
     teacher: rescheduleTargetTeachers(adj, slot, ctx).join("·"),
     note: "",
     subj: biweeklyDisplaySubject(slot, adj.date, anchors, ctx.holidays, ctx.examPeriods),
+    // 担当は振替元の日で解決済み。担当の切り替えを残すと、振替先の日でもう一度
+    // 解かれて別の担当になる
+    teacherChanges: undefined,
     _incoming: { adj, slot, combined: combined || [] },
   }));
 }

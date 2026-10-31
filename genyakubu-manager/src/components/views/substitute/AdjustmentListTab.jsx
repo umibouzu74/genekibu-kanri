@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { DAY_COLOR as DC, dateToDay, gradeColor as GC } from "../../../data";
 import { ICON_BTN_CLASS, S } from "../../../styles/common";
 import { sortTeacherNames } from "../../../utils/teacherKana";
-import { getSlotTeachers, splitTeacherField } from "../../../utils/biweekly";
+import { getSlotTeachers, slotOnDate, splitTeacherField } from "../../../utils/biweekly";
 import { fmtDateWeekday, fmtIsoLocal } from "../../../utils/dateHelpers";
 import { groupTeacherNames } from "../../../utils/groupTeacherNames";
 import { useListPeriod } from "../../../hooks/useListPeriod";
@@ -190,7 +190,7 @@ export function AdjustmentListTab({
         const ids = [a.slotId, ...(a.combineSlotIds || [])];
         const hit = ids.some((id) => {
           const slot = slotMap[id];
-          return slot && getSlotTeachers(slot).includes(fTeacher);
+          return slot && getSlotTeachers(slotOnDate(slot, a.date)).includes(fTeacher);
         });
         if (hit) return true;
         // 振替先の担当も複数担当 (「香川·福江」) がありうるので 1 人ずつ見る
@@ -419,7 +419,8 @@ export function AdjustmentListTab({
             </thead>
             <tbody>
               {filtered.map((adj, i) => {
-                const slot = slotMap[adj.slotId];
+                // その日の担当 (担当の切り替え) で出す
+                const slot = slotMap[adj.slotId] && slotOnDate(slotMap[adj.slotId], adj.date);
                 const dow = dateToDay(adj.date);
                 const meta = TYPE_META[adj.type];
                 // 月フィルタが reschedule の targetDate 側でヒットした場合、

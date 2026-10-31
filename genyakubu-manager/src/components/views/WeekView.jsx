@@ -18,6 +18,8 @@ import {
   isBiweekly,
   isSlotForTeacher,
   isTeacherActiveOnDate,
+  teacherVariesByDate,
+  slotOnDate,
 } from "../../utils/biweekly";
 import { findNextSessionMap } from "../../utils/nextSessionDate";
 import {
@@ -314,7 +316,7 @@ export function WeekView({
           .filter((s) => isSlotTimetableActiveOn(s, weekDates[s.day] || weekBase, timetables))
           .filter(
             (s) =>
-              !isBiweekly(s.note) ||
+              !teacherVariesByDate(s) ||
               isTeacherActiveOnDate(
                 s,
                 teacher,
@@ -324,6 +326,8 @@ export function WeekView({
                 examPeriods
               )
           )
+          // 列の日の担当 (担当の切り替え、A5) を当てる
+          .map((s) => slotOnDate(s, weekDates[s.day] || weekBase))
       ),
     [teacher, slots, weekDates, weekBase, timetables, biweeklyAnchors, holidays, examPeriods]
   );
@@ -418,7 +422,7 @@ export function WeekView({
       m.get(slotId).push(entry);
     };
     const isTeacherInactiveOnDate = (slot, dateStr) =>
-      isBiweekly(slot.note) &&
+      teacherVariesByDate(slot) &&
       !isTeacherActiveOnDate(slot, teacher, dateStr, biweeklyAnchors, holidays, examPeriods);
 
     for (const adj of adjustments) {
@@ -461,7 +465,7 @@ export function WeekView({
       if (!slot) continue;
       if (!isSlotForTeacher(slot, teacher)) continue;
       if (
-        isBiweekly(slot.note) &&
+        teacherVariesByDate(slot) &&
         !isTeacherActiveOnDate(slot, teacher, adj.date, biweeklyAnchors, holidays, examPeriods)
       ) {
         continue;
@@ -577,7 +581,7 @@ export function WeekView({
       const slot = slotById.get(adj.slotId);
       if (!slot || !isSlotForTeacher(slot, teacher)) continue;
       if (
-        isBiweekly(slot.note) &&
+        teacherVariesByDate(slot) &&
         !isTeacherActiveOnDate(slot, teacher, adj.date, biweeklyAnchors, holidays, examPeriods)
       ) {
         continue;
@@ -636,7 +640,7 @@ export function WeekView({
         (s) =>
           s.day === dow &&
           isHolidayForSlot(h.date, s.grade, s.subj, s.id) &&
-          (!isBiweekly(s.note) ||
+          (!teacherVariesByDate(s) ||
             isTeacherActiveOnDate(s, teacher, h.date, biweeklyAnchors, holidays, examPeriods))
       );
       if (affected.length === 0) continue;

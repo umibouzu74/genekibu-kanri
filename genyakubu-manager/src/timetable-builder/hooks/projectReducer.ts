@@ -37,6 +37,10 @@ import { computePresetRenameSyncIds, presetSessionLabel } from '../utils/presetR
 import { framePublishState, isPublishState, leastPublished, projectPublishState, publishStateForTab } from '../utils/publishState';
 import { computeCourseSplit, externalSessionContentKey, isExternalOnlyDate, normalizeSessionCourse } from '../utils/externalSessionShape';
 import { normalizeEventName } from '../utils/eventName';
+import { normalizeDayStreakRules, normalizeRegularLink } from '../utils/regularLink';
+import { applyWritesToSchedule } from '../utils/cellTsv';
+import type { CellWrite } from '../utils/cellTsv';
+import type { DayStreakRule, RegularClassLink, TeacherUsage } from '../types';
 import type {
   AvailabilityMark,
   CombinedGroup,
@@ -71,6 +75,8 @@ export type ProjectAction =
   | { type: 'config/setList'; payload: { key: 'dates' | 'periods' | 'classes'; value: string } }
   | { type: 'config/setSubjectCount'; payload: { subject: string; value: unknown; tabId?: number } }
   | { type: 'config/setClassRoom'; payload: { classId: number; room: string; tabId?: number } }
+  | { type: 'config/setClassRegular'; payload: { classId: number; regular: RegularClassLink | null; tabId?: number } }
+  | { type: 'config/setClassMerge'; payload: { classId: number; into: number | null; tabId?: number } }
   | { type: 'config/setClassSubjectCount'; payload: { subject: string; classId: number; value: unknown; tabId?: number } }
   | { type: 'config/setClassSubjectCountsMode'; payload: { tabId: number; enabled: boolean } }
   | { type: 'config/fillSubjectCounts'; payload: { tabId: number; value: unknown } }
@@ -97,6 +103,9 @@ export type ProjectAction =
   | { type: 'teacher/rename'; payload: { idx: number; newName: string } }
   | { type: 'teacher/toggleSubject'; payload: { idx: number; subject: string } }
   | { type: 'teacher/setLimit'; payload: { idx: number; key: 'maxDailyHours' | 'maxTotalHours' | 'maxConsecutivePeriods'; value: unknown } }
+  | { type: 'teacher/setUsage'; payload: { name: string; usage: TeacherUsage | null } }
+  | { type: 'project/setYobikoReserve'; payload: { value: boolean } }
+  | { type: 'project/setDayStreakRules'; payload: { rules: DayStreakRule[] } }
   | { type: 'teacher/toggleNg'; payload: { idx: number; date: string; period: string } }
   | { type: 'teacher/setNgBatch'; payload: { idxs: number[]; dateLabels: string[]; periodLabels: string[]; value: boolean } }
   | { type: 'teacher/importNg'; payload: { entries: Array<{ name: string; date: string; period: string }> } }
@@ -131,7 +140,7 @@ export type ProjectAction =
   | { type: 'schedule/clearUnlocked' }
   | { type: 'schedule/applyPattern'; payload: { pat: Schedule; tabId?: number } }
   | { type: 'schedule/copyFromTab'; payload: { sourceTabId: number } }
-  | { type: 'schedule/importCells'; payload: { writes: Array<{ tabId: number; key: string; subject: string; teacher: string }> } }
+  | { type: 'schedule/importCells'; payload: { writes: CellWrite[] } }
   | { type: 'snapshot/save'; payload: { name: string; createdAt?: string | null } }
   | { type: 'snapshot/apply'; payload: { id: number } }
   | { type: 'snapshot/rename'; payload: { id: number; name: string } }
@@ -641,6 +650,57 @@ function applyAction(project: Project, action: ProjectAction): Project {
             return rest;
           }
           return { ...c, room: value };
+        });
+        return changed ? { ...t, config: { ...t.config, classes } } : t;
+      });
+      return changed ? { ...project, tabs: newTabs } : project;
+    }
+    case 'config/setClassRegular': {
+      // 通常授業のクラスとの対応 (B1)。grade が空なら持たない。ラベル参照は
+      // 変わらないので cascade は要らない
+      const { classId, regular, tabId } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      const next = normalizeRegularLink(regular);
+      let changed = false;
+      const newTabs = project.tabs.map(t => {
+        if (t.id !== targetId) return t;
+        const classes = (t.config.classes || []).map(c => {
+          if (c.id !== classId) return c;
+          if (JSON.stringify(c.regular ?? null) === JSON.stringify(next)) return c;
+          changed = true;
+          if (!next) {
+            const { regular: _r, ...rest } = c;
+            return rest;
+          }
+          return { ...c, regular: next };
+        });
+        return changed ? { ...t, config: { ...t.config, classes } } : t;
+      });
+      return changed ? { ...project, tabs: newTabs } : project;
+    }
+    case 'config/setClassMerge': {
+      // 丸ごと合同 (B4)。classId を into のクラスに従わせる (null で外す)。従うクラスの
+      // セルは消さない (外すと戻る)。相手が誰かに従っている / 自分に従うクラスがある
+      // 組み合わせ (連鎖) はしない
+      const { classId, into, tabId } = action.payload;
+      const targetId = tabId ?? project.activeTabId;
+      let changed = false;
+      const newTabs = project.tabs.map(t => {
+        if (t.id !== targetId) return t;
+        const list = t.config.classes || [];
+        const target = list.find(c => c.id === classId);
+        if (!target) return t;
+        if (into != null) {
+          const lead = list.find(c => c.id === into);
+          if (!lead || lead.id === classId || lead.mergedInto != null) return t;
+          if (list.some(c => c.mergedInto === classId)) return t;
+        }
+        const classes = list.map(c => {
+          if (c.id !== classId) return c;
+          if ((c.mergedInto ?? null) === (into ?? null)) return c;
+          changed = true;
+          const { mergedInto: _m, ...rest } = c;
+          return into == null ? rest : { ...rest, mergedInto: into };
         });
         return changed ? { ...t, config: { ...t.config, classes } } : t;
       });
@@ -1253,6 +1313,38 @@ function applyAction(project: Project, action: ProjectAction): Project {
       else t[key] = v;
       newTeachers[idx] = t;
       return { ...project, teachers: newTeachers };
+    }
+    case 'teacher/setUsage': {
+      // B3: 講習での使い方。null = 未設定 (所属からの既定 / 標準)
+      const { name, usage } = action.payload;
+      const idx = project.teachers.findIndex(t => t.name === name);
+      if (idx < 0) return project;
+      const v = usage === 'normal' || usage === 'reserve' || usage === 'never' ? usage : undefined;
+      if ((project.teachers[idx].usage ?? undefined) === v) return project;
+      const newTeachers = [...project.teachers];
+      const t = { ...newTeachers[idx] };
+      if (v === undefined) delete t.usage;
+      else t.usage = v;
+      newTeachers[idx] = t;
+      return { ...project, teachers: newTeachers };
+    }
+    case 'project/setYobikoReserve': {
+      const value = !!action.payload.value;
+      if (!!project.yobikoReserve === value) return project;
+      if (!value) {
+        const { yobikoReserve: _y, ...rest } = project;
+        return rest as Project;
+      }
+      return { ...project, yobikoReserve: true };
+    }
+    case 'project/setDayStreakRules': {
+      const rules = normalizeDayStreakRules(action.payload.rules);
+      if (JSON.stringify(rules) === JSON.stringify(project.dayStreakRules || [])) return project;
+      if (rules.length === 0) {
+        const { dayStreakRules: _r, ...rest } = project;
+        return rest as Project;
+      }
+      return { ...project, dayStreakRules: rules };
     }
     case 'teacher/toggleNg': {
       const { idx, date, period } = action.payload;
@@ -2093,14 +2185,10 @@ function applyAction(project: Project, action: ProjectAction): Project {
       const newTabs = project.tabs.map(tab => {
         const list = byTab.get(tab.id);
         if (!list) return tab;
-        const schedule = { ...tab.schedule };
-        list.forEach(w => {
-          if (!w.subject && !w.teacher) return;
-          if (schedule[w.key]?.locked) return;
-          schedule[w.key] = { subject: w.subject, teacher: w.teacher };
-          changed = true;
-        });
-        return { ...tab, schedule };
+        // 表の貼り付け (B5) の clear / locked / overrideLock も同じ規則 (cellTsv)
+        const r = applyWritesToSchedule(tab.schedule || {}, list);
+        if (r.changed) changed = true;
+        return { ...tab, schedule: r.schedule };
       });
       if (!changed) return project;
       return cleanSchedule({ ...project, tabs: newTabs });

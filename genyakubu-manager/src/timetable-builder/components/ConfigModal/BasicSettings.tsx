@@ -1,3 +1,6 @@
+import { guessRegularClass } from '../../../utils/usualTeachers';
+import { useUsualTeachers } from '../../contexts/planningContextValue';
+import { UsualTeacherCheck } from '../UsualTeacherCheck';
 import { useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
@@ -11,7 +14,6 @@ export default function BasicSettings() {
   const {
     project,
     activeTab,
-    currentConfig,
     handleListConfigChange,
     handleSaveAsDefault,
     handleSetTabDatesByLabels,
@@ -25,10 +27,16 @@ export default function BasicSettings() {
     handleToggleTabPeriod,
     handleSetAllTabPeriods,
     handleSetClassRoom,
+    handleSetClassRegular,
+    handleSetClassMerge,
     handleRenameHeader,
     setFramePeriods,
   } = useProjectContext();
   const { showConfirm, showToast } = useUI();
+  const usualIndex = useUsualTeachers();
+  // クラスの欄は保存されているクラスの全部 (丸ごと合同で従うクラスも。currentConfig は
+  // 従うクラスを外してあるので、そのまま書き戻すと従うクラスが消える)
+  const rawClasses = useMemo(() => activeTab?.config?.classes || [], [activeTab]);
 
   // v4(Y): project.dates は全タブ共通の『日付プール』。activeTab.config.activeDateIds
   // で「この学年が使う日」を選ぶ (未指定=全日)。NG はプール全日に設定できる。
@@ -612,7 +620,7 @@ export default function BasicSettings() {
       <label className="block">
         <span className="text-xs font-bold text-builder-ink-muted">クラス (カンマ区切り・このタブ「{activeTab.name}」専用)</span>
         <DraftListTextarea
-          value={currentConfig.classes.map(e => e.label).join(', ')}
+          value={rawClasses.map(e => e.label).join(', ')}
           onCommit={(v) => handleConfigChange('classes', v)}
         />
         <span className="block text-[11px] text-builder-ink-muted">欄の外をクリックすると確定します (Esc で取り消し)</span>
@@ -620,7 +628,7 @@ export default function BasicSettings() {
 
       {/* ── クラスと教室 (2026-10-27) ── 教室はクラス名と別に持つ。年ごとに教室が
           変わってもクラス名 (合同・担当不可/優先クラスが名前で指す) を変えずに済む */}
-      {currentConfig.classes.length > 0 && (
+      {rawClasses.length > 0 && (
         <div className="space-y-1">
           <div className="text-xs font-bold text-builder-ink-muted">🏫 クラスと教室 (「{activeTab.name}」)</div>
           <p className="text-[11px] text-builder-ink-muted">
@@ -632,11 +640,17 @@ export default function BasicSettings() {
             <thead>
               <tr className="text-builder-ink-muted">
                 <th className="text-left font-normal pr-2">クラス名</th>
-                <th className="text-left font-normal">教室</th>
+                <th className="text-left font-normal pr-2">教室</th>
+                <th className="text-left font-normal" title="本体の時間割の学年とクラス。科目ごとの普段の担当を引きます (講師プルダウンの ★)">
+                  普段のクラス (学年 / クラス)
+                </th>
+                <th className="text-left font-normal pl-2" title="人数しだいで 1 クラスにまとめるとき。オンの間このクラスの列を出さず、相手のクラスと 1 件として数えます。このクラスのセルは消さずに持っておき、外すと戻ります">
+                  丸ごと合同
+                </th>
               </tr>
             </thead>
             <tbody>
-              {currentConfig.classes.map(c => (
+              {rawClasses.map(c => (
                 <tr key={c.id}>
                   <td className="pr-2 py-0.5">
                     <DraftLineInput
@@ -650,7 +664,7 @@ export default function BasicSettings() {
                           showToast('クラス名にカンマは使えません', 'error', 3000);
                           return;
                         }
-                        if (currentConfig.classes.some(x => x.id !== c.id && x.label === next)) {
+                        if (rawClasses.some(x => x.id !== c.id && x.label === next)) {
                           showToast(`「${next}」はこのタブにもうあります`, 'error', 3000);
                           return;
                         }
@@ -667,10 +681,73 @@ export default function BasicSettings() {
                       onCommit={(v) => handleSetClassRoom(c.id, v)}
                     />
                   </td>
+                  <td className="py-0.5 pl-2 whitespace-nowrap">
+                    <DraftLineInput
+                      value={c.regular?.grade || ''}
+                      ariaLabel={`クラス「${c.label}」の普段の学年`}
+                      placeholder="中3"
+                      className={`${inputCls} w-16`}
+                      onCommit={(v) => handleSetClassRegular(c.id, String(v).trim() ? { grade: String(v).trim(), classes: c.regular?.classes || [] } : null)}
+                    />
+                    <DraftLineInput
+                      value={(c.regular?.classes || []).join('・')}
+                      ariaLabel={`クラス「${c.label}」の普段のクラス`}
+                      placeholder="SS・S (空 = 全部)"
+                      className={`${inputCls} w-28 ml-1`}
+                      onCommit={(v) => {
+                        if (!c.regular?.grade) return;
+                        const classes = String(v).split(/[・,、\s]+/).map(x => x.trim()).filter(Boolean);
+                        handleSetClassRegular(c.id, { grade: c.regular.grade, classes });
+                      }}
+                    />
+                  </td>
+                  <td className="py-0.5 pl-2">
+                    <select
+                      value={c.mergedInto != null ? String(c.mergedInto) : ''}
+                      onChange={(e) => handleSetClassMerge(c.id, e.target.value ? Number(e.target.value) : null)}
+                      aria-label={`クラス「${c.label}」の丸ごと合同`}
+                      disabled={rawClasses.some(x => x.mergedInto === c.id)}
+                      className={`${inputCls} w-28`}
+                    >
+                      <option value="">—</option>
+                      {rawClasses
+                        .filter(x => x.id !== c.id && x.mergedInto == null)
+                        .map(x => (
+                          <option key={x.id} value={String(x.id)}>{x.label} と合同</option>
+                        ))}
+                    </select>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              className="text-xs px-2 py-1 border border-builder-border rounded hover:bg-builder-info-soft"
+              onClick={() => {
+                let n = 0;
+                for (const c of rawClasses) {
+                  if (c.regular?.grade) continue;
+                  const g = guessRegularClass(activeTab.name, c.label, usualIndex.grades);
+                  if (g) {
+                    handleSetClassRegular(c.id, g);
+                    n++;
+                  }
+                }
+                showToast(n > 0 ? `${n} クラスの普段のクラスを推定しました (違っていれば直してください)` : '推定できるクラスがありませんでした', n > 0 ? 'success' : 'warning', 4000);
+              }}
+              title="クラス名とタブ名から、まだ入れていないクラスの普段の学年・クラスを推定します (一度きりの入力補助)"
+            >
+              📚 普段のクラスを推定
+            </button>
+            <span className="text-[11px] text-builder-ink-muted">
+              {usualIndex.refYmd
+                ? `普段の担当は ${usualIndex.refYmd} (講習の初日) の本体の時間割から引きます`
+                : '本体の時間割から普段の担当を引きます'}
+            </span>
+          </div>
+          {usualIndex.hasLinks && <UsualTeacherCheck />}
         </div>
       )}
 

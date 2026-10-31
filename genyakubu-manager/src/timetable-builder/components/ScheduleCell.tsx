@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
+import { usePlanning } from '../contexts/planningContextValue';
 import { getSubjectColor, toCircleNum, CONFLICT_CELL_BG, resolveGenerationParams } from '../utils/constants';
 import { makeKey, makeNgKey, makeExternalKey, findCombinedGroup, findEntityById, isPrimaryCombinedClass } from '../utils/scheduleKey';
 import { quotaForClass } from '../utils/subjectQuota';
@@ -37,16 +38,40 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   // subject 未選択: 通常の教科別分類で全講師を見せる。
   // filter は useMemo 内で実行 (毎回新しい配列リテラルになって memo が
   // 効かないのを防ぐ — code-review P2)。
+  const planning = usePlanning();
+  // 普段の担当 (B1): このクラス・科目の通常授業の担当。プルダウンで上に並べて ★ を付ける
+  const usualNames = useMemo(
+    () => (entry.subject ? planning.usual.forClass(project.activeTabId, classId, entry.subject) : []),
+    [planning.usual, project.activeTabId, classId, entry.subject],
+  );
   const teacherGroups = useMemo(() => {
-    const candidates = entry.subject
+    // 講師の使い方 (B3): 使わない講師は出さない (入っているセルでは出す)、
+    // 控えめの講師は最後の「控えめ」のまとまりへ
+    const usageOf = planning.usageOf;
+    const all = entry.subject
       ? project.teachers.filter(t => t.subjects.includes(entry.subject))
       : project.teachers;
-    return groupTeachersBySubject(
-      candidates,
+    const shown = all.filter(t => usageOf(t.name) !== 'never' || t.name === entry.teacher);
+    const reserve = shown.filter(t => usageOf(t.name) === 'reserve' && t.name !== '未定');
+    const main = shown.filter(t => !reserve.includes(t));
+    const groups = groupTeachersBySubject(
+      main,
       project.subjects,
       entry.subject ? { flattenIntoSingleSubject: entry.subject } : undefined,
-    );
-  }, [project.teachers, project.subjects, entry.subject]);
+    ).map(g => {
+      if (usualNames.length === 0) return g;
+      const rank = (n: string) => {
+        const i = usualNames.indexOf(n);
+        return i < 0 ? usualNames.length : i;
+      };
+      // 普段の担当を先に (同じ順位は講師マスタの順のまま)
+      return { ...g, teachers: [...g.teachers].sort((a, b) => rank(a.name) - rank(b.name)) };
+    });
+    if (reserve.length > 0) {
+      groups.push({ key: '__reserve', label: '控えめ (ほかで埋まらないとき)', teachers: reserve });
+    }
+    return groups;
+  }, [project.teachers, project.subjects, entry.subject, entry.teacher, planning.usageOf, usualNames]);
 
   // タッチ長押しで右クリック相当のコンテキストメニューを開く (E1f)。
   // hooks-rules を守るため早期 return より前で呼ぶ。
@@ -288,12 +313,14 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
             <optgroup key={group.key} label={group.label}>
               {group.teachers.map(t => {
                 const dayKey = makeExternalKey(dLabel, t.name);
-                const daily = analysis.teacherDailyCounts[dayKey] || { total: 0 };
+                const daily = analysis.teacherDailyCounts[dayKey] || { current: 0, external: 0, total: 0 };
                 const isManual = t.ngSlots?.includes(makeNgKey(dLabel, pLabel));
                 const autoEntry = analysis.autoNgByTeacher?.get(t.name)?.get(ngKey);
                 const isAuto = !!autoEntry;
                 const isNg = isManual || isAuto;
-                let label = t.name;
+                const isUsual = usualNames.includes(t.name);
+                let label = isUsual ? `★${t.name}` : t.name;
+                if (planning.usageOf(t.name) === 'never') label += ' (使わない)';
                 if (t.name !== "未定") {
                   // 自動NG の由来は「他学年」(他学年セッション) / 「調査」(出勤可能調査の ×)
                   if (isNg) label += isAuto && !isManual ? ` (NG:${autoNgSourceLabel(autoEntry)})` : " (NG)";
@@ -301,7 +328,14 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
                     // 出勤可能調査の ○ / △ / 未記入 (?) を計の前に添える。回答の無い講師は何も付けない
                     const mark = getAvailabilityMark(t, dLabel, pLabel);
                     const surveyPrefix = mark ? `${AVAILABILITY_SYMBOL[mark]} ` : (surveyAnswered?.has(t.name) ? `${BLANK_SYMBOL} ` : '');
-                    label += ` (${surveyPrefix}計${daily.total})`;
+                    // その日の数 / その講師の日上限 (他学年セッション込み)。「計N」だけだと
+                    // 上限を超えるかは入れてから ⚠ で分かったので、上限を並べて出す (B6)。
+                    // 他学年セッションは長さによらず 1 件 = 1 コマ (分析・自動作成と同じ)。
+                    // この講師が入っていないセルで上限に達していれば、入れると超える
+                    const limit = resolveTeacherDailyLimit(t, maxDailyHours);
+                    const ext = daily.external || 0;
+                    const over = entry.teacher !== t.name && daily.total >= limit ? ' 超過' : '';
+                    label += ` (${surveyPrefix}その日${daily.total}/${limit}${ext > 0 ? ` 他${ext}` : ''}${over})`;
                   }
                 }
                 // 現在割当済みの講師が NG の場合は選択肢としても残して disabled に

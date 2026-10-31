@@ -1,3 +1,6 @@
+import { UsualTeachersProvider } from './contexts/usualTeachersContext';
+import { usePlanning } from './contexts/planningContextValue';
+import { buildPlanningHints } from './utils/planningHints';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import './tailwind.css';
 import { ProjectProvider } from './contexts/ProjectContext';
@@ -41,6 +44,7 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
   const { project, currentConfig, bulkClearCells, bulkSetLockCells, loadError, analysis, syncEvent } = useProjectContext();
   const seasonDef = koshuSeasonDef(season);
   const { showToast, showConfirm } = useUI();
+  const planningCtx = usePlanning();
   // N2f: undo/redo は「何が戻ったか」の toast + 該当セルスクロール付きで使う
   const { undoWithFeedback: undo, redoWithFeedback: redo } = useUndoRedoFeedback();
 
@@ -339,6 +343,8 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
     const handle = runGeneratorInWorker({
       project,
       activeTabId: project.activeTabId,
+      // 普段の担当・講師の使い方・連続出勤日数の上限 (B1・B3・B2)
+      planning: buildPlanningHints(project, project.activeTabId, planningCtx.usual, planningCtx.categories),
       numPatterns: NUM_PATTERNS,
       baseSeed,
       onPattern: (index, result) => {
@@ -398,7 +404,7 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
       setGenerateLive(null);
       generationRef.current = null;
     });
-  }, [project, showToast, showConfirm, analysis, NUM_PATTERNS, GENERATION_SEED]);
+  }, [project, showToast, showConfirm, analysis, NUM_PATTERNS, GENERATION_SEED, planningCtx.usual, planningCtx.categories]);
 
   // ユーザ操作による生成キャンセル。worker を止め、done.then の state 更新を
   // skip させてから isGenerating を解除する。既存セルはそのまま残す。
@@ -728,7 +734,9 @@ function SeasonWorkspace({
   return (
     <ProjectProvider storage={storage} initialProject={decided.initialProject}>
       <HostDataContext.Provider value={hostData}>
-        <ScheduleApp season={season} />
+        <UsualTeachersProvider>
+          <ScheduleApp season={season} />
+        </UsualTeachersProvider>
       </HostDataContext.Provider>
     </ProjectProvider>
   );
@@ -762,6 +770,9 @@ export default function BuilderApp({
   retiredTeacherNames = EMPTY_HOST_NAMES,
   specialEvents = EMPTY_HOST_LIST,
   seniorKoshuItems = EMPTY_HOST_LIST,
+  regularSlots = EMPTY_HOST_LIST,
+  regularTimetables = EMPTY_HOST_LIST,
+  teacherCategoriesByYear = EMPTY_HOST_CATEGORIES,
 }: Partial<HostData> & {
   season?: KoshuSeason;
   onSeasonChange?: (season: KoshuSeason) => void;
@@ -771,8 +782,18 @@ export default function BuilderApp({
   const season = seasonProp ?? ownSeason;
   const changeSeason = onSeasonChange ?? setOwnSeason;
   const hostData = useMemo(
-    () => ({ offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents, seniorKoshuItems }),
-    [offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents, seniorKoshuItems],
+    () => ({
+      offsiteLessons,
+      holidays,
+      partTimeStaffNames,
+      retiredTeacherNames,
+      specialEvents,
+      seniorKoshuItems,
+      regularSlots,
+      regularTimetables,
+      teacherCategoriesByYear,
+    }),
+    [offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents, seniorKoshuItems, regularSlots, regularTimetables, teacherCategoriesByYear],
   );
   // 季節ごとに作り直すのは作業領域だけ (key)。UIProvider も中に入れて作り直すので、
   // 開いたままの確認ダイアログが、季節を切り替えた後に前の季節の操作 (リセット・
@@ -790,4 +811,5 @@ export default function BuilderApp({
 }
 
 const EMPTY_HOST_LIST: unknown[] = [];
+const EMPTY_HOST_CATEGORIES: Record<number, Record<string, string>> = {};
 const EMPTY_HOST_NAMES: string[] = [];

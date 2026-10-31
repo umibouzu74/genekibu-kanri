@@ -17,6 +17,7 @@
 // 表示期間・休講) が要るのでここでは言わない — 日別ダッシュボード /
 // タイムテーブル / 月間カレンダーの担当 (isDayEmptiedByReschedule)。
 
+import { slotOnDate } from "./biweekly";
 import {
   buildAdjustmentIndex,
   collectIncomingReschedules,
@@ -187,7 +188,9 @@ export function adjustmentEntryHeading(entry) {
  */
 export function describeAdjustmentItem({ slot, adj }, ctx = {}) {
   if (adj.type !== "reschedule") {
-    const parts = [[slot.time, describeSlot(slot), slot.teacher].filter(Boolean).join(" ")];
+    const parts = [
+      [slot.time, describeSlot(slot), slotOnDate(slot, adj.date).teacher].filter(Boolean).join(" "),
+    ];
     if (adj.memo) parts.push(`— ${adj.memo}`);
     return parts.join(" ");
   }

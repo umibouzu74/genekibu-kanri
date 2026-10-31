@@ -5,6 +5,7 @@ import {
   biweeklyActiveTeacher,
   isBiweekly,
   isSlotForTeacher,
+  slotsOnDate,
   splitTeacherField,
 } from "./biweekly";
 import { dateToDay } from "./dateHelpers";
@@ -23,8 +24,11 @@ import { isCancelAdjustment } from "./slotCancel";
 // 出したままにする (AbsenceSlotCard の cancelLabel)。
 export function getAbsenceDaySlots(slots, dateStr, dayName, opts = {}) {
   if (!dateStr || !dayName) return [];
-  return (slots || []).filter(
-    (s) => s.day === dayName && isSlotShownOnDate(s, dateStr, opts)
+  // その日の担当 (担当の切り替え、A5) を当てたコマで返す。画面はこれを描き、
+  // 保存は id で保存済みのコマを引き直す
+  return slotsOnDate(
+    (slots || []).filter((s) => s.day === dayName && isSlotShownOnDate(s, dateStr, opts)),
+    dateStr
   );
 }
 

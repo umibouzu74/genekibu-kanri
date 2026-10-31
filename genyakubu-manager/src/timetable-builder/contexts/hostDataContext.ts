@@ -23,6 +23,17 @@ export interface HostData {
    * 講師不在・NG の「🎓 本体の高校・予備校の講習を取り込む」に使う
    */
   seniorKoshuItems?: unknown[];
+  /**
+   * 本体の時間割のコマと時間割 (B1 の「普段の担当」。utils/usualTeachers が講習の初日の
+   * 今の時間割から科目ごとの担当を引く)
+   */
+  regularSlots?: unknown[];
+  regularTimetables?: unknown[];
+  /**
+   * 本体の講師の所属 (B2 の連続出勤の上限・B3 の使い方の既定)。年度 → 名前 → 区分の key
+   * ("genyakuFull" / "genyakuPart" / "yobiko" …、utils/teacherAffiliations)
+   */
+  teacherCategoriesByYear?: Record<number, Record<string, string>>;
 }
 
 const EMPTY: HostData = {
@@ -32,6 +43,9 @@ const EMPTY: HostData = {
   retiredTeacherNames: [],
   specialEvents: [],
   seniorKoshuItems: [],
+  regularSlots: [],
+  regularTimetables: [],
+  teacherCategoriesByYear: {},
 };
 
 export const HostDataContext = createContext<HostData>(EMPTY);

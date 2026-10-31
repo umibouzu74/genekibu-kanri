@@ -1,3 +1,7 @@
+import { useUsualTeachers } from '../contexts/planningContextValue';
+import { applyUsualTeachersToWrites } from '../utils/usualTeachersIndex';
+import { makeNgKey } from '../utils/scheduleKey';
+import { UsualTeacherCheck } from './UsualTeacherCheck';
 import { useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { useProjectContext } from '../contexts/projectContextValue';
@@ -29,7 +33,10 @@ const TITLE_ID = 'builder-timetable-copy-title';
 export default function TimetableCopyDialog({ onClose }: { onClose: () => void }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef, { onClose });
-  const { project, importScheduleCells } = useProjectContext();
+  const { project, importScheduleCells, analysis } = useProjectContext();
+  const usualIndex = useUsualTeachers();
+  // B1: 講師は普段の担当で入れ直す (クラスに普段のクラスを結び付けてあるときだけ出す)
+  const [useUsual, setUseUsual] = useState(false);
   const { showToast } = useUI();
   const { partTimeStaffNames, retiredTeacherNames } = useHostData();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -83,10 +90,20 @@ export default function TimetableCopyDialog({ onClose }: { onClose: () => void }
     r.readAsText(f);
   };
 
-  const plan = useMemo(
+  const basePlan = useMemo(
     () => (source ? planTimetableCopy({ source: source.timetable, project, mappings, includeTeachers: included, overwrite }) : null),
     [source, project, mappings, included, overwrite],
   );
+  const plan = useMemo(() => {
+    if (!basePlan || !useUsual || !usualIndex.hasLinks) return basePlan;
+    const byName = new Map((project.teachers || []).map(t => [t.name, t]));
+    const isNg = (teacher: string, d: string, p: string) => {
+      const key = makeNgKey(d, p);
+      return !!byName.get(teacher)?.ngSlots?.includes(key) || !!analysis?.autoNgByTeacher?.get(teacher)?.get(key);
+    };
+    const r = applyUsualTeachersToWrites(basePlan.writes, project, usualIndex, isNg);
+    return { ...basePlan, writes: r.writes, usualReplaced: r.replaced, usualBlanked: r.blanked };
+  }, [basePlan, useUsual, usualIndex, project, analysis]);
 
   // 写したあとの科目ごとのコマ数とコマ数の設定の差 (写す先のタブだけ)
   const countDiffs = useMemo(
@@ -143,7 +160,7 @@ export default function TimetableCopyDialog({ onClose }: { onClose: () => void }
       6000,
     );
     // コマ数の設定と合わないクラスがあれば、閉じる前に一覧で見せる
-    if (countDiffs.length > 0) setApplied({ count: plan.writes.length, blanked: plan.teacherBlanked, diffs: countDiffs });
+    if (countDiffs.length > 0 || usualIndex.hasLinks) setApplied({ count: plan.writes.length, blanked: plan.teacherBlanked, diffs: countDiffs });
     else onClose();
   };
 
@@ -174,6 +191,7 @@ export default function TimetableCopyDialog({ onClose }: { onClose: () => void }
                 日数の違いなどで、科目のコマが足りない・多いクラスです (コマ数を設定していない科目は比べません)。時間割で直すか、⚙ 設定のコマ数を見直してください。
               </p>
             </section>
+            <UsualTeacherCheck />
             <div className="flex justify-end">
               <button
                 type="button"
@@ -364,6 +382,12 @@ export default function TimetableCopyDialog({ onClose }: { onClose: () => void }
                 <input type="radio" name="builder-timetable-copy-mode" checked={overwrite} onChange={() => setOverwrite(true)} />
                 入っているセルも上書きする (ロックしたセルは除く)
               </label>
+              {usualIndex.hasLinks && (
+                <label className="flex items-center gap-1 pt-1">
+                  <input type="checkbox" checked={useUsual} onChange={(e) => setUseUsual(e.target.checked)} />
+                  講師は普段の担当で入れ直す (普段のクラスを結び付けたクラスだけ。NG の人は飛ばし、いなければ講師を空に)
+                </label>
+              )}
             </fieldset>
 
             <div role="status" className="text-xs bg-builder-surface-alt border border-builder-border rounded p-2 space-y-0.5">
@@ -371,6 +395,12 @@ export default function TimetableCopyDialog({ onClose }: { onClose: () => void }
                 <strong className="text-builder-blue">{plan.writes.length} コマ</strong>を写します
                 {plan.teacherBlanked > 0 && <> (うち講師を空にする {plan.teacherBlanked} コマ)</>}
               </div>
+              {'usualReplaced' in plan && (
+                <div>
+                  普段の担当で入れ直す: {String(plan.usualReplaced)} コマ
+                  {Number(plan.usualBlanked) > 0 && <> / 普段の担当がいない・NG で講師を空にする: {String(plan.usualBlanked)} コマ</>}
+                </div>
+              )}
               {plan.skippedFilled > 0 && <div>入っているので写さない: {plan.skippedFilled} コマ</div>}
               {plan.skippedLocked > 0 && <div>ロックしてあるので写さない: {plan.skippedLocked} コマ</div>}
               {plan.unmapped > 0 && <div className="text-builder-orange">日付・時限・クラスの対応が無いので写さない: {plan.unmapped} コマ</div>}

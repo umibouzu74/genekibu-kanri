@@ -22,7 +22,7 @@
 import ExcelJS from 'exceljs';
 import { cleanSchedule } from './constants';
 import type { ClassEntity, Entity, Project, Schedule, Tab } from '../types';
-import { makeKey, findCombinedGroup, isPrimaryCombinedClass, effectiveConfigForTab } from './scheduleKey';
+import { makeKey, findCombinedGroup, isPrimaryCombinedClass, effectiveConfigForTab, mergedClassesForTab } from './scheduleKey';
 import { getPeriodTimeRange } from './timeRange';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import {
@@ -261,7 +261,8 @@ function buildDistributionSheet(
   // クラス列の平坦化 (タブ順 → クラス順)
   const classColumns: ClassColumn[] = [];
   group.tabs.forEach((tab, tabIdx) => {
-    tab.config.classes.forEach(cls => {
+    // 丸ごと合同 (B4) は相手のクラスの列 1 つ (見出しに両方の名前・教室)
+    mergedClassesForTab(tab).forEach(cls => {
       classColumns.push({ tabIdx, cls, offset: classColumns.length });
     });
   });

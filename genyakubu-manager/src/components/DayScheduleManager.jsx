@@ -1,3 +1,4 @@
+import { slotsOnDate } from "../utils/biweekly";
 import { useMemo, useRef, useState } from "react";
 import { ALL_GRADES, gradeToDept, isValidDateStr } from "../data";
 import { DEPT_COLOR } from "../constants/colors";
@@ -144,7 +145,8 @@ export function DayScheduleManager({
       cancelTimes: draft.cancelTimes,
       memo: "",
     };
-    return findNewConflicts(activeSlotsForDate, (s) =>
+    // その日の担当 (担当の切り替え、A5) で講師の重なりを見る
+    return findNewConflicts(slotsOnDate(activeSlotsForDate, date), (s) =>
       resolveSlotDaySchedule(s, date, [preview])
     );
   }, [date, label, targetGrades, draft, activeSlotsForDate]);

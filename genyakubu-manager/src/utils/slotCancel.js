@@ -16,6 +16,7 @@
 // 制限: 特別時程と同じく、隔週の週送り (biweekly) には関与しない。コマ休講に
 // した隔週コマも週タイプは進む。
 
+import { slotOnDate } from "./biweekly";
 import { isSlotCancelledByDaySchedule, resolveSlotDaySchedule } from "./daySchedules";
 import { timeStartToMin } from "./dateHelpers";
 
@@ -122,7 +123,8 @@ export function collectCancelledSlots(slots, dateStr, adjustments) {
     const slot = byId.get(adj.slotId);
     if (!slot) continue;
     seen.add(adj.slotId);
-    out.push({ slot, adj });
+    // その日の担当 (担当の切り替え) で出す
+    out.push({ slot: slotOnDate(slot, dateStr), adj });
   }
   return out.sort(
     (a, b) => timeStartToMin(a.slot.time) - timeStartToMin(b.slot.time) || a.slot.id - b.slot.id

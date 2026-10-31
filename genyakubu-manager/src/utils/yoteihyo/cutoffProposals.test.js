@@ -4,6 +4,7 @@ import {
   lastHeldDate,
   proposeCohortCutoffs,
   restoreCohortCutoffs,
+  previousCohortCutoffs,
 } from "./cutoffProposals";
 import { effectiveMapping, suggestMapping } from "./courseMapping";
 import { mergeHighSchoolSheets, parseHighSchoolSheet } from "./highSchoolSheet";
@@ -45,7 +46,9 @@ describe("proposeCohortCutoffs", () => {
     expect(lastHeldDate(merged.courses.get("高1|高松西高校"))).toBe("2027-02-11");
     expect(proposals).toEqual([
       {
+        key: "1::H|高1|高松西|英数",
         cohortId: "H|高1|高松西|英数",
+        timetableId: 1,
         label: "高1 高松西 英数",
         grade: "高1",
         current: null,
@@ -114,27 +117,31 @@ describe("proposeCohortCutoffs", () => {
 });
 
 describe("applyCohortCutoffs / restoreCohortCutoffs", () => {
-  it("選んだコースだけ書き換え、元に戻すと前の値 (無ければ消す) に戻る", () => {
+  it("選んだ時間割・コースだけ書き換え、元に戻すと前の値 (無ければ消す) に戻る", () => {
     const before = {
       groups: [{ label: "高1・2", grades: ["高1", "高2"], date: "2027-03-20" }],
       cohorts: [
-        { id: "H|高1|高松西|英数", label: "高1 高松西 英数", grade: "高1", date: "2027-02-01" },
-        { id: "H|高3|共テ英語(Hi)", label: "高3 共テ英語(Hi)", grade: "高3", date: "2027-01-10" },
+        { id: "H|高1|高松西|英数", label: "高1 高松西 英数", grade: "高1", date: "2027-02-01", timetableId: 3 },
+        { id: "H|高3|共テ英語(Hi)", label: "高3 共テ英語(Hi)", grade: "高3", date: "2027-01-10", timetableId: 3 },
+        // 別の時間割の同じコースは触らない
+        { id: "H|高1|高松西|英数", label: "高1 高松西 英数", grade: "高1", date: "2026-12-18", timetableId: 2 },
       ],
     };
     const chosen = [
-      { cohortId: "H|高1|高松西|英数", label: "高1 高松西 英数", grade: "高1", proposed: "2027-02-11" },
-      { cohortId: "H|高2|高松西|英数", label: "高2 高松西 英数", grade: "高2", proposed: "2027-02-04" },
+      { cohortId: "H|高1|高松西|英数", timetableId: 3, label: "高1 高松西 英数", grade: "高1", proposed: "2027-02-11" },
+      { cohortId: "H|高2|高松西|英数", timetableId: 3, label: "高2 高松西 英数", grade: "高2", proposed: "2027-02-04" },
     ];
+    const previous = previousCohortCutoffs(before, chosen);
+    expect(previous).toEqual([before.cohorts[0]]);
     const after = applyCohortCutoffs(before, chosen);
     expect(after.groups).toBe(before.groups);
     expect(after.cohorts).toEqual([
       before.cohorts[1],
-      { id: "H|高1|高松西|英数", label: "高1 高松西 英数", grade: "高1", date: "2027-02-11" },
-      { id: "H|高2|高松西|英数", label: "高2 高松西 英数", grade: "高2", date: "2027-02-04" },
+      before.cohorts[2],
+      { id: "H|高1|高松西|英数", label: "高1 高松西 英数", grade: "高1", date: "2027-02-11", timetableId: 3 },
+      { id: "H|高2|高松西|英数", label: "高2 高松西 英数", grade: "高2", date: "2027-02-04", timetableId: 3 },
     ]);
-    const ids = chosen.map((p) => p.cohortId);
-    const back = restoreCohortCutoffs(after, ids, [before.cohorts[0]]);
-    expect(back.cohorts).toEqual([before.cohorts[1], before.cohorts[0]]);
+    const back = restoreCohortCutoffs(after, chosen, previous);
+    expect(back.cohorts).toEqual([before.cohorts[1], before.cohorts[2], before.cohorts[0]]);
   });
 });

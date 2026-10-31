@@ -65,6 +65,7 @@ function renderEditor(cohortDate, groupPatch = {}, opts = {}) {
         onSave={onSave}
         isAdmin
         sessionCtx={sessionCtx}
+        timetables={opts.timetables}
       />
     </ConfirmProvider>
   );
@@ -290,5 +291,51 @@ describe("CohortCutoffEditor", () => {
     fireEvent.click(await screen.findByText("まとめて設定"));
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
     expect(onSave.mock.calls[0][0].cohorts).toHaveLength(12);
+  });
+});
+
+describe("CohortCutoffEditor — 時間割ごとの終講日 (A1)", () => {
+  const TTS = [
+    { id: 3, name: "2学期", startDate: "2026-04-01", endDate: "2026-12-21", grades: [] },
+    { id: 4, name: "3学期", startDate: "2027-01-07", endDate: null, grades: ["中1", "中2"] },
+  ];
+  const slots = [
+    { ...mk(1, "火"), timetableId: 3 },
+    { ...mk(2, "金"), timetableId: 3 },
+    { ...mk(3, "火"), timetableId: 4 },
+    { ...mk(4, "金"), timetableId: 4 },
+  ];
+
+  it("選んだ時間割の終講日だけを並べ、保存した終講日に時間割を付ける (ほかの時間割はそのまま)", () => {
+    const other = { id: COHORT_ID, label: "中1 火金", grade: "中1", date: "2026-12-18", timetableId: 3 };
+    const { onSave } = renderEditor(null, { date: "2027-03-31" }, {
+      slots,
+      timetables: TTS,
+      displayCutoff: { cohorts: [other] },
+    });
+    const picker = screen.getByLabelText("終講日を設定する時間割");
+    // 既定は今の時間割 (テストの日付によらず、どちらかが選ばれている)
+    fireEvent.change(picker, { target: { value: "4" } });
+    // 3学期には終講日がまだ無い
+    expect(screen.getByLabelText("中1 火金 の終講日")).toHaveValue("");
+    fireEvent.change(screen.getByLabelText("中1 火金 の終講日"), { target: { value: "2027-03-12" } });
+    expect(onSave.mock.calls.at(-1)[0].cohorts).toEqual([
+      other,
+      { id: COHORT_ID, label: "中1 火金", grade: "中1", date: "2027-03-12", timetableId: 4 },
+    ]);
+    fireEvent.change(picker, { target: { value: "3" } });
+    expect(screen.getByLabelText("中1 火金 の終講日")).toHaveValue("2026-12-18");
+  });
+
+  it("時間割の付いていない旧データを片方の時間割で消しても、ほかの時間割には残す", () => {
+    const legacy = { id: COHORT_ID, label: "中1 火金", grade: "中1", date: "2026-12-18" };
+    const { onSave } = renderEditor(null, { date: "2027-03-31" }, {
+      slots,
+      timetables: TTS,
+      displayCutoff: { cohorts: [legacy] },
+    });
+    fireEvent.change(screen.getByLabelText("終講日を設定する時間割"), { target: { value: "4" } });
+    fireEvent.change(screen.getByLabelText("中1 火金 の終講日"), { target: { value: "" } });
+    expect(onSave.mock.calls.at(-1)[0].cohorts).toEqual([{ ...legacy, timetableId: 3 }]);
   });
 });

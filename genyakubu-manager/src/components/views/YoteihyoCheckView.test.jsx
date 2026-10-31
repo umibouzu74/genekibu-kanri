@@ -601,7 +601,7 @@ describe("YoteihyoCheckView — 予定表から終講日を設定", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "設定する" }));
     await waitFor(() =>
       expect(state.displayCutoff.cohorts).toEqual([
-        { id: "H|高1|高松西|英数", label: "高1 高松西 英数", grade: "高1", date: "2026-11-30" },
+        { id: "H|高1|高松西|英数", label: "高1 高松西 英数", grade: "高1", date: "2026-11-30", timetableId: 1 },
       ])
     );
     // 設定した案は消える

@@ -18,6 +18,7 @@ import { useToday } from "../../hooks/useToday";
 import { ExcelGridView } from "./ExcelGridView";
 import { BiweeklyTab } from "./master/BiweeklyTab";
 import { MasterListTab } from "./master/MasterListTab";
+import { TeacherChangeTab } from "./master/TeacherChangeTab";
 import { CURRENT_TIMETABLE, TimetableScopePicker } from "./master/TimetableScopePicker";
 import { PrintButton } from "../PrintButton";
 
@@ -66,6 +67,8 @@ export function MasterView({
   displayCutoff,
   adjustments = [],
   sessionOverrides = [],
+  subs = [],
+  saveSubs,
   tab: tabProp,
   onTabChange,
 }) {
@@ -242,6 +245,26 @@ export function MasterView({
           displayCutoff={displayCutoff}
           adjustments={adjustments}
           sessionOverrides={sessionOverrides}
+        />
+      </div>
+    );
+  }
+
+  if (tab === MASTER_TAB.TEACHER_CHANGE) {
+    return (
+      <div style={{ marginTop: 12 }}>
+        <TabSwitcher tab={tab} setTab={setTab} picker={null} />
+        <TeacherChangeTab
+          slots={slots}
+          timetables={timetables}
+          subs={subs}
+          saveSubs={saveSubs}
+          adjustments={adjustments}
+          saveSlots={saveSlots}
+          isAdmin={isAdmin}
+          teacherKana={teacherKana}
+          partTimeStaff={partTimeStaff}
+          defaultTimetableId={pinnedTimetableId}
         />
       </div>
     );

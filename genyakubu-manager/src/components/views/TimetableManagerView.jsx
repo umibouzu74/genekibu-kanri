@@ -15,6 +15,13 @@ import { ClassSetManager } from "../ClassSetManager";
 import { CohortCutoffEditor } from "../CohortCutoffEditor";
 import { TimeBulkEditPanel } from "../TimeBulkEditPanel";
 import { CutoffTimeline } from "../CutoffTimeline";
+import { findSlotsOutsideTimetableGrades } from "../../utils/timetable";
+import {
+  describeChangedTeacherSlot,
+  gradesOfTimetable,
+  planTimetableDuplicate,
+} from "../../utils/timetableDuplicate";
+import { buildCutoffFollowUp } from "../../regular-builder/reflect";
 import { DisplayCutoffEditor } from "../DisplayCutoffEditor";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import {
@@ -97,16 +104,27 @@ export function TimetableManagerView({
     () => (dupForm ? timetables.find((t) => t.id === dupForm.sourceId) : null),
     [dupForm, timetables]
   );
+  const dupSourceGrades = useMemo(
+    () => (dupForm ? gradesOfTimetable(slots, dupForm.sourceId) : []),
+    [dupForm, slots]
+  );
   const dupChecks = useMemo(
     () =>
       dupForm
         ? checkTimetableForm(
-            { ...dupForm, grades: dupSource?.grades || [] },
+            {
+              ...dupForm,
+              // 学年を選んで複製するときは、その学年で重なりを見る
+              grades:
+                dupForm.grades && dupSourceGrades.length > dupForm.grades.length
+                  ? dupForm.grades
+                  : dupSource?.grades || [],
+            },
             timetables,
             null
           )
         : null,
-    [dupForm, dupSource, timetables]
+    [dupForm, dupSource, dupSourceGrades, timetables]
   );
 
   // 「終了日を入れると実際の最終授業日はいつになるか」を逆算するための ctx。
@@ -125,6 +143,32 @@ export function TimetableManagerView({
     daySchedules,
     adjustments,
   });
+
+  // 複製の計画 (学年・続き番号・担当の確定、A2)。続き番号のプレビューにも使う
+  const dupPlan = useMemo(() => {
+    if (!dupForm) return null;
+    return planTimetableDuplicate({
+      timetables,
+      slots,
+      classSets,
+      sourceId: dupForm.sourceId,
+      name: dupForm.name.trim(),
+      startDate: dupForm.startDate || null,
+      endDate: dupForm.endDate || null,
+      grades: dupForm.grades,
+      numbering: dupForm.numbering,
+      teacherMode: dupForm.teacherMode,
+      sessionCtx: dupForm.numbering === "continue" ? sessionCtx : null,
+    });
+  }, [dupForm, timetables, slots, classSets, sessionCtx]);
+  // 表示期間設定の追従 (反映ダイアログの期切替と同じ)。件数の下見
+  const dupCutoffPreview = useMemo(
+    () =>
+      dupForm?.startDate
+        ? buildCutoffFollowUp({ displayCutoff, startDate: dupForm.startDate, clearOrientation: true })
+        : null,
+    [dupForm, displayCutoff]
+  );
 
   // ─── 目次 / セクションへのスクロール ───────────────────────────
   // コース別終講日へ飛ぶときは CohortCutoffEditor の折りたたみを全部開く
@@ -223,9 +267,14 @@ export function TimetableManagerView({
         name: `${tt.name}（コピー）`,
         startDate: "",
         endDate: "",
+        grades: gradesOfTimetable(slots, tt.id),
+        numbering: "reset",
+        teacherMode: "after",
+        followCutoff: false,
+        clearOrientation: false,
       });
     },
-    []
+    [slots]
   );
 
   const cancelDuplicate = useCallback(() => {
@@ -239,12 +288,26 @@ export function TimetableManagerView({
     setDupAttempted(true);
     if (dupChecks.nameError || dupChecks.periodError) return;
     if (dupChecks.overlaps.length > 0 && dupAckKey !== dupChecks.overlapKey) return;
-    ttCrud.duplicate(dupForm.sourceId, dupForm.name.trim(), {
-      startDate: dupForm.startDate || null,
-      endDate: dupForm.endDate || null,
-    });
+    if (!dupPlan || dupPlan.error) return;
+    ttCrud.applyDuplicate(dupPlan, dupForm.sourceName);
+    // 表示期間設定も新しい期に合わせる (チェックしたときだけ)
+    if (dupForm.startDate && (dupForm.followCutoff || dupForm.clearOrientation)) {
+      const patch = buildCutoffFollowUp({
+        displayCutoff,
+        startDate: dupForm.startDate,
+        endDate: dupForm.endDate || null,
+        followDates: dupForm.followCutoff,
+        clearOrientation: dupForm.clearOrientation,
+      });
+      if (patch.changed) onSaveDisplayCutoff(patch.next);
+    }
     cancelDuplicate();
-  }, [dupForm, dupChecks, dupAckKey, ttCrud, cancelDuplicate]);
+  }, [dupForm, dupChecks, dupAckKey, dupPlan, ttCrud, cancelDuplicate, displayCutoff, onSaveDisplayCutoff]);
+
+  const outsideGrades = useMemo(
+    () => findSlotsOutsideTimetableGrades(slots, timetables),
+    [slots, timetables]
+  );
 
   const slotCountByTT = {};
   for (const s of slots) {
@@ -362,6 +425,16 @@ export function TimetableManagerView({
                       </span>
                     )}
                   </div>
+                  {outsideGrades.get(tt.id) && (
+                    <div style={{ fontSize: 11, color: "#9a6b00", marginTop: 2 }}>
+                      ⚠ 対象学年に無い学年のコマ:{" "}
+                      {outsideGrades
+                        .get(tt.id)
+                        .map((g) => `${g.grade} ${g.slotCount} コマ`)
+                        .join("・")}
+                      （どの画面にも出ません。「編集」で対象学年に加えてください）
+                    </div>
+                  )}
                 </div>
                 <span
                   style={{
@@ -468,6 +541,14 @@ export function TimetableManagerView({
                 <FieldError id="tt-dup-period-err">{dupChecks?.periodError}</FieldError>
               </label>
             </div>
+            <DuplicateOptions
+              form={dupForm}
+              setForm={setDupForm}
+              sourceGrades={dupSourceGrades}
+              plan={dupPlan}
+              cutoffPreview={dupCutoffPreview}
+              slots={slots}
+            />
             <OverlapWarning
               checks={dupChecks}
               ackKey={dupAckKey}
@@ -537,6 +618,7 @@ export function TimetableManagerView({
       <div id={timetableSectionAnchorId(TIMETABLE_SECTION.COHORT_CUTOFF)} style={anchorStyle}>
         <CohortCutoffEditor
           slots={slots}
+          timetables={timetables}
           displayCutoff={displayCutoff}
           onSave={onSaveDisplayCutoff}
           isAdmin={isAdmin}
@@ -788,6 +870,128 @@ function TimetableForm({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// 複製の選択肢 (A2): 写す学年・第N回の数え方・担当の切り替えの確定・表示期間設定の追従
+function DuplicateOptions({ form, setForm, sourceGrades, plan, cutoffPreview, slots }) {
+  const up = (patch) => setForm({ ...form, ...patch });
+  const picked = form.grades || [];
+  const toggleGrade = (g) =>
+    up({ grades: picked.includes(g) ? picked.filter((x) => x !== g) : [...picked, g] });
+  const changed = (slots || []).filter(
+    (s) =>
+      (s.timetableId ?? 1) === form.sourceId &&
+      picked.includes(s.grade) &&
+      Array.isArray(s.teacherChanges) &&
+      s.teacherChanges.length > 0
+  );
+  const canFollow =
+    cutoffPreview && (cutoffPreview.groupLabels.length > 0 || cutoffPreview.cohortCount > 0);
+  const box = { border: "1px solid #e0e6f0", borderRadius: 8, padding: 8, fontSize: 12 };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <fieldset style={{ ...box, margin: 0 }}>
+        <legend style={{ fontWeight: 700 }}>写す学年</legend>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {sourceGrades.map((g) => (
+            <label key={g} style={{ display: "inline-flex", gap: 3, alignItems: "center" }}>
+              <input type="checkbox" checked={picked.includes(g)} onChange={() => toggleGrade(g)} />
+              {g}
+            </label>
+          ))}
+        </div>
+        <div style={{ fontSize: 10, color: "#888", marginTop: 4 }}>
+          {picked.length < sourceGrades.length
+            ? `選んだ学年のコマだけを写し、新しい時間割の対象学年も ${picked.join("・") || "（なし）"} にします`
+            : "全部の学年を写します（対象学年は複製元のまま）"}
+        </div>
+        {plan?.error && <div role="alert" style={{ color: "#c03030", fontSize: 11 }}>{plan.error}</div>}
+      </fieldset>
+
+      <fieldset style={{ ...box, margin: 0 }}>
+        <legend style={{ fontWeight: 700 }}>第N回</legend>
+        <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="radio" name="tt-dup-numbering" checked={form.numbering !== "continue"}
+            onChange={() => up({ numbering: "reset" })} />
+          1 から数え直す（期ごとに数え直す。複製元の「数え始め」も写さない）
+        </label>
+        <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input type="radio" name="tt-dup-numbering" checked={form.numbering === "continue"}
+            onChange={() => up({ numbering: "continue" })} />
+          前の期の続き番号にする（各コマの「数え始め」に入れる）
+        </label>
+        {form.numbering === "continue" && plan?.continuation && (
+          <div style={{ marginTop: 4 }}>
+            <div style={{ fontSize: 10, color: "#888" }}>
+              複製した時点の見込みです（前の期に後から休講を足しても、ここで入れた数え始めは変わりません）
+            </div>
+            <ul aria-label="続き番号の見込み" style={{ margin: "4px 0 0", paddingLeft: 18, maxHeight: 140, overflowY: "auto", fontSize: 11 }}>
+              {plan.continuation.map(({ slot, last, start }) => (
+                <li key={slot.id}>
+                  {slot.day} {slot.grade}
+                  {slot.cls && slot.cls !== "-" ? slot.cls : ""} {slot.subj}:{" "}
+                  {last ? `最終 第${last.sessionNo}回 (${last.date}) → 第${start}回から` : "前の期の授業が見つからない → 第1回から"}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </fieldset>
+
+      {changed.length > 0 && (
+        <fieldset style={{ ...box, margin: 0 }}>
+          <legend style={{ fontWeight: 700 }}>担当の切り替えがあるコマ（{changed.length} コマ）</legend>
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input type="radio" name="tt-dup-teacher" checked={form.teacherMode !== "before"}
+              onChange={() => up({ teacherMode: "after" })} />
+            切り替え後の担当にする（複製先の開始日時点）
+          </label>
+          <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input type="radio" name="tt-dup-teacher" checked={form.teacherMode === "before"}
+              onChange={() => up({ teacherMode: "before" })} />
+            元の担当にする
+          </label>
+          <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 11 }}>
+            {changed.map((s) => {
+              const d = describeChangedTeacherSlot(s, form.startDate || null);
+              return (
+                <li key={s.id}>
+                  {s.day} {s.grade} {s.subj}: 元 {d.before} / 切り替え後 {d.after}
+                </li>
+              );
+            })}
+          </ul>
+        </fieldset>
+      )}
+
+      {cutoffPreview && (canFollow || cutoffPreview.orientationLabels.length > 0) && (
+        <fieldset style={{ ...box, margin: 0 }}>
+          <legend style={{ fontWeight: 700 }}>表示期間設定</legend>
+          {canFollow && (
+            <label style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+              <input type="checkbox" checked={!!form.followCutoff}
+                onChange={(e) => up({ followCutoff: e.target.checked })} style={{ marginTop: 2 }} />
+              <span>
+                表示期間設定も新しい期に合わせる
+                <span style={{ display: "block", fontSize: 10, color: "#888" }}>
+                  {cutoffPreview.groupLabels.length > 0 &&
+                    `${cutoffPreview.groupLabels.join("・")} の終了日を${form.endDate ? ` ${form.endDate} に` : "「なし」に"}変更`}
+                  （このままだと新しい期のコマが画面に出ません）
+                </span>
+              </span>
+            </label>
+          )}
+          {cutoffPreview.orientationLabels.length > 0 && (
+            <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input type="checkbox" checked={!!form.clearOrientation}
+                onChange={(e) => up({ clearOrientation: e.target.checked })} />
+              新しい期はオリエンなしにする（{cutoffPreview.orientationLabels.join("・")}）
+            </label>
+          )}
+        </fieldset>
+      )}
     </div>
   );
 }

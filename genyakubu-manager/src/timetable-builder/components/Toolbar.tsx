@@ -1,3 +1,5 @@
+import { usePlanning } from '../contexts/planningContextValue';
+import { makeKey } from '../utils/scheduleKey';
 import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { makeNgKey } from '../utils/scheduleKey';
@@ -55,6 +57,7 @@ export default function Toolbar({
     toggleTeacherNg,
     updateGenerationParams,
   } = useProjectContext();
+  const planning = usePlanning();
   const { showConfirm, showToast } = useUI();
   // N2f: undo/redo は内容 toast + 該当セルスクロール付きで使う
   const { undoWithFeedback: undo, redoWithFeedback: redo } = useUndoRedoFeedback();
@@ -164,9 +167,11 @@ export default function Toolbar({
   const countedInfeasItems = infeasItems.filter(it => !it.informational);
   // NG 違反は一覧で出すときも popoverRows に入らないので別に足す (セルの数)
   const ngCountInList = ngList ? (violations.teacherNgAssigned?.count || 0) : 0;
+  // B2: 連続出勤日数の上限を超えたところ (全タブ。本体の所属で対象を決める)
+  const streakItems = planning.streakViolations;
   const totalViolationCount =
     popoverRows.reduce((s, r) => s + r.count, 0) + ngCountInList + teacherOverItems.length +
-    teacherOverTotalItems.length + countedInfeasItems.length;
+    teacherOverTotalItems.length + countedInfeasItems.length + streakItems.length;
   // 種別が teacherConflict 1 つだけ (subjectDup / subjectOver / teacherOverDaily /
   // カウント対象の infeasItems が全て 0) の場合は popover を開かず即スクロール
   // する (旧挙動互換)。informational は fast path を妨げない。
@@ -177,6 +182,7 @@ export default function Toolbar({
     violations.subjectOver.count === 0 &&
     teacherOverItems.length === 0 &&
     teacherOverTotalItems.length === 0 &&
+    streakItems.length === 0 &&
     countedInfeasItems.length === 0;
 
   return (
@@ -286,6 +292,33 @@ export default function Toolbar({
                             </button>
                           </li>
                         )}
+                      </ul>
+                    </li>
+                  )}
+                  {streakItems.length > 0 && (
+                    <li className="pt-1.5 mt-1.5 border-t border-builder-border">
+                      <div className="font-bold mb-1">連続出勤日数の上限超 ({streakItems.length}件)</div>
+                      <ul className="space-y-0.5 pl-2 text-builder-ink-muted">
+                        {streakItems.map((it) => (
+                          <li key={`streak-${it.ruleId}-${it.teacher}-${it.dateLabels[0]}`} className="flex items-center justify-between gap-2">
+                            <span className="flex-1 min-w-0">
+                              {it.teacher}: {it.dateLabels.join('・')} <span className="font-bold text-builder-red">{it.dateLabels.length}日連続 (上限 {it.maxDays})</span>
+                            </span>
+                            {it.firstCell && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const c = it.firstCell!;
+                                  jumpToCell(c.tabId, makeKey(c.dateId, c.periodId, c.classId));
+                                  setPopoverOpen(false);
+                                }}
+                                aria-label={`${it.teacher} の連続の最初のセルへ移動`}
+                                className="px-1.5 py-0.5 border border-builder-border rounded text-builder-ink-muted hover:bg-builder-surface-alt"
+                                title="連続の最初の日のセルへ移動"
+                              >→</button>
+                            )}
+                          </li>
+                        ))}
                       </ul>
                     </li>
                   )}

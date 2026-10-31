@@ -83,6 +83,7 @@ import {
   applyCohortCutoffs,
   proposeCohortCutoffs,
   restoreCohortCutoffs,
+  previousCohortCutoffs,
 } from "../../utils/yoteihyo/cutoffProposals";
 import { addHolidayException, holidaysCancellingSlot } from "../../utils/holidayExceptions";
 import { courseLabel, dateLabel } from "../../utils/yoteihyo/labels";
@@ -630,14 +631,13 @@ export function YoteihyoCheckView({
       okLabel: "設定する",
     });
     if (!ok) return;
-    const ids = chosen.map((p) => p.cohortId);
-    const previous = (displayCutoff?.cohorts || []).filter((c) => c && ids.includes(c.id));
+    const previous = previousCohortCutoffs(displayCutoff, chosen);
     saveDisplayCutoff((prev) => applyCohortCutoffs(prev, chosen));
     toasts.success(`${chosen.length} コースの終講日を設定しました`, {
       duration: 6000,
       action: {
         label: "元に戻す",
-        onClick: () => saveDisplayCutoff((prev) => restoreCohortCutoffs(prev, ids, previous)),
+        onClick: () => saveDisplayCutoff((prev) => restoreCohortCutoffs(prev, chosen, previous)),
       },
     });
   };

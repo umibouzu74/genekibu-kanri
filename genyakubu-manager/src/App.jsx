@@ -45,7 +45,7 @@ import {
   filterSlotsCurrentOrUpcoming,
 } from "./utils/timetable";
 import { useToday } from "./hooks/useToday";
-import { slotWeight, formatCount, isSlotForTeacher } from "./utils/biweekly";
+import { slotWeight, formatCount, isSlotForTeacher, slotTeacherNamesEver, slotsOnDate } from "./utils/biweekly";
 import { visibilityForTeacher } from "./utils/teacherTags";
 import { buildKoshuLessonsForSeasons } from "./utils/builderLessons";
 import {
@@ -86,6 +86,7 @@ import {
   listOrphanDetection,
 } from "./utils/orphanCleanup";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { resolveCohortTimetables } from "./utils/cohorts";
 import { useAppData } from "./hooks/useAppData";
 import { usePrintJobs } from "./hooks/usePrintJobs";
 import "./styles/appShell.css";
@@ -289,7 +290,7 @@ export default function App() {
     saveAdjustments,
     timetables,
     saveTimetables,
-    displayCutoff,
+    displayCutoff: storedDisplayCutoff,
     saveDisplayCutoff,
     examPeriods,
     saveExamPeriods,
@@ -337,6 +338,14 @@ export default function App() {
     eventVisibility,
     saveEventVisibility,
   } = appData;
+
+  // コース別終講日のうち時間割の付いていない旧データに、終講日の時点の時間割を
+  // 補ったもの (A1。保存はしない)。どの画面もこちらを見る。コース別終講日の画面で
+  // 保存すると補った値ごと書かれる (utils/cohorts.resolveCohortTimetables)
+  const displayCutoff = useMemo(
+    () => resolveCohortTimetables(storedDisplayCutoff, timetables, slots),
+    [storedDisplayCutoff, timetables, slots]
+  );
 
   // 講習時間割作成 (builder) の季節ごと (春期 / 夏期 / 冬期) の project を
   // 読み取り専用で購読し、個人月間スケジュール (MonthView) に載せる講習コマへ
@@ -471,6 +480,13 @@ export default function App() {
   }, [view, selected]);
   const [monthOff, setMonthOff] = useState(0);
   const [editSlot, setEditSlot] = useState(null);
+  // 編集するコマは保存されているものを id で引き直す。日付のある画面は
+  // 担当の切り替えを当てた「その日のコマ」(biweekly.slotOnDate) を描くので、
+  // それを編集に渡すと切り替えが消え、元の担当が書き換わる
+  const editSlotRaw =
+    editSlot && editSlot !== "new"
+      ? slots.find((s) => s.id === editSlot.id) || editSlot
+      : editSlot;
   const [editSub, setEditSub] = useState(null);
   // 代行フォームで直前に作ったレコード (授業管理の月フィルタ追従用)
   const [createdSubs, setCreatedSubs] = useState(null);
@@ -571,6 +587,20 @@ export default function App() {
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const todayStr = useToday();
+  // 講習時間割作成へ渡す講師の所属 (前年度・今年度・来年度。講習の初日の年度で引く)
+  const builderTeacherCategories = useMemo(() => {
+    const names = new Set(partTimeStaffNames);
+    for (const s of slots) for (const t of slotTeacherNamesEver(s)) names.add(t);
+    for (const c of teacherAffiliations || []) if (c?.name) names.add(c.name);
+    const fy = fiscalYearOf(todayStr);
+    const out = {};
+    for (const year of [fy - 1, fy, fy + 1]) {
+      const m = {};
+      for (const n of names) m[n] = resolveAffiliation(affiliationIndex, n, year, partTimeNameSet).category;
+      out[year] = m;
+    }
+    return out;
+  }, [slots, partTimeStaffNames, teacherAffiliations, affiliationIndex, partTimeNameSet, todayStr]);
   // 講師の所属で今年度「退職・非表示」の講師 (講習時間割作成へ読み取り専用で渡す)
   const retiredTeacherNames = useMemo(
     () => [...retiredNamesForYear(teacherAffiliations, fiscalYearOf(todayStr))],
@@ -712,8 +742,10 @@ export default function App() {
   // 今の時間割のコマ (日付を持たない画面用。サイドバーの講師ごとのコマ数・
   // 講師の週計・全講師一覧)。日付を持つ画面 (ダッシュボード・月間・週間) は
   // 全コマを渡し、画面の側で日ごとに時間割の有効期間を見る。
+  // 今日の担当 (担当の切り替え、A5) を当てる。サイドバーのコマ数・全講師一覧は
+  // 今日の担当で数える (編集は editSlotRaw が保存済みのコマを引き直す)
   const currentSlots = useMemo(
-    () => filterSlotsCurrentOn(slots, timetables, todayStr),
+    () => slotsOnDate(filterSlotsCurrentOn(slots, timetables, todayStr), todayStr),
     [slots, timetables, todayStr]
   );
   // 講師の名前を並べる一覧 (サイドバー・まとめて印刷・講師ごとのタグの導出) は
@@ -1675,6 +1707,8 @@ export default function App() {
               displayCutoff={displayCutoff}
               adjustments={adjustments}
               sessionOverrides={sessionOverrides}
+              subs={subs}
+              saveSubs={saveSubs}
               tab={masterTab}
               onTabChange={setMasterTab}
             />
@@ -2012,6 +2046,10 @@ export default function App() {
               partTimeStaffNames={partTimeStaffNames}
               retiredTeacherNames={retiredTeacherNames}
               specialEvents={specialEvents}
+              // 普段の担当 (B1) と講師の所属 (B2・B3) の読み取り用
+              regularSlots={slots}
+              regularTimetables={timetables}
+              teacherCategoriesByYear={builderTeacherCategories}
             />
           )}
           {view === VIEWS.REGULAR_BUILDER && !selected && (
@@ -2251,8 +2289,8 @@ export default function App() {
           onClose={() => setEditSlot(null)}
         >
           <SlotForm
-            slot={editSlot === "new" ? null : editSlot}
-            onSave={(f) => slotsCrud.save(editSlot, f, setEditSlot)}
+            slot={editSlot === "new" ? null : editSlotRaw}
+            onSave={(f) => slotsCrud.save(editSlotRaw, f, setEditSlot)}
             onCancel={() => setEditSlot(null)}
             suggestions={slotsCrud.suggestions}
             timetables={timetables}

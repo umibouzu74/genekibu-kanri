@@ -713,6 +713,54 @@ Claude in Chrome で講習時間割作成を操作して出た問題と、作成
   `knownTeacherNames`)
 - 授業時間の集計にはまだ数えていない (要件が出たら `teachingMinutes` に種別を足す)
 
+## 講習の組み方の手がかり (普段の担当・使い方・連続出勤日数、2026-10-31)
+
+どれも時間割のデータと人の設定から決める (使用履歴は使わない、A18)。本体のデータは
+hostData から読み取り専用 (`regularSlots` / `regularTimetables` /
+`teacherCategoriesByYear`)。作業領域で 1 回だけ作る (`contexts/usualTeachersContext` の
+Provider、読むのは `planningContextValue.usePlanning`)。自動作成は worker が hostData を
+持たないので、`utils/planningHints.buildPlanningHints` で名前の集合まで解いて渡す。
+
+- **普段の担当 (B1)**: 講習のクラスに通常授業の学年・クラス (`ClassEntity.regular =
+  {grade, classes}`、classes 空 = その学年の全部) を結び付け (⚙ 基本設定の「🏫 クラスと
+  教室」、「📚 普段のクラスを推定」は一度きりの入力補助)、本体の時間割から科目ごとの担当を
+  引く (本体の `utils/usualTeachers`。講習の初日の「今の時間割」+ その日の担当 (担当の
+  切り替えも)。合同 "S/AB"・"SS〜C"・隔週の相手と "英/数" の組の科目も)。使い道: 講師
+  プルダウンの ★ と並び・「普段の担当と違うセル」の一覧 (`UsualTeacherCheck`、基本設定と
+  前の講習の時間割を写した後)・写すときの「講師は普段の担当で入れ直す」(NG の人は飛ばし、
+  いなければ講師を空に)・自動作成で最初に試す
+- **使い方 (B3)**: `Teacher.usage` = 標準 / 控えめ / 使わない (講師マスタの「使い方」)。
+  `Project.yobikoReserve` で「本体の所属が予備校部の講師は既定で控えめ」。講師ごとの設定が
+  優先 (`resolveTeacherUsage`)。控えめはプルダウンの最後の「控えめ」のまとまり・自動作成で
+  後回し (試す順を変えるだけ = ROADMAP L3c の範囲で、解けるかは変えない)。使わないは
+  候補に出さない (入っているセルでは出す)。**NG とは別物**。「未定」は自動作成で最後に試す
+- **連続出勤日数の上限 (B2)**: `Project.dayStreakRules` (対象 = 所属 / 講師名・タブ・
+  時間帯・上限の日数、講師マスタの画面の「📅 連続出勤日数の上限」)。暦日で数える
+  (`resolveDateLabelsYmd` で年ごと解く。日曜など授業の無い日をはさむと途切れる)。違反は
+  ⚠ の内訳に (`computeStreakViolations`、→ で最初の日のセルへ)、自動作成ではハード制約
+
+## 講習のクラスの丸ごと合同・セルの表 (2026-10-31)
+
+- **丸ごと合同 (B4)**: `ClassEntity.mergedInto` = 同じタブの相手のクラス id (3A404 →
+  3A403。⚙ 基本設定の「🏫 クラスと教室」の「丸ごと合同」)。科目単位の合同
+  (`combinedGroups`) とは別物で、全科目・全日程。`scheduleKey.mergedClassesForTab` が
+  従うクラスを外し、相手に `mergedWith` (保存しない) を付ける。**`effectiveConfigForTab`
+  がこれを通す**ので、時間割の列・自動作成・分析・講師の計 (`tabUsage`)・Excel・配布用・
+  本体の月間 (`builderLessons`) は 1 件 (名前は「3A403・3A404」、教室は「403/404」、
+  `classRoom.classDisplayLabel` / `classLabelWithRoom`)。従うクラスのセルは消さずに
+  `tab.schedule` に残る (`cleanSchedule` は `tab.config.classes` を見る) ので、外すと戻る。
+  **クラスの名前・一覧を書き戻す画面は `tab.config.classes` を使う** (effective のクラスを
+  書き戻すと従うクラスが消える。BasicSettings の `rawClasses`)。連鎖 (従うクラスに従う) は
+  作らない (reducer と migrate で止める)。スナップショットはセルだけなので、合同の切替とは独立
+- **セルの表 (B5)**: `utils/cellTsv` + `components/CellTsvDialog` (タブの「⋯ タブの操作」→
+  「📋 セルを表で書き出す・貼り付ける」)。列は タブ / 日付 / 時限 / クラス / 科目 / 講師 /
+  ロック。書き出しは使う日・時限の全部のセル (空も)。貼り付けは貼った行のセルだけ、科目と
+  講師を両方空にした行は空に。ロックの列があればその通り (ロックしたセルも書き換える)、
+  無ければロックしたセルは書き換えない。「確認」で行ごとの結果と、貼った後に**新しく増える**
+  NG・講師の重なり・日上限を出す。適用は `schedule/importCells` の 1 アクション (Undo 1 回)。
+  `importCells` の書き込みは `cellTsv.applyWritesToSchedule` の規則 (clear / locked /
+  overrideLock。旗の無い従来の書き込みは従来どおり)。合同の伝播はしない (行で明示する)
+
 ## 講習時間割作成の罫線・ボタンの土台 (2026-10-09)
 
 講習時間割作成は Tailwind の preflight を読み込んでいない (親アプリへの波及を
@@ -825,6 +873,14 @@ Claude in Chrome で講習時間割作成を操作して出た問題と、作成
 - 時間割の複製では、旧形式 (slotIds) の授業セットだけを新スロット id に
   読み替えて引き継ぐ。units 形式は複製先のコマにもそのまま効くので複製しない
   (下の「授業セットと第N回の束ね」節)。
+- **学年を選んで次の期へ続ける**のは時間割管理の「複製」(2026-10-31、
+  `utils/timetableDuplicate.planTimetableDuplicate`)。写す学年のチップ (選んだ学年の
+  コマだけ写し、対象学年もその学年に。共通学年「中1-3」「高1高2」もそのまま)、
+  第N回 (既定は数え直し = 複製元の `sessionStartNumber` を写さない。「前の期の続き」は
+  複製元の期の最後の授業の第N回 + 1 を `sessionStartNumber` に入れる。**複製した時点の
+  見込み**で、前の期に後から休講を足しても追従しない)、担当の切り替えのあるコマの確定
+  (切り替え後 / 元の担当)、表示期間設定の追従 (反映ダイアログと同じ
+  `buildCutoffFollowUp`、既定オフ)。終講日は時間割に結び付くので外さなくてよい
 
 ## 表示する時間割は日付で決まる (2026-10-21、端末ごとの選択を廃止)
 
@@ -870,6 +926,64 @@ Claude in Chrome で講習時間割作成を操作して出た問題と、作成
   切り替える」は廃止 (切り替える対象が無い)
 - 古い端末に残った `genyakubu-active-timetable` は起動時に消す。バックアップにも
   書き出さない (旧バックアップの値は読み込みで無視)
+
+## 担当の切り替え (学期の途中からの担当変更、2026-10-31)
+
+コマの担当が学期の途中から変わる (10/27 から 高1 桜井・第一 数学 小見山 → 福江)
+のを **`Slot.teacherChanges = [{from, teacher, partner?, memo?}]`** で表す。その日の
+担当 = from がその日以前で一番新しい切り替えの teacher、無ければ `slot.teacher`
+(切り替え前の担当)。期間限定の変更は戻す行 (from = 戻る日, teacher = 元の担当)。
+コマ id が変わらないので代行・振替・回数補正・休講の例外はそのまま。
+
+- **決まりは `utils/biweekly` の 1 か所** (`slotOnDate` / `slotsOnDate` /
+  `teacherChangeOn` / `slotTeacherNamesEver` / `slotTeacherNamesBetween` /
+  `normalizeTeacherChanges`)。`biweeklyActiveTeacher` と `isTeacherActiveOnDate` が
+  先に切り替えを当てるので、`activeTeachersOnDate` を通る代行の元講師・講師の重なり・
+  授業時間の集計・バイト出勤表・欠勤登録はそのまま切り替え後の担当になる
+- **日付のある画面は入口で `slotsOnDate(slots, date)` を通す** (日別ダッシュボードの
+  DashDayRow・タイムテーブルの表示日・代行モード (`useSubstitutionMode`)・欠勤登録 /
+  代行登録 (`getAbsenceDaySlots`)・講師の月間 / 週間の各日・一覧の各レコードの日)。
+  `slot.teacher` を日付のある処理で直に読まない
+- 日によって担当が変わるかの前段は **`teacherVariesByDate`** (隔週 or 切り替え)。
+  `isBiweekly(note) && !isTeacherActiveOnDate(...)` の形で書かない (切り替えだけの
+  コマが日で絞られない)
+- 日付の無い絞り込み (`isSlotForTeacher`)・名前を並べる一覧 (サイドバー・Cmd+K・
+  代行候補・特訓シフトの候補・削除の件数) は**切り替えの前後の全員**。サイドバーの
+  コマ数・全講師一覧 (`currentSlots`) は**今日の担当**
+- **`slotOnDate` の結果 (その日のコマ) を保存に使わない** (切り替えが外れ、元の担当が
+  書き換わる)。コマの編集は App の `editSlotRaw` が id で保存済みのコマを引き直す。
+  振替で入るコマのカードは teacherChanges を外す (振替先の日でもう一度解かない)
+- 第N回・隔週の週送り (biweeklyAnchors) は担当を見ないので変えない
+- 登録はコースマスター管理の「👤 担当変更」タブ (`TeacherChangeTab` +
+  `utils/teacherChangePlan`)。旧担当・開始日・新担当 (・◯日まで・メモ) → 対象のコマを
+  時間割・学年・曜日・科目・学校で絞ってチェック → まとめて付ける (6 秒の「元に戻す」)。
+  開始日以降の旧担当の代行・振替を知らせ、代行者が新担当と同じ代行はまとめて解除できる。
+  一覧はコマの編集画面 (外すだけ) と講師の月間の「担当の変更:」の行 (新旧両方に出す)
+- 通常時間割作成の取込は切り替え前の担当 (`slot.teacher`) を読み、置き換え反映は
+  既定で切り替えを持ち越す (「下書きの担当で確定して消す」を選べる)
+- iCal は日ごとの判定 (`isTaughtOn`) で担当でない日を EXDATE にする
+
+## 対象学年に合わないコマ (2026-10-31)
+
+時間割の対象学年 (`timetable.grades`、空 = 全学年) に無い学年のコマは、エラーも出ずに
+どの画面にも出ない。`timetable.findSlotsOutsideTimetableGrades` /
+`gradesOutsideTimetable` で、時間割管理の一覧・コマの編集画面・置き換え反映
+(「対象学年に ◯◯ を加える」、既定オン) で知らせる。置き換え反映の名前の欄は空欄
+(= 据え置き) から始める。
+
+## コース別終講日は時間割に結び付く (2026-10-31)
+
+`CohortCutoff.timetableId` が付いた終講日はその時間割のコマにだけ効く
+(`cohorts.findCohortCutoff`。同じコースに両方あれば時間割の付いた方)。前の期の終講日を
+残したまま次の期を作れる (期切替の追従でも消さない)。
+
+- 時間割の付いていない旧データは、App が読み込みのたびに
+  `cohorts.resolveCohortTimetables` で補う (終講日の時点で有効な時間割、無ければその日
+  までに始まって最後に終わった時間割。決まらなければ従来どおり全部の時間割に効く)。
+  **保存はしない**。コース別終講日の画面で保存したときに補った値ごと書かれる
+- コース別終講日の画面は時間割を 1 つ選んで編集する。時間割の付いていない終講日を
+  その画面で変えた / 消したときは、ほかの時間割には分けて残す
+- 予定表から終講日を設定は、時間割ごとのコース (key = 時間割 + コース) で案を出す
 
 ## 授業セットと第N回の束ね (2026-08-18 確定)
 
@@ -1635,6 +1749,26 @@ sessionStorage の直前の画面。画面を移ると本文のスクロール�
   ことは変わらない)
 - **特訓シフト (`examPrepSchedules`) とは独立**。例外日でも特訓の出勤は
   そのまま出る (両方ある日がこの機能の動機)
+
+## 特訓シフトの途中入り・途中抜けと表 (2026-10-31)
+
+- 校時の途中から来る / 途中で帰る人は **`ExamPrepDay.staffTimes = {名前: {from?, to?}}`**
+  (講師ごとに 1 組。空欄 = 校時どおり、片方だけも可)。いったん抜けて戻る人は校時の
+  チェックで表す。実際の時間はチェックした各校時を from〜to で切り詰めたもので、0 分に
+  なる校時は出さない (端を切るだけなので、バイト出勤表のかたまりの数は変わらない)
+- **特訓の時刻を読むところは `examPrepHelpers.staffShiftPeriods` を通す** (講師の月間・
+  週間 (`getExamPrepShiftsForStaff`)・授業時間の集計 → バイト出勤表・カード忘れ)。
+  `day.assignments` と校時の時刻を直に組み合わせない
+- 出勤を外したら時刻も消す (`withoutOrphanStaffTimes`。1 マスずつ・全解除・講師の削除・
+  保存のたび)。日のコピーは時刻も写す。範囲外・来る ≥ 帰るは注意 (`staffTimeWarnings`)
+  で、保存は止めない。空の staffTimes はキーごと持たない (RTDB は空を消す)
+- 保存は書き込む時点の値から (`useExamPrepSchedulesCrud` の updater / `updateDay`)。
+  描画時点の値で上書きすると、時刻を続けて打ったときに前の入力が消える
+- **表 (TSV) の書き出し・貼り付け** (`utils/examPrepTsv` + `ExamPrepTsvDialog`、特訓シフトの
+  画面の「📋 表で書き出す・貼り付ける」)。校時の表 (日付 / 校時 / 開始 / 終了) と出勤の表
+  (日付 / 講師 / 校時 "1-4"・"1,2,5" / 来る / 帰る) を空行で区切る。貼った日だけを置き換え
+  (`replaceDays`、1 回の保存)、6 秒の「元に戻す」は置き換えた日を元に戻す (`restoreDays`)。
+  候補にいない名前・無い校時・期間外の日・時刻の逆転はエラー (エラーがあると適用しない)
 
 ## 特別時程 (daySchedules) の設計要点 (2026-08-05 実装)
 

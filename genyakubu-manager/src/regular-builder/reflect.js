@@ -282,8 +282,10 @@ export function buildSwitchPlan({
           `（時間割管理 → 表示期間設定で延ばしてください）`
       );
     }
+    // 時間割の付いた終講日 (A1) は前の時間割のコマにしか効かないので、
+    // 新しい期を止めない。止めるのは時間割の付いていない旧データだけ
     const endedCohorts = (displayCutoff?.cohorts || []).filter(
-      (c) => c.date && c.date < startDate
+      (c) => c.date && c.date < startDate && c.timetableId == null
     );
     if (endedCohorts.length > 0) {
       warnings.push(
@@ -407,7 +409,10 @@ export function buildCutoffFollowUp({
   const groupLabels = groups
     .filter((g) => g.date && g.date < startDate)
     .map((g) => g.label);
-  const staleCohorts = cohorts.filter((c) => c.date && c.date < startDate);
+  // 時間割の付いた終講日 (A1) は前の期のまま残す (新しい期のコマには効かない)
+  const staleCohorts = cohorts.filter(
+    (c) => c.date && c.date < startDate && c.timetableId == null
+  );
   // 「オリエンを外す」の対象は、いま有効になっているグループだけ
   // (未設定 = 中学部のみ有効の既定にも追従する)。
   const orientationLabels = clearOrientation
@@ -424,7 +429,6 @@ export function buildCutoffFollowUp({
     return { ...empty, groupLabels, cohortCount: staleCohorts.length };
   }
 
-  const staleIds = new Set(staleCohorts.map((c) => c.id));
   const nextGroups = groups.map((g) => {
     const patch = {};
     if (followDates && g.date && g.date < startDate) patch.date = endDate || null;
@@ -436,7 +440,7 @@ export function buildCutoffFollowUp({
     next: {
       ...(displayCutoff || {}),
       groups: nextGroups,
-      cohorts: followDates ? cohorts.filter((c) => !staleIds.has(c.id)) : cohorts,
+      cohorts: followDates ? cohorts.filter((c) => !staleCohorts.includes(c)) : cohorts,
     },
     groupLabels,
     cohortCount: staleCohorts.length,
@@ -511,6 +515,18 @@ export function applyReflection(plan, opts, { timetables, slots }) {
       ? {
           ...t,
           name: (opts.name || "").trim() || t.name,
+          // 下書きの学年が対象学年に無いと、反映したコマがどの画面にも
+          // 出ない (エラーにもならない)。ダイアログで確認して加える
+          // (対象学年が空 = 全学年なら足さない。足すと逆に絞ってしまう)
+          ...(Array.isArray(opts.addGrades) && opts.addGrades.length > 0 &&
+          (t.grades || []).length > 0
+            ? {
+                grades: [
+                  ...(t.grades || []),
+                  ...opts.addGrades.filter((g) => !(t.grades || []).includes(g)),
+                ],
+              }
+            : {}),
           startDate:
             opts.startDate !== undefined ? opts.startDate || null : t.startDate,
           endDate: opts.endDate !== undefined ? opts.endDate || null : t.endDate,
@@ -532,7 +548,11 @@ export function applyReflection(plan, opts, { timetables, slots }) {
   // slot 側にある未知のフィールドは残す (下書きが知らない情報を消さない)
   const updatedById = new Map();
   for (const { slot, draft } of [...match.unchanged, ...match.changed]) {
-    updatedById.set(slot.id, { ...slot, ...draft, id: slot.id, timetableId });
+    const merged = { ...slot, ...draft, id: slot.id, timetableId };
+    // 担当の切り替え (slot.teacherChanges、A5) は既定で持ち越す (下書きの講師欄は
+    // 切り替え前の担当として取り込んでいる)。「下書きの担当で確定」なら外す
+    if (opts.dropTeacherChanges) delete merged.teacherChanges;
+    updatedById.set(slot.id, merged);
   }
   const keptSlots = existing
     .filter((s) => updatedById.has(s.id))

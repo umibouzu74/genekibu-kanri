@@ -2,6 +2,8 @@ import { useProjectContext } from '../contexts/projectContextValue';
 import { useUI } from '../contexts/uiContextValue';
 import { effectiveConfigForTab } from '../utils/scheduleKey';
 import { frameOfTab } from '../utils/frames';
+import { useEffect, useRef, useState } from 'react';
+import CellTsvDialog from './CellTsvDialog';
 
 export default function TabBar() {
   const {
@@ -16,6 +18,36 @@ export default function TabBar() {
   } = useProjectContext();
   const { showConfirm, showInput, showToast } = useUI();
   const tabErrorCounts = analysis?.tabErrorCounts || {};
+  // タブの操作メニュー (右クリック / 「⋯ タブの操作」)。以前は ⧉ (他タブから
+  // 複製) がタブ名のすぐ横にあり、タブを切り替えるつもりで押してしまった
+  // ので、メニューの中へ移した (B7)。x / y は画面座標 (position: fixed)。
+  // sourceTabId: 右クリックしたタブ (そのタブからの複製を先頭に出す)
+  const [menu, setMenu] = useState<{ x: number; y: number; tabId: number | null } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  // セルを表 (TSV) で書き出す・貼り付ける (B5)
+  const [tsvOpen, setTsvOpen] = useState(false);
+  useEffect(() => {
+    if (!menu) return undefined;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenu(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.isComposing) setMenu(null);
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    requestAnimationFrame(() => menuRef.current?.querySelector<HTMLButtonElement>('button')?.focus());
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
+  const openMenuAt = (x, y, tabId = null) => {
+    // 画面の右端・下端からはみ出さないように寄せる
+    const w = 280;
+    const left = Math.max(8, Math.min(x, (window.innerWidth || 1024) - w - 8));
+    setMenu({ x: left, y, tabId });
+  };
 
   // 重複タブ名は reducer 側で no-op になる (K3i)。silent だと「直った
   // ように見える」ので理由を伝える (ヘッダ rename の H3 と同じ扱い)
@@ -51,7 +83,8 @@ export default function TabBar() {
   // K4a: 別タブ (source) の割当を現在のタブへ複製する。上書きになるので
   // confirm を挟む。適用後は Undo で戻せる (履歴に積まれる)
   const handleCopyFromClick = async (e, sourceTab) => {
-    e.stopPropagation();
+    e?.stopPropagation?.();
+    setMenu(null);
     const activeTab = project.tabs.find(t => t.id === project.activeTabId);
     if (!activeTab || sourceTab.id === activeTab.id) return;
     const hasCells = Object.keys(activeTab.schedule || {}).length > 0;
@@ -80,6 +113,13 @@ export default function TabBar() {
   // F2 = 改名 / Delete = 削除 をフォーカス中のタブに提供する。
   const handleTabKeyDown = (e) => {
     const activeTab = project.tabs.find(t => t.id === project.activeTabId);
+    // メニューキー / Shift+F10 = タブの操作メニュー (右クリックの代替)
+    if ((e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) && activeTab) {
+      e.preventDefault();
+      const r = document.getElementById(`builder-grade-tab-${activeTab.id}`)?.getBoundingClientRect();
+      openMenuAt(r ? r.left : 16, r ? r.bottom : 80, activeTab.id);
+      return;
+    }
     if (e.key === 'F2' && activeTab) {
       e.preventDefault();
       handleRenameClick(e, activeTab);
@@ -137,9 +177,13 @@ export default function TabBar() {
             role="tab"
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
-            title="クリックで切替 / ダブルクリック or F2 で名前変更 / Delete で削除 / ドラッグ or Ctrl+←→ で並べ替え"
+            title="クリックで切替 / ダブルクリック or F2 で名前変更 / Delete で削除 / ドラッグ or Ctrl+←→ で並べ替え / 右クリックでタブの操作"
             onClick={() => switchTab(tab.id)}
             onDoubleClick={(e) => handleRenameClick(e, tab)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              openMenuAt(e.clientX, e.clientY, tab.id);
+            }}
             // N2d: ドラッグで並べ替え (キーボード代替は Ctrl+←/→)
             draggable
             onDragStart={(e) => {
@@ -183,17 +227,6 @@ export default function TabBar() {
                 aria-label="違反なし"
               >✨</span>
             )}
-            {/* K4a: 非アクティブタブの割当を現在のタブへ複製する導線 */}
-            {!selected && (
-              <button
-                type="button"
-                onClick={(e) => handleCopyFromClick(e, tab)}
-                tabIndex={-1}
-                aria-label={`${tab.name} タブの割当を現在のタブへ複製`}
-                className="text-xs ml-1 px-1 py-0.5 rounded hover:bg-builder-info-soft hover:text-builder-blue text-builder-ink-muted transition-colors cursor-pointer"
-                title={`このタブ (${tab.name}) の割当を現在のタブへ複製`}
-              >⧉</button>
-            )}
             {project.tabs.length > 1 && (
               <button
                 type="button"
@@ -214,6 +247,78 @@ export default function TabBar() {
         className="px-3 py-2 text-builder-ink-muted hover:text-builder-blue font-bold text-sm"
         title="新しい学年タブを追加"
       >+ タブ追加</button>
+      <button
+        type="button"
+        onClick={(e) => {
+          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          if (menu) setMenu(null);
+          else openMenuAt(r.left, r.bottom, null);
+        }}
+        aria-haspopup="menu"
+        aria-expanded={!!menu}
+        className="px-2 py-2 text-builder-ink-muted hover:text-builder-blue text-sm"
+        title="タブの操作 (他のタブから割当を複製・名前の変更・削除)。タブの右クリックでも開きます"
+      >⋯ タブの操作</button>
+      {menu && (() => {
+        const activeTab = project.tabs.find(t => t.id === project.activeTabId);
+        const others = project.tabs.filter(t => t.id !== project.activeTabId);
+        // 右クリックしたタブ (今のタブ以外) を先頭に
+        others.sort((a, b) => (a.id === menu.tabId ? -1 : b.id === menu.tabId ? 1 : 0));
+        const target = project.tabs.find(t => t.id === menu.tabId) || activeTab;
+        return (
+          <div
+            ref={menuRef}
+            role="menu"
+            aria-label="タブの操作"
+            // 学年タブの矢印キー操作 (tablist の onKeyDown) に渡さない
+            onKeyDown={(e) => e.stopPropagation()}
+            style={{ position: 'fixed', left: menu.x, top: menu.y, width: 280 }}
+            className="z-[1000] bg-builder-surface border border-builder-border rounded shadow-lg py-1 text-sm"
+          >
+            {activeTab && others.length > 0 && (
+              <div className="px-3 py-1 text-[11px] text-builder-ink-muted">
+                現在のタブ「{activeTab.name}」へ割当を複製 (置き換え)
+              </div>
+            )}
+            {activeTab && others.map(t => (
+              <button
+                key={t.id}
+                type="button"
+                role="menuitem"
+                onClick={(e) => handleCopyFromClick(e, t)}
+                className="block w-full text-left px-3 py-1 hover:bg-builder-info-soft text-sm"
+              >⧉ 「{t.name}」から複製…</button>
+            ))}
+            <div className="my-1 border-t border-builder-border" />
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { setMenu(null); setTsvOpen(true); }}
+              className="block w-full text-left px-3 py-1 hover:bg-builder-info-soft text-sm"
+            >📋 セルを表で書き出す・貼り付ける…</button>
+            {target && (
+              <>
+                <div className="my-1 border-t border-builder-border" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={(e) => { setMenu(null); handleRenameClick(e, target); }}
+                  className="block w-full text-left px-3 py-1 hover:bg-builder-info-soft text-sm"
+                >✎ 「{target.name}」の名前を変更… (F2)</button>
+                {project.tabs.length > 1 && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={(e) => { setMenu(null); handleDeleteClick(e, target.id); }}
+                    className="block w-full text-left px-3 py-1 hover:bg-builder-danger-soft text-builder-red text-sm"
+                  >× 「{target.name}」を削除… (Delete)</button>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })()}
+      {tsvOpen && <CellTsvDialog onClose={() => setTsvOpen(false)} />}
     </div>
   );
 }

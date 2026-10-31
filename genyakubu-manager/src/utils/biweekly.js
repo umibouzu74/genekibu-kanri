@@ -211,7 +211,154 @@ export function splitTeacherField(field) {
 export function isSlotForTeacher(slot, teacher) {
   if (slot.teacher === teacher) return true;
   if (slot.note?.includes(teacher)) return true;
-  return splitTeacherField(slot.teacher).includes(teacher);
+  if (splitTeacherField(slot.teacher).includes(teacher)) return true;
+  // 担当の切り替え (teacherChanges) の前後の担当も「関わる講師」に入れる。
+  // 日付のある画面はこの後で日ごとに isTeacherActiveOnDate で絞る
+  return hasTeacherChanges(slot) && slotTeacherNamesEver(slot).includes(teacher);
+}
+
+// ─── 担当の切り替え (slot.teacherChanges、A5 2026-10-31) ────────────────
+// 学期の途中から担当が変わるコマ。`[{from: "YYYY-MM-DD", teacher, partner?, memo?}]`
+// (from の昇順)。その日の担当 = from がその日以前で一番新しい切り替えの teacher、
+// 無ければ slot.teacher。期間限定の変更は戻す行 (from = 戻る日, teacher = 元の
+// 担当) で表す。
+//   - teacher は slot.teacher と同じ書き方 (複数担当は "·" 区切り)
+//   - partner は隔週の B 週の相手 (note の「隔週(◯◯)」)。無ければ note のまま。
+//     読み取りは biweeklyPartner の 1 か所のまま (その日の note を作って渡す)
+//   - 第N回・隔週の週送り (biweeklyAnchors) は担当を見ないので変わらない
+//     (担当が変わっても同じ授業として数える)
+// **日付のある処理は slotOnDate (その日のコマ) を通す**。slot.teacher を直に
+// 読むと、切り替え前の担当のまま表示・集計される。
+
+/** 担当の切り替えを持つか */
+export function hasTeacherChanges(slot) {
+  return Array.isArray(slot?.teacherChanges) && slot.teacherChanges.length > 0;
+}
+
+/** その日の担当が日によって変わりうるか (隔週 or 担当の切り替え)。
+ *  日付ごとの絞り込み (isTeacherActiveOnDate) が要るかの前段 */
+export function teacherVariesByDate(slot) {
+  return isBiweekly(slot?.note) || hasTeacherChanges(slot);
+}
+
+/** dateStr に効いている切り替え (無ければ null) */
+export function teacherChangeOn(slot, dateStr) {
+  if (!hasTeacherChanges(slot) || !dateStr) return null;
+  let best = null;
+  for (const c of slot.teacherChanges) {
+    if (!c || !c.from || c.from > dateStr) continue;
+    if (!best || c.from >= best.from) best = c;
+  }
+  return best;
+}
+
+/** note の「隔週(◯◯)」の相手を差し替える (隔週の印が無ければそのまま) */
+export function withBiweeklyPartner(note, partner) {
+  if (!note || !partner || !BIWEEKLY_PARTNER_RE.test(note)) return note;
+  return note.replace(BIWEEKLY_PARTNER_RE, `隔週(${partner})`);
+}
+
+/**
+ * その日のコマ (担当の切り替えを当てたもの)。切り替えの無い日 / コマは
+ * 同じオブジェクトを返す。切り替えた日は teacher (と隔週の相手) を差し替え、
+ * teacherChanges を外したコピー (もう一度別の日で解かれないように)。
+ */
+export function slotOnDate(slot, dateStr) {
+  const c = teacherChangeOn(slot, dateStr);
+  if (!c) return slot;
+  const { teacherChanges: _drop, ...rest } = slot;
+  return {
+    ...rest,
+    teacher: c.teacher ?? slot.teacher,
+    note: c.partner ? withBiweeklyPartner(slot.note, c.partner) : slot.note,
+  };
+}
+
+/**
+ * コマの一覧をその日のコマにする (担当の切り替えを当てる)。切り替えの当たる
+ * コマが無ければ同じ配列を返す (memo を壊さない)。日付のある画面 (日別の
+ * ダッシュボード・タイムテーブル・欠勤組み換え・代行登録) の入口で通す。
+ * **保存には使わない** (切り替えが外れ、元の担当が書き換わる。編集は
+ * id で保存済みのコマを引き直す)
+ */
+export function slotsOnDate(slots, dateStr) {
+  if (!Array.isArray(slots) || !dateStr) return slots;
+  let changed = false;
+  const out = slots.map((s) => {
+    const d = s && hasTeacherChanges(s) ? slotOnDate(s, dateStr) : s;
+    if (d !== s) changed = true;
+    return d;
+  });
+  return changed ? out : slots;
+}
+
+/** 切り替えの前後を通して関わる講師の全員 (主担当・隔週の相手。重複なし) */
+export function slotTeacherNamesEver(slot) {
+  const out = [];
+  const add = (n) => {
+    if (n && !out.includes(n)) out.push(n);
+  };
+  for (const n of splitTeacherField(slot?.teacher)) add(n);
+  add(biweeklyPartner(slot?.note));
+  for (const c of hasTeacherChanges(slot) ? slot.teacherChanges : []) {
+    for (const n of splitTeacherField(c?.teacher)) add(n);
+    add(c?.partner ? c.partner.trim() : null);
+  }
+  return out;
+}
+
+/**
+ * fromDate〜toDate (どちらも含む。null は端なし) に担当する講師 (主担当・隔週の
+ * 相手。重複なし)。担当の目安・年度の講師一覧のように期間で見る用途
+ */
+export function slotTeacherNamesBetween(slot, fromDate, toDate) {
+  if (!hasTeacherChanges(slot)) {
+    return slotTeacherNamesEver(slot);
+  }
+  const out = [];
+  const addSlot = (s) => {
+    for (const n of splitTeacherField(s.teacher)) if (!out.includes(n)) out.push(n);
+    const p = biweeklyPartner(s.note);
+    if (p && !out.includes(p)) out.push(p);
+  };
+  // 期間の初日の担当 + 期間の中で切り替わった後の担当
+  addSlot(fromDate ? slotOnDate(slot, fromDate) : slot);
+  for (const c of slot.teacherChanges) {
+    if (!c?.from) continue;
+    if (fromDate && c.from <= fromDate) continue;
+    if (toDate && c.from > toDate) continue;
+    addSlot(slotOnDate(slot, c.from));
+  }
+  return out;
+}
+
+/**
+ * 保存用に切り替えの並びを整える: from の昇順・同じ from は後の方・teacher は
+ * "·" 区切りに正規化・空の memo / partner はキーごと持たない (RTDB は undefined を
+ * 書けない)。from か teacher の無い行は落とす。空になったら空配列。
+ */
+export function normalizeTeacherChanges(list) {
+  if (!Array.isArray(list)) return [];
+  const byFrom = new Map();
+  for (const c of list) {
+    if (!c || typeof c.from !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(c.from)) continue;
+    const teacher = splitTeacherField(c.teacher).join("·");
+    if (!teacher) continue;
+    const out = { from: c.from, teacher };
+    const partner = typeof c.partner === "string" ? splitTeacherField(c.partner).join("·") : "";
+    if (partner) out.partner = partner;
+    const memo = typeof c.memo === "string" ? c.memo.trim() : "";
+    if (memo) out.memo = memo;
+    byFrom.set(c.from, out);
+  }
+  return [...byFrom.values()].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+}
+
+/** コマの teacherChanges を正規化して書き戻す (空ならキーごと消す) */
+export function withTeacherChanges(slot, list) {
+  const norm = normalizeTeacherChanges(list);
+  const { teacherChanges: _drop, ...rest } = slot;
+  return norm.length > 0 ? { ...rest, teacherChanges: norm } : rest;
 }
 
 // Extract individual teacher names from a slot's teacher field.
@@ -234,6 +381,12 @@ export function formatCount(n) {
 // アンカー未設定 (weekType null) の場合は安全側で true を返す
 // (表示側で隠さない = 従来挙動)。
 export function isTeacherActiveOnDate(slot, teacher, dateStr, anchors, holidays, examPeriods) {
+  // 担当の切り替えがあれば、その日の担当で見る (隔週でないコマも日で変わる)
+  if (hasTeacherChanges(slot)) {
+    const day = slotOnDate(slot, dateStr);
+    if (!isBiweekly(day.note)) return splitTeacherField(day.teacher).includes(teacher);
+    slot = day;
+  }
   if (!isBiweekly(slot.note)) return true;
   const wt = getSlotWeekType(dateStr, slot, anchors, holidays, examPeriods);
   if (wt == null) return true;
@@ -251,6 +404,9 @@ export function isTeacherActiveOnDate(slot, teacher, dateStr, anchors, holidays,
 //   - アンカー未設定 → slot.teacher (従来挙動 / 安全側)
 // 代行登録時の originalTeacher を曜日 (A/B) に合わせて解決するために使う。
 export function biweeklyActiveTeacher(slot, dateStr, anchors, holidays, examPeriods) {
+  // 担当の切り替え (A5) を先に当てる。ここを通る代行の元講師・講師の重なり・
+  // 授業時間の集計・欠勤登録はこれで切り替え後の担当になる
+  slot = slotOnDate(slot, dateStr);
   if (!isBiweekly(slot.note)) return slot.teacher;
   const wt = getSlotWeekType(dateStr, slot, anchors, holidays, examPeriods);
   if (wt == null || wt === "A") return slot.teacher;

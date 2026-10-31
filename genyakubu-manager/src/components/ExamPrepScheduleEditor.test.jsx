@@ -245,3 +245,32 @@ describe("ExamPrepScheduleEditor の出勤表", () => {
     expect(screen.getByRole("button", { name: "1 日にコピー" })).toBeEnabled();
   });
 });
+
+describe("ExamPrepScheduleEditor の来る・帰る時刻 (C1)", () => {
+  it("出勤のある行に来る・帰る時刻を入れると、そろえて保存する", () => {
+    const { crud } = renderEditor();
+    const from = screen.getByLabelText("奥村 の来る時刻");
+    fireEvent.change(from, { target: { value: "1930" } });
+    fireEvent.blur(from);
+    const saved = crud.upsertDay.mock.calls.at(-1)[1];
+    expect(saved.staffTimes).toEqual({ 奥村: { from: "19:30" } });
+    // 出勤の無い講師には欄を出さない
+    expect(screen.queryByLabelText("伊藤 の帰る時刻")).not.toBeNull();
+  });
+
+  it("途中からの校時は時刻を添え、範囲外の時刻は注意を出す", () => {
+    const day = { ...makeDay(), staffTimes: { 奥村: { from: "19:30", to: "19:40" } } };
+    renderEditor(day);
+    expect(screen.getByTitle("19:30〜19:40 (途中から・途中まで)")).toBeInTheDocument();
+    expect(screen.getByText(/外になる校時が 1 つあります/)).toBeInTheDocument();
+  });
+
+  it("出勤のチェックを全部外すと、その人の時刻も消す", () => {
+    const day = { ...makeDay(), staffTimes: { 伊藤: { from: "17:45" } } };
+    const { crud } = renderEditor(day);
+    fireEvent.click(screen.getByLabelText("伊藤 3 校時"));
+    const saved = crud.upsertDay.mock.calls.at(-1)[1];
+    expect(saved.assignments.伊藤).toBeUndefined();
+    expect(saved.staffTimes).toBeUndefined();
+  });
+});

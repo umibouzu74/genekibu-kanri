@@ -145,5 +145,27 @@ export function useTimetablesCrud({
     [slots, saveSlots, toasts]
   );
 
-  return { add, update, remove, duplicate, bulkRetime };
+  // 複製の計画 (utils/timetableDuplicate.planTimetableDuplicate) をそのまま保存する。
+  // 学年を選ぶ・続き番号・担当の確定は計画の側で決めてある (A2)
+  const applyDuplicate = useCallback(
+    (plan, sourceName) => {
+      if (!plan || plan.error) {
+        toasts.error(plan?.error || "複製できませんでした");
+        return null;
+      }
+      if (plan.classSets && saveClassSets) saveClassSets(plan.classSets);
+      saveTimetables([...timetables, plan.timetable]);
+      saveSlots(plan.slots);
+      const added = plan.classSets ? plan.classSets.length - (classSets || []).length : 0;
+      toasts.success(
+        `「${sourceName}」を複製しました（${plan.newSlots.length} コマ` +
+          (added > 0 ? `、授業セット ${added} 件` : "") +
+          `）`
+      );
+      return plan.timetable.id;
+    },
+    [timetables, saveTimetables, saveSlots, classSets, saveClassSets, toasts]
+  );
+
+  return { add, update, remove, duplicate, applyDuplicate, bulkRetime };
 }

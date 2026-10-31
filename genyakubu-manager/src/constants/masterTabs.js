@@ -8,6 +8,7 @@ export const MASTER_TAB = Object.freeze({
   LIST: "list",
   BIWEEKLY: "biweekly",
   EXCEL: "excel",
+  TEACHER_CHANGE: "teacherChange",
 });
 
 export const DEFAULT_MASTER_TAB = MASTER_TAB.LIST;
@@ -16,6 +17,8 @@ export const MASTER_TABS = Object.freeze([
   { key: MASTER_TAB.LIST, icon: "📃", label: "コマ一覧" },
   { key: MASTER_TAB.BIWEEKLY, icon: "🔁", label: "隔週管理" },
   { key: MASTER_TAB.EXCEL, icon: "▦", label: "時間割表" },
+  // 学期の途中から担当が変わるコマ (slot.teacherChanges、A5)
+  { key: MASTER_TAB.TEACHER_CHANGE, icon: "👤", label: "担当変更" },
 ]);
 
 // 未知のタブキー (古い localStorage 等) を既定へ丸める。
