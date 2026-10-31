@@ -22,6 +22,7 @@ import {
   normalizeScope,
 } from "./reflectScope";
 import { ReflectScopePicker } from "./ReflectScopePicker";
+import { gradesOutsideTimetable } from "../utils/timetable";
 
 // 差分リストの最大表示行数 (超過分は「…他 n 件」)
 const DIFF_LINE_LIMIT = 12;
@@ -106,6 +107,9 @@ export function ReflectDialog({
   const [limitGrades, setLimitGrades] = useState(false);
   // 反映する範囲 (学年 × 曜日)。既定は絞らない = プロジェクト全体
   const [limitScope, setLimitScope] = useState(false);
+  // 置き換え先の対象学年に無い学年を、反映と一緒に加えるか (既定は加える。
+  // 加えないと反映したコマがどの画面にも出ない)
+  const [addMissingGrades, setAddMissingGrades] = useState(true);
   const [rawScope, setRawScope] = useState({ days: [], grades: [] });
   // タブを消した後に古い選択が残ると「何も反映されない理由が分からない」
   // 状態になるので、プロジェクトの語彙に正規化してから使う
@@ -124,12 +128,28 @@ export function ReflectDialog({
 
   const useSwitch = mode === "new" && switchTerm;
 
+  const replaceTarget = useMemo(
+    () => (mode === "replace" ? timetables.find((t) => t.id === Number(targetId)) : null),
+    [mode, timetables, targetId]
+  );
+  // 下書きの (範囲内の) 学年のうち、置き換え先の対象学年に無いもの
+  const missingGrades = useMemo(() => {
+    if (!replaceTarget) return [];
+    const draftGrades = buildReflectionPlan(project, {
+      mode,
+      targetTimetableId: Number(targetId),
+      ...(scoped ? { scope } : {}),
+    }).drafts.map((d) => d.grade);
+    return gradesOutsideTimetable(draftGrades, replaceTarget);
+  }, [replaceTarget, project, mode, targetId, scoped, scope]);
+
   const opts = useMemo(() => {
     const base = { mode, name, targetTimetableId: Number(targetId) };
     if (mode === "replace") {
       // 置き換えでは空欄 = 据え置き (undefined を渡すと applyReflection が現値を維持)
       if (startDate) base.startDate = startDate;
       if (endDate) base.endDate = endDate;
+      if (addMissingGrades && missingGrades.length > 0) base.addGrades = missingGrades;
     } else {
       base.startDate = startDate || null;
       base.endDate = endDate || null;
@@ -138,7 +158,7 @@ export function ReflectDialog({
     }
     if (scoped) base.scope = scope;
     return base;
-  }, [mode, name, startDate, endDate, targetId, limitGrades, grades, switchTerm, closeId, scoped, scope]);
+  }, [mode, name, startDate, endDate, targetId, limitGrades, grades, switchTerm, closeId, scoped, scope, addMissingGrades, missingGrades]);
   const plan = useMemo(() => buildReflectionPlan(project, opts), [project, opts]);
   // 期切替の計画 (旧時間割に入れる終了日と、その検証)
   const switchPlan = useMemo(
@@ -261,6 +281,11 @@ export function ReflectDialog({
           (lost > 0
             ? `・${scoped ? "範囲内で" : ""}下書きに無い ${lost} コマは削除されます。そのコマに紐づく代行・調整・回数補正・授業セット (旧形式) も一緒に削除されます（孤立データを残しません）\n`
             : "・削除されるコマはありません\n") +
+          (opts.addGrades
+            ? `・対象学年に ${opts.addGrades.join("・")} を加えます\n`
+            : missingGrades.length > 0
+              ? `・⚠ ${missingGrades.join("・")} は対象学年に無いため、反映したコマはどの画面にも出ません\n`
+              : "") +
           `\nよろしいですか？`,
         okLabel: "置き換える",
         tone: "danger",
@@ -326,7 +351,12 @@ export function ReflectDialog({
         type="radio"
         name="reflect-mode"
         checked={mode === value}
-        onChange={() => setMode(value)}
+        onChange={() => {
+          setMode(value);
+          // 置き換えでは名前の欄 = 空欄で据え置き。プロジェクト名が入ったまま
+          // だと、そのまま反映したとき時間割の名前が変わってしまう
+          setName(value === "replace" ? "" : project.name || "");
+        }}
       />
       {label}
     </label>
@@ -357,6 +387,35 @@ export function ReflectDialog({
             <span style={{ fontSize: 10, color: "#888", fontWeight: 400 }}>
               現在 {replaceTargetCount} コマ。同じ位置 (曜日・時刻・学年・クラス)
               のコマは同じコマとして引き継ぎ、下書きに無いコマだけ削除します。
+            </span>
+          </label>
+        )}
+
+        {mode === "replace" && missingGrades.length > 0 && (
+          <label
+            style={{
+              display: "flex",
+              gap: 6,
+              alignItems: "flex-start",
+              fontWeight: 600,
+              background: "#fff8e6",
+              border: "1px solid #ecd9a0",
+              borderRadius: 8,
+              padding: 8,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={addMissingGrades}
+              onChange={(e) => setAddMissingGrades(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span>
+              対象学年に {missingGrades.join("・")} を加える
+              <span style={{ fontSize: 10, color: "#8a6a10", fontWeight: 400, display: "block" }}>
+                「{replaceTarget?.name}」の対象学年（{(replaceTarget?.grades || []).join("・")}）に
+                無い学年です。加えないと、反映したコマはどの画面にも出ません。
+              </span>
             </span>
           </label>
         )}

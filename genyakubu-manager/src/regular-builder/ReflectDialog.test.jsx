@@ -342,3 +342,33 @@ describe("ReflectDialog (置き換えで消えたコマの後始末)", () => {
     expect(onSlotsReflected).not.toHaveBeenCalled();
   });
 });
+
+describe("ReflectDialog (置き換え)", () => {
+  const TTS = [
+    ...TIMETABLES,
+    { id: 4, name: "2026 3学期", type: "regular", startDate: null, endDate: null, grades: ["中1", "中2"] },
+  ];
+
+  it("置き換えにすると名前の欄は空 (= 据え置き) から始まる", () => {
+    renderDialog({ timetables: TTS });
+    const name = screen.getByRole("textbox");
+    expect(name).toHaveValue("2026 2学期");
+    fireEvent.click(screen.getByRole("radio", { name: "既存の時間割を置き換え" }));
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    fireEvent.click(screen.getByRole("radio", { name: "新しい時間割として作成" }));
+    expect(screen.getByRole("textbox")).toHaveValue("2026 2学期");
+  });
+
+  it("対象学年に無い学年を知らせ、既定で加えて反映する", async () => {
+    const { saveTimetables } = renderDialog({ timetables: TTS });
+    fireEvent.click(screen.getByRole("radio", { name: "既存の時間割を置き換え" }));
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "4" } });
+    const box = screen.getByRole("checkbox", { name: /対象学年に 中3 を加える/ });
+    expect(box).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "反映する" }));
+    expect(await screen.findByText(/対象学年に 中3 を加えます/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "置き換える" }));
+    await waitFor(() => expect(saveTimetables).toHaveBeenCalled());
+    expect(saveTimetables.mock.calls[0][0][1].grades).toEqual(["中1", "中2", "中3"]);
+  });
+});

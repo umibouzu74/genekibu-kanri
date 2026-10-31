@@ -15,6 +15,7 @@ import { ClassSetManager } from "../ClassSetManager";
 import { CohortCutoffEditor } from "../CohortCutoffEditor";
 import { TimeBulkEditPanel } from "../TimeBulkEditPanel";
 import { CutoffTimeline } from "../CutoffTimeline";
+import { findSlotsOutsideTimetableGrades } from "../../utils/timetable";
 import { DisplayCutoffEditor } from "../DisplayCutoffEditor";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import {
@@ -246,6 +247,11 @@ export function TimetableManagerView({
     cancelDuplicate();
   }, [dupForm, dupChecks, dupAckKey, ttCrud, cancelDuplicate]);
 
+  const outsideGrades = useMemo(
+    () => findSlotsOutsideTimetableGrades(slots, timetables),
+    [slots, timetables]
+  );
+
   const slotCountByTT = {};
   for (const s of slots) {
     const ttId = s.timetableId ?? 1;
@@ -362,6 +368,16 @@ export function TimetableManagerView({
                       </span>
                     )}
                   </div>
+                  {outsideGrades.get(tt.id) && (
+                    <div role="alert" style={{ fontSize: 11, color: "#9a6b00", marginTop: 2 }}>
+                      ⚠ 対象学年に無い学年のコマ:{" "}
+                      {outsideGrades
+                        .get(tt.id)
+                        .map((g) => `${g.grade} ${g.slotCount} コマ`)
+                        .join("・")}
+                      （どの画面にも出ません。「編集」で対象学年に加えてください）
+                    </div>
+                  )}
                 </div>
                 <span
                   style={{

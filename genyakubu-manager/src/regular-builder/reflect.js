@@ -511,6 +511,18 @@ export function applyReflection(plan, opts, { timetables, slots }) {
       ? {
           ...t,
           name: (opts.name || "").trim() || t.name,
+          // 下書きの学年が対象学年に無いと、反映したコマがどの画面にも
+          // 出ない (エラーにもならない)。ダイアログで確認して加える
+          // (対象学年が空 = 全学年なら足さない。足すと逆に絞ってしまう)
+          ...(Array.isArray(opts.addGrades) && opts.addGrades.length > 0 &&
+          (t.grades || []).length > 0
+            ? {
+                grades: [
+                  ...(t.grades || []),
+                  ...opts.addGrades.filter((g) => !(t.grades || []).includes(g)),
+                ],
+              }
+            : {}),
           startDate:
             opts.startDate !== undefined ? opts.startDate || null : t.startDate,
           endDate: opts.endDate !== undefined ? opts.endDate || null : t.endDate,

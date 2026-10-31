@@ -348,6 +348,26 @@ describe("applyReflection - 置き換え", () => {
     expect(result.timetables[1].startDate).toBe("2026-08-24");
   });
 
+  it("addGrades で対象学年に足りない学年を加える (全学年の時間割には足さない)", () => {
+    const tts = [
+      ...EXISTING_TIMETABLES,
+      { id: 2, name: "3学期", type: "regular", startDate: null, endDate: null, grades: ["中1", "中2"] },
+    ];
+    const plan = buildReflectionPlan(makeProject(), { mode: "replace" });
+    const r = applyReflection(
+      plan,
+      { mode: "replace", targetTimetableId: 2, name: "", addGrades: ["中3", "中1"] },
+      { timetables: tts, slots }
+    );
+    expect(r.timetables[1].grades).toEqual(["中1", "中2", "中3"]);
+    const r2 = applyReflection(
+      plan,
+      { mode: "replace", targetTimetableId: 1, name: "", addGrades: ["中3"] },
+      { timetables: tts, slots }
+    );
+    expect(r2.timetables[0].grades).toEqual([]);
+  });
+
   it("名前・期間の指定があれば更新する", () => {
     const plan = buildReflectionPlan(makeProject(), { mode: "replace" });
     const result = applyReflection(

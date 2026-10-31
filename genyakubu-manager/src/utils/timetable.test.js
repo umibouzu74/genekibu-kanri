@@ -615,3 +615,25 @@ describe("summarizeCutoffGroups / findUngroupedGrades", () => {
     expect(findUngroupedGrades(slots, { groups: [] })).toEqual([]);
   });
 });
+
+describe("findSlotsOutsideTimetableGrades / gradesOutsideTimetable", () => {
+  it("対象学年に合わない学年のコマを時間割ごとに数える", async () => {
+    const { findSlotsOutsideTimetableGrades, gradesOutsideTimetable } = await import("./timetable");
+    const tts = [
+      { id: 1, name: "全", grades: [] },
+      { id: 4, name: "3学期", grades: ["中1", "中2"] },
+    ];
+    const slots = [
+      { id: 1, grade: "高1", timetableId: 1 },
+      { id: 2, grade: "高1", timetableId: 4 },
+      { id: 3, grade: "高1", timetableId: 4 },
+      { id: 4, grade: "中1-3", timetableId: 4 },
+      { id: 5, grade: "中2", timetableId: 4 },
+    ];
+    const m = findSlotsOutsideTimetableGrades(slots, tts);
+    expect([...m.keys()]).toEqual([4]);
+    expect(m.get(4)).toEqual([{ grade: "高1", slotCount: 2 }]);
+    expect(gradesOutsideTimetable(["高1", "中1", "高1", "高2"], tts[1])).toEqual(["高1", "高2"]);
+    expect(gradesOutsideTimetable(["高1"], tts[0])).toEqual([]);
+  });
+});

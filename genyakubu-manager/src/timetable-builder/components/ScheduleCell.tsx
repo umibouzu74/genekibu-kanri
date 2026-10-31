@@ -288,7 +288,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
             <optgroup key={group.key} label={group.label}>
               {group.teachers.map(t => {
                 const dayKey = makeExternalKey(dLabel, t.name);
-                const daily = analysis.teacherDailyCounts[dayKey] || { total: 0 };
+                const daily = analysis.teacherDailyCounts[dayKey] || { current: 0, external: 0, total: 0 };
                 const isManual = t.ngSlots?.includes(makeNgKey(dLabel, pLabel));
                 const autoEntry = analysis.autoNgByTeacher?.get(t.name)?.get(ngKey);
                 const isAuto = !!autoEntry;
@@ -301,7 +301,14 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
                     // 出勤可能調査の ○ / △ / 未記入 (?) を計の前に添える。回答の無い講師は何も付けない
                     const mark = getAvailabilityMark(t, dLabel, pLabel);
                     const surveyPrefix = mark ? `${AVAILABILITY_SYMBOL[mark]} ` : (surveyAnswered?.has(t.name) ? `${BLANK_SYMBOL} ` : '');
-                    label += ` (${surveyPrefix}計${daily.total})`;
+                    // その日の数 / その講師の日上限 (他学年セッション込み)。「計N」だけだと
+                    // 上限を超えるかは入れてから ⚠ で分かったので、上限を並べて出す (B6)。
+                    // 他学年セッションは長さによらず 1 件 = 1 コマ (分析・自動作成と同じ)。
+                    // この講師が入っていないセルで上限に達していれば、入れると超える
+                    const limit = resolveTeacherDailyLimit(t, maxDailyHours);
+                    const ext = daily.external || 0;
+                    const over = entry.teacher !== t.name && daily.total >= limit ? ' 超過' : '';
+                    label += ` (${surveyPrefix}その日${daily.total}/${limit}${ext > 0 ? ` 他${ext}` : ''}${over})`;
                   }
                 }
                 // 現在割当済みの講師が NG の場合は選択肢としても残して disabled に

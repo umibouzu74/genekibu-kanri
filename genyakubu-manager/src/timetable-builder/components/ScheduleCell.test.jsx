@@ -368,12 +368,39 @@ describe('ScheduleCell — 複数選択 (N2a)', () => {
     });
     const options = Array.from(document.getElementById('select-1-1-1-teacher').options);
     const text = (name) => options.find(o => o.value === name).textContent;
-    expect(text('堀上')).toBe('堀上 (○ 計0)');
-    expect(text('石原')).toBe('石原 (△ 計0)');
-    expect(text('高松')).toBe('高松 (? 計0)');
-    expect(text('南條')).toBe('南條 (計0)');
+    expect(text('堀上')).toBe('堀上 (○ その日0/6)');
+    expect(text('石原')).toBe('石原 (△ その日0/6)');
+    expect(text('高松')).toBe('高松 (? その日0/6)');
+    expect(text('南條')).toBe('南條 (その日0/6)');
     expect(text('片岡')).toBe('片岡 (NG:調査)');
     expect(options.find(o => o.value === '片岡').disabled).toBe(true);
+  });
+
+  it('講師プルダウンに「その日 n/上限 他N」を出し、入れると超える講師に「超過」を付ける (B6)', () => {
+    renderCell({
+      contextOverrides: {
+        project: {
+          teachers: [
+            { name: '半田', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+            { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [], maxDailyHours: 4 },
+          ],
+          subjectColors: {},
+          combinedGroups: [],
+        },
+        currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } },
+        analysis: {
+          teacherDailyCounts: {
+            '12/25(木)-半田': { current: 4, external: 2, total: 6 },
+            '12/25(木)-堀上': { current: 4, external: 0, total: 4 },
+          },
+        },
+      },
+    });
+    const options = Array.from(document.getElementById('select-1-1-1-teacher').options);
+    const text = (name) => options.find(o => o.value === name).textContent;
+    expect(text('半田')).toBe('半田 (その日6/6 他2 超過)');
+    // 入っている講師はこのセルを数え済みなので「超過」にしない (上限は講師ごと)
+    expect(text('堀上')).toBe('堀上 (その日4/4)');
   });
 
   it('出勤可能調査: 前の季節の回答だけ残っている講師 (今の調査に未回答) には ? を付けない', () => {
@@ -392,7 +419,7 @@ describe('ScheduleCell — 複数選択 (N2a)', () => {
       },
     });
     const options = Array.from(document.getElementById('select-1-1-1-teacher').options);
-    expect(options.find(o => o.value === '高松').textContent).toBe('高松 (計0)');
+    expect(options.find(o => o.value === '高松').textContent).toBe('高松 (その日0/6)');
     expect(screen.queryByTitle(/高松 はこの時間/)).toBeNull();
   });
 

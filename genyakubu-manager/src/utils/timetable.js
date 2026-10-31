@@ -114,6 +114,57 @@ export function filterSlotsOfTimetable(slots, timetableId) {
   return slots.filter((s) => (s.timetableId ?? 1) === timetableId);
 }
 
+/**
+ * 所属する時間割の対象学年 (timetable.grades) に合わない学年のコマ。
+ * こうしたコマは日付ベースの画面 (isTimetableActiveForDate) のどこにも出ない
+ * (エラーにもならない)。範囲を絞った置き換え反映・コマの追加・対象学年を
+ * 外したときに生まれるので、時間割管理とコマの編集画面で知らせる。
+ * 対象学年が空 (= 全学年) の時間割は対象外。
+ * @param {import("../types").Slot[]} slots
+ * @param {import("../types").Timetable[]} timetables
+ * @returns {Map<number, {grade: string, slotCount: number}[]>} 時間割 id → 学年ごとの件数
+ */
+export function findSlotsOutsideTimetableGrades(slots, timetables) {
+  const out = new Map();
+  if (!Array.isArray(timetables)) return out;
+  const byId = new Map(timetables.map((t) => [t.id, t]));
+  const counts = new Map();
+  for (const s of slots || []) {
+    if (!s || !s.grade) continue;
+    const ttId = s.timetableId ?? 1;
+    const tt = byId.get(ttId);
+    if (!tt || !Array.isArray(tt.grades) || tt.grades.length === 0) continue;
+    if (gradeMatchesTimetable(s.grade, tt.grades)) continue;
+    let m = counts.get(ttId);
+    if (!m) counts.set(ttId, (m = new Map()));
+    m.set(s.grade, (m.get(s.grade) || 0) + 1);
+  }
+  for (const [ttId, m] of counts) {
+    out.set(
+      ttId,
+      [...m.entries()].map(([grade, slotCount]) => ({ grade, slotCount }))
+    );
+  }
+  return out;
+}
+
+/**
+ * 学年の一覧のうち、時間割の対象学年に合わないもの (重複なし・出てきた順)。
+ * 対象学年が空 (= 全学年) なら常に空。
+ * @param {string[]} grades
+ * @param {import("../types").Timetable | null | undefined} timetable
+ * @returns {string[]}
+ */
+export function gradesOutsideTimetable(grades, timetable) {
+  if (!timetable || !Array.isArray(timetable.grades) || timetable.grades.length === 0) return [];
+  const out = [];
+  for (const g of grades || []) {
+    if (!g || out.includes(g)) continue;
+    if (!gradeMatchesTimetable(g, timetable.grades)) out.push(g);
+  }
+  return out;
+}
+
 // ─── 「今の時間割」(日付を持たない画面の時間割) ─────────────────────
 // サイドバーの講師ごとのコマ数・全講師一覧・講師の週計・タイムテーブルの
 // 通常表示のように、特定の日付を持たない画面が使う時間割。

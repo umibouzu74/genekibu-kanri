@@ -6,6 +6,7 @@ import { colors } from "../styles/tokens";
 import { isBiweekly } from "../utils/biweekly";
 import { dateToDay, fmtDateWeekday } from "../utils/dateHelpers";
 import { normalizeSlotCountFields } from "../utils/slotDates";
+import { gradesOutsideTimetable } from "../utils/timetable";
 import { FieldError } from "./FieldError";
 import { MultiDateCalendar } from "./MultiDateCalendar";
 
@@ -171,6 +172,17 @@ export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, defa
           </div>
         </div>
       )}
+      {(() => {
+        const tt = (timetables || []).find((t) => t.id === (f.timetableId ?? 1));
+        const outside = f.grade ? gradesOutsideTimetable([f.grade.trim()], tt) : [];
+        if (outside.length === 0) return null;
+        return (
+          <div role="alert" style={{ fontSize: 11, color: "#9a6b00" }}>
+            ⚠ 学年「{outside[0]}」は時間割「{tt.name}」の対象学年（{tt.grades.join("・")}）に
+            ありません。このままだとコマはどの画面にも出ません（時間割管理で対象学年に加えてください）。
+          </div>
+        );
+      })()}
       {isBiweekly(f.note) && (
         <BiweeklyAnchorSection
           anchors={f.biweeklyAnchors}
