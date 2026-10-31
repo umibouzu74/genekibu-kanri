@@ -32,7 +32,7 @@ function renderView(displayCutoff = CUTOFF) {
           slots={[]}
           classSets={[]}
           onSaveClassSets={vi.fn()}
-          ttCrud={{ add: vi.fn(), update: vi.fn(), remove: vi.fn(), duplicate: vi.fn() }}
+          ttCrud={{ add: vi.fn(), update: vi.fn(), remove: vi.fn(), duplicate: vi.fn(), applyDuplicate: vi.fn() }}
           onSaveDisplayCutoff={onSaveDisplayCutoff}
           isAdmin
         />
@@ -94,7 +94,7 @@ describe("TimetableManagerView 時間割フォームの検証と重なり警告"
     { id: 1, day: "月", time: "19:00-20:20", grade: "中3", cls: "-", subj: "数学", teacher: "田中", timetableId: 1 },
   ];
   function renderWith(timetables = TT2) {
-    const ttCrud = { add: vi.fn(), update: vi.fn(), remove: vi.fn(), duplicate: vi.fn() };
+    const ttCrud = { add: vi.fn(), update: vi.fn(), remove: vi.fn(), duplicate: vi.fn(), applyDuplicate: vi.fn() };
     render(
       <ToastProvider render={() => null}>
         <ConfirmProvider>
@@ -241,10 +241,13 @@ describe("TimetableManagerView 時間割フォームの検証と重なり警告"
     fireEvent.click(dup);
     expect(screen.getByRole("alert").textContent).toBe("名前を入力してください");
     expect(name.getAttribute("aria-describedby")).toBe("tt-dup-name-err");
-    expect(ttCrud.duplicate).not.toHaveBeenCalled();
+    expect(ttCrud.applyDuplicate).not.toHaveBeenCalled();
     fireEvent.change(name, { target: { value: "土曜プレップ 2学期" } });
     fireEvent.click(dup);
-    expect(ttCrud.duplicate).toHaveBeenCalledWith(2, "土曜プレップ 2学期", { startDate: null, endDate: null });
+    expect(ttCrud.applyDuplicate).toHaveBeenCalledTimes(1);
+    const [plan, sourceName] = ttCrud.applyDuplicate.mock.calls[0];
+    expect(sourceName).toBe("土曜プレップ");
+    expect(plan.timetable).toMatchObject({ name: "土曜プレップ 2学期", startDate: null, endDate: null });
   });
 });
 
@@ -289,7 +292,7 @@ describe("TimetableManagerView の目次", () => {
             slots={MANY}
             classSets={[]}
             onSaveClassSets={vi.fn()}
-            ttCrud={{ add: vi.fn(), update: vi.fn(), remove: vi.fn(), duplicate: vi.fn() }}
+            ttCrud={{ add: vi.fn(), update: vi.fn(), remove: vi.fn(), duplicate: vi.fn(), applyDuplicate: vi.fn() }}
             onSaveDisplayCutoff={vi.fn()}
             isAdmin
             {...props}
