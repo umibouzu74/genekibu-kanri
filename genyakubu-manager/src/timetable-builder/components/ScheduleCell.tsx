@@ -9,8 +9,13 @@ import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { useLongPress } from '../hooks/useLongPress';
 import { autoNgSourceLabel } from '../utils/autoNg';
 import { AVAILABILITY_SYMBOL, BLANK_SYMBOL, getAvailabilityMark } from '../utils/availability';
+import { cellMatchesHighlight, type Highlight } from '../utils/highlight';
+import { printTeacherText } from '../utils/printHeader';
 
-export default function ScheduleCell({ dateId, periodId, classId, isCompact, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource, highlightTeacher = null, isSelected = false, onCellSelect }) {
+export default function ScheduleCell({ dateId, periodId, classId, isCompact, onContextMenu, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, isDragOver, isDragSource, highlightTeacher = null, highlightSubject = null, isSelected = false, onCellSelect, printOnly = false }) {
+  // printOnly: まとめて印刷 (L2h) の紙面用。紙面で隠れるプルダウン (選択肢がセル 1 つに
+  // 数十個あり、730 コマ × 数十枚で重い) を描かず、id も付けない (画面の表と重ならない)。
+  // 紙面の見た目は通常の描画を印刷したものと同じ
   const {
     project,
     currentSchedule,
@@ -47,6 +52,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   const teacherGroups = useMemo(() => {
     // 講師の使い方 (B3): 使わない講師は出さない (入っているセルでは出す)、
     // 控えめの講師は最後の「控えめ」のまとまりへ
+    if (printOnly) return [];
     const usageOf = planning.usageOf;
     const all = entry.subject
       ? project.teachers.filter(t => t.subjects.includes(entry.subject))
@@ -71,7 +77,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
       groups.push({ key: '__reserve', label: '控えめ (ほかで埋まらないとき)', teachers: reserve });
     }
     return groups;
-  }, [project.teachers, project.subjects, entry.subject, entry.teacher, planning.usageOf, usualNames]);
+  }, [project.teachers, project.subjects, entry.subject, entry.teacher, planning.usageOf, usualNames, printOnly]);
 
   // タッチ長押しで右クリック相当のコンテキストメニューを開く (E1f)。
   // hooks-rules を守るため早期 return より前で呼ぶ。
@@ -126,6 +132,13 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
   const combinedGroup = entry.subject ? findCombinedGroup(project.combinedGroups, entry.subject, cLabel, dLabel) : null;
   const isCombined = !!combinedGroup;
   const isPrimary = isCombined && isPrimaryCombinedClass(combinedGroup, cLabel);
+
+  // 強調表示 (L2a 講師 / L2g 教科)。1 つだけ選ぶので講師と教科が同時に来ることは
+  // ないが、来たら講師を優先する。強調中は一致しないセル (空セルを含む) を薄く出す
+  const highlight: Highlight | null = highlightTeacher
+    ? { kind: 'teacher', value: highlightTeacher }
+    : highlightSubject ? { kind: 'subject', value: highlightSubject } : null;
+  const isHighlightMatch = cellMatchesHighlight(entry, highlight);
 
   // option ループ (講師数×セル数) の内側で毎回呼ばないよう、ここで 1 回だけ解決
   const { maxDailyHours } = resolveGenerationParams(project);
@@ -207,14 +220,18 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
 
   return (
     <td
-      id={`select-${dateId}-${periodId}-${classId}-cell`}
+      id={printOnly ? undefined : `select-${dateId}-${periodId}-${classId}-cell`}
       // L2a: 講師ハイライト。ドラッグ中の ring 表示と衝突しないよう、
       // isDragOver 中はハイライトを一時的に譲る
-      data-teacher-highlight={!!highlightTeacher && entry.teacher === highlightTeacher ? '' : undefined}
+      data-teacher-highlight={highlight?.kind === 'teacher' && isHighlightMatch ? '' : undefined}
+      data-subject-highlight={highlight?.kind === 'subject' && isHighlightMatch ? '' : undefined}
+      // 紙面の強調 (builderPrintStyle の太枠 / 薄表示) の目印。画面の ring /
+      // opacity-40 とは別に持つ (紙面では選択中かどうかに関係なく強調を写す)
+      data-highlight={highlight ? (isHighlightMatch ? 'match' : 'dim') : undefined}
       // N2c: 掴めるセルには cursor-move の手がかりを出す (従来は視覚手がかり
       // ゼロで D&D が発見不能だった)
       // N2a: 選択中は太い primary ring (ドラッグ ring より優先度低・ハイライトより高)
-      className={`border-r last:border-r-0 ${isCompact ? "p-px" : "p-2"} ${!isLocked && entry.subject ? "cursor-move" : ""} ${isDragOver && !isLocked ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragOver && isLocked ? "ring-2 ring-builder-red ring-inset cursor-not-allowed" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && isSelected ? "ring-2 ring-builder-primary ring-inset bg-builder-info-soft" : ""} ${!isDragOver && !isSelected && !!highlightTeacher && entry.teacher === highlightTeacher ? "ring-2 ring-builder-blue ring-inset" : ""} ${!isSelected && !!highlightTeacher && entry.teacher !== highlightTeacher ? "opacity-40" : ""}`}
+      className={`border-r last:border-r-0 ${isCompact ? "p-px" : "p-2"} ${!isLocked && entry.subject ? "cursor-move" : ""} ${isDragOver && !isLocked ? "ring-2 ring-builder-blue ring-inset bg-builder-info-soft" : ""} ${isDragOver && isLocked ? "ring-2 ring-builder-red ring-inset cursor-not-allowed" : ""} ${isDragSource ? "opacity-50" : ""} ${!isDragOver && isSelected ? "ring-2 ring-builder-primary ring-inset bg-builder-info-soft" : ""} ${!isDragOver && !isSelected && isHighlightMatch ? "ring-2 ring-builder-blue ring-inset" : ""} ${!isSelected && !!highlight && !isHighlightMatch ? "opacity-40" : ""}`}
       data-selected={isSelected ? '' : undefined}
       // N2a: Ctrl(⌘)/Shift+クリックで選択。mousedown を capture で止めないと
       // <select> のドロップダウンが開いてしまう
@@ -232,7 +249,7 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
           onCellSelect(e, key);
         }
       }}
-      draggable={!isLocked && !!entry.subject}
+      draggable={!printOnly && !isLocked && !!entry.subject}
       onDragStart={(e) => onDragStart(e, key, entry)}
       onDragOver={(e) => onDragOver(e, key, entry)}
       onDragLeave={onDragLeave}
@@ -254,15 +271,15 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
               <span
                 aria-hidden="true"
                 title="ドラッグで別のセルと入れ替え"
-                className={`shrink-0 select-none cursor-move text-builder-ink-ghost leading-none ${isCompact ? "text-[9px]" : "text-xs"}`}
+                className={`shrink-0 select-none cursor-move text-builder-ink-ghost leading-none print:hidden ${isCompact ? "text-[9px]" : "text-xs"}`}
               >⠿</span>
             )}
-            <select
+            {!printOnly && <select
               id={`select-${dateId}-${periodId}-${classId}-subject`}
               aria-label={`${dLabel} ${pLabel} ${cLabel} の科目`}
               // min-w: 目印 (⚠️2回・合同 等) が並んでも科目名が矢印だけに潰れないように。
               // 枠はセル (カード) 側にあるので select 自体は枠なし
-              className={`flex-1 bg-transparent font-bold focus:outline-none cursor-pointer text-builder-ink border-0 ${isCompact ? "min-w-[2.5rem]" : "min-w-[3.5rem]"} ${isSubjDup ? "text-builder-red underline" : ""} ${isCompact ? "text-[11px] leading-tight py-0" : "text-base"}`}
+              className={`flex-1 bg-transparent font-bold focus:outline-none cursor-pointer text-builder-ink border-0 print:hidden ${isCompact ? "min-w-[2.5rem]" : "min-w-[3.5rem]"} ${isSubjDup ? "text-builder-red underline" : ""} ${isCompact ? "text-[11px] leading-tight py-0" : "text-base"}`}
               value={entry.subject || ""}
               onChange={(e) => handleAssign(dateId, periodId, classId, 'subject', e.target.value)}
               onKeyDown={(e) => handleCellNavigation(e, 'subject')}
@@ -276,7 +293,12 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
                 const isAlreadyUsed = analysis.dailySubjectMap[`c${classId}-d${dateId}-${s}`] > 0 && entry.subject !== s;
                 return <option key={s} value={s} disabled={isAlreadyUsed} className={isAlreadyUsed ? "bg-builder-border" : ""}>{s}</option>;
               })}
-            </select>
+            </select>}
+            {/* 紙面用の科目名 (L2g)。<select> は紙面で付記ごと出てしまい、スナップショット
+                (outerHTML) では選択値が消えるので、紙面はこの文字だけを出す */}
+            <span className={`hidden print:block builder-print-subject flex-1 min-w-0 font-bold ${isSubjDup ? "text-builder-red underline" : "text-builder-ink"}`}>
+              {entry.subject || '-'}
+            </span>
             {isSubjDup && <span className={`bg-builder-red text-white rounded shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>⚠️2回</span>}
             {/* 標準表示は下の帯 (⚠️ 重複 / ⚠️ NG設定違反) で出すので、横並びの目印は
                 縮小表示だけ (両方出すと科目名の幅を食い、同じ警告が 2 回並んでいた) */}
@@ -295,14 +317,14 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
             {entry.subject && !isSubjDup && <span className={`font-bold shrink-0 ${isCompact ? "text-[10px]" : ""} ${isOver ? "text-builder-red" : "text-builder-ink-muted"}`}>{toCircleNum(order)}{isOver && "!"}</span>}
             {isCombined && <span className={`bg-builder-primary text-white rounded shrink-0 ${isCompact ? "text-[8px] px-0.5" : "text-[10px] px-1"}`}>合同</span>}
           </div>
-          <button onClick={() => toggleLock(dateId, periodId, classId)} aria-label={isLocked ? "ロック解除" : "ロック"} aria-pressed={!!isLocked} className={`focus:outline-none text-builder-ink-ghost hover:text-builder-ink shrink-0 leading-none ${isCompact ? "text-[9px]" : "text-sm"}`} title={isLocked ? "ロック解除" : "ロック"}>
+          <button onClick={() => toggleLock(dateId, periodId, classId)} aria-label={isLocked ? "ロック解除" : "ロック"} aria-pressed={!!isLocked} className={`focus:outline-none text-builder-ink-ghost hover:text-builder-ink shrink-0 leading-none ${isLocked ? "" : "print:hidden"} ${isCompact ? "text-[9px]" : "text-sm"}`} title={isLocked ? "ロック解除" : "ロック"}>
             {isLocked ? "🔒" : "🔓"}
           </button>
         </div>
-        <select
+        {!printOnly && <select
           id={`select-${dateId}-${periodId}-${classId}-teacher`}
           aria-label={`${dLabel} ${pLabel} ${cLabel} の講師`}
-          className={`w-full rounded cursor-pointer border border-builder-border ${(isConflict || isNgAssigned) ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] py-0 leading-tight" : "text-sm py-1"} ${(!entry.subject || isLocked) ? "opacity-50" : "bg-white/50 hover:bg-builder-surface"}`}
+          className={`w-full rounded cursor-pointer border border-builder-border print:hidden ${(isConflict || isNgAssigned) ? "text-builder-red font-extrabold" : "text-builder-blue"} ${isCompact ? "text-[10px] py-0 leading-tight" : "text-sm py-1"} ${(!entry.subject || isLocked) ? "opacity-50" : "bg-white/50 hover:bg-builder-surface"}`}
           value={entry.teacher || ""}
           onChange={(e) => handleAssign(dateId, periodId, classId, 'teacher', e.target.value)}
           onKeyDown={(e) => handleCellNavigation(e, 'teacher')}
@@ -350,7 +372,11 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
               })}
             </optgroup>
           ))}
-        </select>
+        </select>}
+        {/* 紙面用の講師名 (L2g): 「★ + 講師名」だけ */}
+        <div className={`hidden print:block builder-print-teacher ${(isConflict || isNgAssigned) ? "text-builder-red font-extrabold" : "text-builder-blue"}`}>
+          {printTeacherText(entry.teacher, usualNames)}
+        </div>
         {isConflict && !isCompact && <div className="text-[10px] text-builder-red font-bold text-center bg-builder-danger-soft rounded mt-1 border border-builder-danger-border">⚠️ 重複</div>}
         {isNgAssigned && !isConflict && !isCompact && <div className="text-[10px] text-builder-red font-bold text-center bg-builder-danger-soft rounded mt-1 border border-builder-danger-border">⚠️ NG設定違反</div>}
       </div>

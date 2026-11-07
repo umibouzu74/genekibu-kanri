@@ -1,13 +1,22 @@
 // @vitest-environment jsdom
 // 特別時程管理: プリセットからの登録 / 衝突プレビュー / Undo 付き削除の
 // 骨格を固定する。
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { DayScheduleManager } from "./DayScheduleManager";
 import { ToastProvider } from "../hooks/useToasts";
 import { ConfirmProvider } from "../hooks/useConfirm";
 
-afterEach(cleanup);
+// 一覧の既定は「今月以降」(useListPeriod) なので、登録済みの 2026-10-07 が一覧に
+// 出るよう今日を 2026-10 に固定する (実際の日付で動かすと 11 月以降に落ちる)
+beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 9, 1, 12, 0, 0)); // 2026-10-01
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 // 附属の水曜時程 (前期構成) + 中1 の夕方コマ (衝突プレビュー用)
 const SLOTS = [

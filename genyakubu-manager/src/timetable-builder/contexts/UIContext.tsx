@@ -29,8 +29,9 @@ import { useFocusTrap } from '../hooks/useFocusTrap';
 function ToastContainer({ toasts, removeToast }) {
   return (
     // z-[1020]: 設定モーダル (1000)・確認ダイアログ (1010) より上。色は builder の
-    // トークン (警告の白字 on yellow-500 はコントラスト約 1.9:1 で読めなかった)
-    <div className="fixed top-4 right-4 z-[1020] flex flex-col gap-2 pointer-events-none">
+    // トークン (警告の白字 on yellow-500 はコントラスト約 1.9:1 で読めなかった)。
+    // no-print: fixed なので印刷すると全ページの右上に載る (印刷の直前・最中に出た通知)
+    <div className="fixed top-4 right-4 z-[1020] flex flex-col gap-2 pointer-events-none no-print">
       {toasts.map(t => (
         <div
           key={t.id}

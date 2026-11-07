@@ -23,7 +23,13 @@ import SeasonStartPanel from './components/SeasonStartPanel';
 import { STORAGE_KEY_PROJECT_LEGACY, STORAGE_KEY_ONBOARDING_SEEN, STORAGE_KEY_VIEW_COMPACT, STORAGE_KEY_VIEW_SUMMARY, resolveGenerationParams, resolveBaseSeed } from './utils/constants';
 import { KOSHU_SEASONS, defaultKoshuSeason, koshuSeasonDef, notifyBuilderProjectSaved, seasonStorage, type KoshuSeason } from './utils/seasons';
 import { removeStaleLegacyCopies } from './utils/seasonProject';
-import { formatPrintDateJa } from './utils/printHeader';
+import PrintSheetHeading from './components/PrintSheetHeading';
+import BatchPrintDialog from './components/BatchPrintDialog';
+import BatchPrintSheets from './components/BatchPrintSheets';
+import { useBatchPrint } from './hooks/useBatchPrint';
+import { batchItemLabel } from './utils/batchPrint';
+import type { BatchPrintItem } from './utils/batchPrint';
+import { isHighlightStale, parseHighlightKey } from './utils/highlight';
 import { BUILDER_PRINT_STYLE } from './utils/builderPrintStyle';
 import { countFatalInfeasibilities } from './utils/fixSuggestions';
 import { computeGenerationFingerprint } from './utils/generationFingerprint';
@@ -228,18 +234,32 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
   const [contextMenu, setContextMenu] = useState<BuilderContextMenuState | null>(null);
   const [clipboard, setClipboard] = useState<CellClipboard | null>(null);
   const [isCompact, setIsCompact] = usePersistedToggle(STORAGE_KEY_VIEW_COMPACT, false);
-  // L2a: 講師ハイライト。指定講師の割当セルをグリッド上で強調する
-  // (集計パネルとグリッドの往復を減らす)。null = ハイライトなし。
-  const [highlightTeacher, setHighlightTeacher] = useState<string | null>(null);
+  // L2a / L2g: 強調表示。選んだ教科 ('s:国語') / 講師 ('t:堀上') のセルをグリッド上で
+  // 強調する (集計パネルとグリッドの往復を減らす。教科は紙で教科ごとに確かめるため)。
+  // '' = なし。localStorage には保存しない。タブを切り替えても保つ (教科を選んだまま
+  // タブを巡回して刷るため)
+  const [highlightKey, setHighlightKey] = useState('');
+  const highlight = useMemo(() => parseHighlightKey(highlightKey), [highlightKey]);
 
-  // §M: ハイライト中の講師がリネーム / 削除されると、全セルが薄表示のまま
-  // 一致ゼロの「幽霊状態」になる (select の値も options に無い)。講師が
-  // 実在しなくなったらハイライトを解除する。
+  // §M: 強調中の教科・講師がリネーム / 削除されると、全セルが薄表示のまま
+  // 一致ゼロの「幽霊状態」になる (select の値も options に無い)。マスタに
+  // 無くなったら強調を解除する。
   useEffect(() => {
-    if (highlightTeacher && !project.teachers.some(t => t.name === highlightTeacher)) {
-      setHighlightTeacher(null);
-    }
-  }, [project.teachers, highlightTeacher]);
+    if (isHighlightStale(highlight, project)) setHighlightKey('');
+  }, [project, highlight]);
+
+  // L2h: まとめて印刷。タブも強調も切り替えずに、印刷専用の欄へ組ごとに描いて刷る
+  const [showBatchPrint, setShowBatchPrint] = useState(false);
+  const { items: batchItems, progress: batchProgress, run: runBatchPrint, abort: abortBatchPrint } = useBatchPrint();
+  const handleStartBatchPrint = useCallback(async (items: BatchPrintItem[]) => {
+    const tabName = (id: number) => project.tabs.find(t => t.id === id)?.name || '';
+    const result = await runBatchPrint(items, {
+      label: (it) => batchItemLabel(tabName(it.tabId), it.highlight),
+      beforePrint: () => setShowBatchPrint(false),
+    });
+    if (result.status === 'aborted') showToast('まとめて印刷を中断しました', 'warning', 3000);
+    else if (result.status === 'printed') showToast(`まとめて印刷: ${result.count} 枚分を印刷ダイアログに送りました`, 'success', 4000);
+  }, [runBatchPrint, project.tabs, showToast]);
   // 初回起動なら true。LocalStorage 読込失敗時は安全側で false (邪魔しない)
   const [showOnboarding, setShowOnboarding] = useState(() => {
     try {
@@ -470,7 +490,7 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
   // ラッパに padding/背景を載せない。font-sans のみ Builder スコープで宣言。
   return (
     // koshu-builder: 罫線ユーティリティの土台を講習側だけに当てる印 (tailwind.css)
-    <div className="font-sans builder-root koshu-builder" onClick={() => setContextMenu(null)}>
+    <div className={`font-sans builder-root koshu-builder ${batchItems ? 'builder-batch-printing' : ''}`} onClick={() => setContextMenu(null)}>
       <style>{BUILDER_PRINT_STYLE}</style>
 
       <Header />
@@ -490,8 +510,9 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
           onGenerate={handleGenerate}
           onCancelGenerate={handleCancelGenerate}
           onShowHelp={() => setShowOnboarding(true)}
-          highlightTeacher={highlightTeacher}
-          setHighlightTeacher={setHighlightTeacher}
+          highlightKey={highlightKey}
+          setHighlightKey={setHighlightKey}
+          onOpenBatchPrint={() => setShowBatchPrint(true)}
         />
 
         <SummaryPanel
@@ -504,17 +525,24 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
         />
 
         {showConfig && <ConfigModal onClose={handleCloseConfig} season={season} />}
+        {showBatchPrint && (
+          <BatchPrintDialog
+            onClose={() => setShowBatchPrint(false)}
+            onStart={handleStartBatchPrint}
+            progress={batchProgress}
+            onAbort={abortBatchPrint}
+          />
+        )}
 
         {/* L1f: 印刷専用の見出し。Header (プロジェクト名) と TabBar (学年) は
             no-print のため、これが無いと紙面が無記名になり、複数学年を刷った
-            ときにどの紙がどの学年か分からない。 */}
-        <div className="hidden print:block mb-2" aria-hidden="true">
-          <div className="text-lg font-bold text-builder-ink">
-            {(project.name || seasonDef.label)}
-            {activeTabForPrint ? ` — ${activeTabForPrint.name}` : ''}
-          </div>
-          <div className="text-xs text-builder-ink-muted">印刷日: {formatPrintDateJa(new Date())}</div>
-        </div>
+            ときにどの紙がどの学年か分からない。L2g: 強調の対象と凡例も出す */}
+        {/* builder-main-sheet: まとめて印刷の間は紙面に出さない (builderPrintStyle) */}
+        <PrintSheetHeading
+          projectName={project.name || seasonDef.label}
+          highlight={highlight}
+          className="hidden print:block mb-2 builder-main-sheet"
+        />
 
         {/* N2a: 複数選択中の一括操作バー */}
         {selectedKeys.size > 0 && (
@@ -578,10 +606,20 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
         <ScheduleTable
           isCompact={isCompact}
           onContextMenu={handleContextMenu}
-          highlightTeacher={highlightTeacher}
+          highlight={highlight}
           selectedKeys={selectedKeys}
           onCellSelect={handleCellSelect}
+          className="builder-main-sheet"
         />
+
+        {/* L2h: まとめて印刷の紙面 (印刷専用の欄。印刷が終わると消える) */}
+        {batchItems && (
+          <BatchPrintSheets
+            items={batchItems}
+            projectName={project.name || seasonDef.label}
+            isCompact={isCompact}
+          />
+        )}
       </div>
 
       <ContextMenu

@@ -10,6 +10,7 @@ import { useUndoRedoFeedback } from '../hooks/useUndoRedoFeedback';
 import SnapshotMenu from './SnapshotMenu';
 import NgViolationList from './NgViolationList';
 import { useJumpToCell } from '../hooks/useJumpToCell';
+import { highlightKeyOf } from '../utils/highlight';
 import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 
@@ -26,9 +27,14 @@ interface ToolbarProps {
   onGenerate: () => void;
   onCancelGenerate: () => void;
   onShowHelp: () => void;
-  /** L2a: グリッド上で強調する講師名 (null = ハイライトなし) */
-  highlightTeacher?: string | null;
-  setHighlightTeacher?: Dispatch<SetStateAction<string | null>>;
+  /**
+   * L2a / L2g: グリッド上の強調表示。値は 's:教科' / 't:講師' ('' = なし。
+   * utils/highlight の parseHighlightKey で読む)
+   */
+  highlightKey?: string;
+  setHighlightKey?: Dispatch<SetStateAction<string>>;
+  /** L2h: まとめて印刷のダイアログを開く (無ければボタンを出さない) */
+  onOpenBatchPrint?: () => void;
 }
 
 export default function Toolbar({
@@ -44,8 +50,9 @@ export default function Toolbar({
   onGenerate,
   onCancelGenerate,
   onShowHelp,
-  highlightTeacher = null,
-  setHighlightTeacher,
+  highlightKey = '',
+  setHighlightKey,
+  onOpenBatchPrint,
 }: ToolbarProps) {
   const {
     analysis,
@@ -405,19 +412,27 @@ export default function Toolbar({
         ) : <span className="ml-2 text-xs text-builder-green font-bold">✨ OK</span>}
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
-        {/* L2a: 講師ハイライト。選んだ講師の割当セルをグリッド上で強調する */}
-        {setHighlightTeacher && (
+        {/* L2a / L2g: 強調表示。選んだ教科・講師のセルをグリッド上で強調し、
+            ほかを薄く出す (印刷にもそのまま出る)。タブを切り替えても保つ */}
+        {setHighlightKey && (
           <select
-            value={highlightTeacher ?? ''}
-            onChange={(e) => setHighlightTeacher(e.target.value || null)}
-            aria-label="講師ハイライト"
-            title="選んだ講師の割当セルをグリッド上で強調表示します"
-            className={`px-2 py-2 border rounded shadow-sm text-sm max-w-[9rem] ${highlightTeacher ? 'bg-builder-info-soft border-builder-blue text-builder-blue font-bold' : 'bg-builder-surface border-builder-border text-builder-ink-muted'}`}
+            value={highlightKey}
+            onChange={(e) => setHighlightKey(e.target.value)}
+            aria-label="強調表示"
+            title="選んだ教科・講師のセルを強調表示します (印刷すると見出しに強調の対象が出ます)"
+            className={`px-2 py-2 border rounded shadow-sm text-sm max-w-[9rem] ${highlightKey ? 'bg-builder-info-soft border-builder-blue text-builder-blue font-bold' : 'bg-builder-surface border-builder-border text-builder-ink-muted'}`}
           >
-            <option value="">👁 講師で探す</option>
-            {(project?.teachers || []).map(t => (
-              <option key={t.name} value={t.name}>{t.name}</option>
-            ))}
+            <option value="">👁 強調表示</option>
+            <optgroup label="教科">
+              {(project?.subjects || []).map(s => (
+                <option key={s} value={highlightKeyOf('subject', s)}>{s}</option>
+              ))}
+            </optgroup>
+            <optgroup label="講師">
+              {(project?.teachers || []).map(t => (
+                <option key={t.name} value={highlightKeyOf('teacher', t.name)}>{t.name}</option>
+              ))}
+            </optgroup>
           </select>
         )}
         <button onClick={() => setIsCompact(!isCompact)} className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm" title="表示サイズを切り替え">
@@ -437,7 +452,15 @@ export default function Toolbar({
           📊 集計{showSummary ? ' ✓' : ''}
         </button>
         <button onClick={() => setShowConfig(true)} className="flex items-center gap-1 px-3 py-2 bg-builder-ink text-white rounded hover:bg-builder-primary-hover shadow-sm text-sm font-bold" title="講師・科目・NG設定など">⚙️ 設定</button>
-        <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm" title="ブラウザの印刷ダイアログを開く">🖨️ 印刷</button>
+        <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm" title="ブラウザの印刷ダイアログを開く (いま見ているタブを、いま選んでいる強調のまま)">🖨️ 印刷</button>
+        {onOpenBatchPrint && (
+          <button
+            type="button"
+            onClick={onOpenBatchPrint}
+            className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm"
+            title="タブ × 教科をまとめて印刷 (1 組 1 枚、A3 縦)"
+          >🖨️ まとめて</button>
+        )}
         {onShowHelp && (
           <button onClick={onShowHelp} className="flex items-center gap-1 px-3 py-2 bg-builder-surface border border-builder-border text-builder-ink-muted rounded hover:bg-builder-surface-alt shadow-sm text-sm" title="操作ガイドを表示">❓ ヘルプ</button>
         )}

@@ -95,7 +95,7 @@
 /*
  * Tailwind のユーティリティが参照する CSS 変数の既定値 (講習時間割作成のみ)。
  * ふつうは @tailwind base が出すが、preflight ごと読み込んでいないため未定義で、
- * ring-* (選択中のセル・ドラッグ先・講師で探す・選択中のペン)、hover:scale-*、
+ * ring-* (選択中のセル・ドラッグ先・強調表示・選択中のペン)、hover:scale-*、
  * hover:brightness-* などが何も描かれていなかった (box-shadow / transform /
  * filter の式が無効になる)。Tailwind 3.4 の base が出す値をそのまま写し、
  * 講習側のルート配下だけに当てる (通常時間割作成・本体には効かせない)。

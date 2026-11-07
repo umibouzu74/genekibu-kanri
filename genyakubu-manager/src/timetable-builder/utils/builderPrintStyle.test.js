@@ -43,4 +43,26 @@ describe('BUILDER_PRINT_STYLE', () => {
     expect(BUILDER_PRINT_STYLE).toMatch(/max-height:\s*none/);
     expect(BUILDER_PRINT_STYLE).toMatch(/overflow:\s*visible/);
   });
+
+  it('L2g: 強調のセルは ring に頼らず outline を style まで書いて太く引く', () => {
+    expect(BUILDER_PRINT_STYLE).toMatch(/td\[data-highlight="match"\]\s*\{[^}]*outline:\s*3px solid/);
+    expect(BUILDER_PRINT_STYLE).toMatch(/td\[data-highlight="match"\]\s*\{[^}]*box-shadow:\s*none/);
+  });
+
+  it('L2g: 薄表示は画面 (0.4) より濃くして紙で読めるようにする', () => {
+    const m = BUILDER_PRINT_STYLE.match(/td\[data-highlight="dim"\]\s*\{[^}]*opacity:\s*([\d.]+)/);
+    expect(m).not.toBeNull();
+    expect(Number(m[1])).toBeGreaterThan(0.4);
+  });
+
+  it('L2g: 紙面用の科目・講師の文字の大きさを持つ', () => {
+    expect(BUILDER_PRINT_STYLE).toContain('.builder-print-subject');
+    expect(BUILDER_PRINT_STYLE).toContain('.builder-print-teacher');
+  });
+
+  it('L2h: まとめて印刷の間は画面の時間割・見出しを紙面に出さず、組ごとに改ページする', () => {
+    expect(BUILDER_PRINT_STYLE).toMatch(/\.builder-batch-printing \.builder-main-sheet\s*\{[^}]*display:\s*none/);
+    expect(BUILDER_PRINT_STYLE).toMatch(/\.builder-batch-sheet \+ \.builder-batch-sheet\s*\{[^}]*break-before:\s*page/);
+    expect(BUILDER_PRINT_STYLE).toMatch(/\.builder-batch-sheet \+ \.builder-batch-sheet\s*\{[^}]*page-break-before:\s*always/);
+  });
 });

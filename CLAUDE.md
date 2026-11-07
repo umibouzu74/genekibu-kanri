@@ -146,6 +146,34 @@ sensitivity: base) は **`utils/teacherKana.js` に集約**されており、
     MasterView / FuzokuPlanView (附属の授業予定) / YearCalendarView (年間カレンダー)
   - 仕上げは App.jsx 末尾のグローバル `@media print` と各ビュー自前の
     印刷 CSS だけで完結。**popup を使わない。**
+  - **講習時間割作成の 🖨 印刷 / 🖨 まとめて もこちら** (2026-11-07、ROADMAP L2g / L2h)。
+    紙面の CSS は `timetable-builder/utils/builderPrintStyle.ts` (A3 縦)、見出し・凡例は
+    `components/PrintSheetHeading` (個別とまとめての両方が使う)。決めごと:
+    - 講習側の見た目は Tailwind (builder-* トークン) で作っているので、popup
+      (`writePrintDocument` は渡した styles しか入らない) に移すと無装飾になる。
+      **講習の印刷を popup 系統へ寄せない**
+    - 紙面のセルの科目欄・講師欄は印刷専用の文字 (`.builder-print-subject` /
+      `.builder-print-teacher`、★ + 講師名だけ) を出し、`<select>` は `print:hidden`。
+      select は付記 (「(その日2/6)」) ごと出て名前が切れ、outerHTML では選択値も消える
+    - 強調 (教科 / 講師) の紙面は ring (box-shadow) に頼らず `td[data-highlight]` に
+      outline を style まで書く (画面の見た目は変えない)
+    - **まとめて印刷はタブを切り替えない**。`activeTabId` は project の一部で、切り替える
+      たびに LocalStorage と Firebase へ書き込みが走り、元へ戻す後始末も要るため。
+      各 (タブ, 強調) を `utils/tabViewContext.buildTabViewContext` (そのタブを開いたときと
+      同じ currentConfig / schedule / タブで決まる analysis。`tabViewContext.test.jsx` が
+      本物の値と突き合わせる) で差し替えたコンテキストの中で同じ `ScheduleTable` を描き、
+      印刷専用の欄 (`BatchPrintSheets`、`hidden print:block`) に並べて `window.print()`。
+      その間は画面の時間割と見出し (`.builder-main-sheet`) を紙面から外し、各組は
+      `.builder-batch-sheet + .builder-batch-sheet` で改ページ。欄は `afterprint` で片付ける
+      (iPad の Safari は print() がすぐ返るので、返った直後には消さない)
+    - 組を描くループは `snapshotPrint.collectSnapshots` (render = flushSync で 1 組足す、
+      capture は数えるだけ。DOM は撮らない)。popup を開かないので、進捗と中断は元の
+      タブのダイアログに出してよい (popup 系統の「進捗は popup 側」の決まりは当たらない)
+    - 紙面用のセル (`ScheduleTable` / `ScheduleCell` の `printOnly`) は紙面で隠れる
+      プルダウンを描かず id も付けない。730 コマ × 25 組で約 8.5 秒 (プルダウン込みだと
+      1 組 0.6〜1 秒・DOM 約 2 万要素)。**紙面に出るものを printOnly で別に描き起こさない**
+      (プルダウンを省くだけ。紙面は通常の描画を印刷したものと同じ)
+    - 講習の通知 (UIContext の toast) は `no-print` (fixed なので全ページに載っていた)
 
 - **`handlePrint` (App.jsx, トップバー右の 🖨 ボタン)** — 新ウィンドウを
   開いて `#main-content.innerHTML` をコピーし、ビュー別の印刷スタイルと
