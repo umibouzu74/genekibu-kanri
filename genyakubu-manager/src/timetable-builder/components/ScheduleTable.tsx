@@ -108,9 +108,13 @@ interface ScheduleTableProps {
   selectedKeys?: Set<string>;
   /** N2a: Ctrl/Shift+クリックでの選択操作 */
   onCellSelect?: (e: { shiftKey: boolean }, key: string) => void;
+  /** L2h: まとめて印刷の紙面用 (セルのプルダウンを描かない。ScheduleCell の printOnly) */
+  printOnly?: boolean;
+  /** 外側の枠に足すクラス (L2h: 個別印刷の紙面の目印) */
+  className?: string;
 }
 
-export default function ScheduleTable({ isCompact, onContextMenu, highlight = null, selectedKeys, onCellSelect }: ScheduleTableProps) {
+export default function ScheduleTable({ isCompact, onContextMenu, highlight = null, selectedKeys, onCellSelect, printOnly = false, className = '' }: ScheduleTableProps) {
   const highlightTeacher = highlight?.kind === 'teacher' ? highlight.value : null;
   const highlightSubject = highlight?.kind === 'subject' ? highlight.value : null;
   const { currentConfig, handleSwapCells } = useProjectContext();
@@ -189,7 +193,7 @@ export default function ScheduleTable({ isCompact, onContextMenu, highlight = nu
     <div
       ref={containerRef}
       onDragOver={handleContainerDragOver}
-      className={`overflow-auto shadow border border-builder-border max-h-[70vh] bg-builder-bg print-container ${isCompact ? "text-xs" : "text-sm"}`}
+      className={`overflow-auto shadow border border-builder-border max-h-[70vh] bg-builder-bg print-container ${isCompact ? "text-xs" : "text-sm"} ${className}`}
     >
       <table className="w-full border-collapse text-left relative" aria-label="時間割表">
         <thead className="sticky top-0 z-30 bg-builder-primary text-white shadow-md">
@@ -263,6 +267,7 @@ export default function ScheduleTable({ isCompact, onContextMenu, highlight = nu
                       highlightSubject={highlightSubject}
                       isSelected={!!selectedKeys?.has(cellKey)}
                       onCellSelect={onCellSelect}
+                      printOnly={printOnly}
                     />
                   );
                 })}

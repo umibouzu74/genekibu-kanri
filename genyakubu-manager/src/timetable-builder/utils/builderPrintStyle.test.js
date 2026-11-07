@@ -59,4 +59,10 @@ describe('BUILDER_PRINT_STYLE', () => {
     expect(BUILDER_PRINT_STYLE).toContain('.builder-print-subject');
     expect(BUILDER_PRINT_STYLE).toContain('.builder-print-teacher');
   });
+
+  it('L2h: まとめて印刷の間は画面の時間割・見出しを紙面に出さず、組ごとに改ページする', () => {
+    expect(BUILDER_PRINT_STYLE).toMatch(/\.builder-batch-printing \.builder-main-sheet\s*\{[^}]*display:\s*none/);
+    expect(BUILDER_PRINT_STYLE).toMatch(/\.builder-batch-sheet \+ \.builder-batch-sheet\s*\{[^}]*break-before:\s*page/);
+    expect(BUILDER_PRINT_STYLE).toMatch(/\.builder-batch-sheet \+ \.builder-batch-sheet\s*\{[^}]*page-break-before:\s*always/);
+  });
 });

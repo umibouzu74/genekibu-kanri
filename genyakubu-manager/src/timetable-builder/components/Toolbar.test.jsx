@@ -628,6 +628,23 @@ describe('Toolbar — 強調表示 (L2a 講師 / L2g 教科)', () => {
   });
 });
 
+describe('Toolbar — まとめて印刷 (L2h)', () => {
+  it('onOpenBatchPrint があれば 🖨️ 印刷の隣に「🖨️ まとめて」を出し、押すと開く', () => {
+    const onOpenBatchPrint = vi.fn();
+    renderToolbar({ props: { onOpenBatchPrint } });
+    const print = screen.getByRole('button', { name: /🖨️ 印刷/ });
+    const batch = screen.getByRole('button', { name: '🖨️ まとめて' });
+    expect(print.nextElementSibling).toBe(batch);
+    fireEvent.click(batch);
+    expect(onOpenBatchPrint).toHaveBeenCalledTimes(1);
+  });
+
+  it('無ければ出さない', () => {
+    renderToolbar();
+    expect(screen.queryByRole('button', { name: '🖨️ まとめて' })).toBeNull();
+  });
+});
+
 describe('Toolbar — 講師通算上限超の popover 表示 (L3b)', () => {
   it('teacherOverTotal がバッジ件数に加算され、popover に内訳が出る', () => {
     renderToolbar({

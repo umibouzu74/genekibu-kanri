@@ -23,7 +23,12 @@ import SeasonStartPanel from './components/SeasonStartPanel';
 import { STORAGE_KEY_PROJECT_LEGACY, STORAGE_KEY_ONBOARDING_SEEN, STORAGE_KEY_VIEW_COMPACT, STORAGE_KEY_VIEW_SUMMARY, resolveGenerationParams, resolveBaseSeed } from './utils/constants';
 import { KOSHU_SEASONS, defaultKoshuSeason, koshuSeasonDef, notifyBuilderProjectSaved, seasonStorage, type KoshuSeason } from './utils/seasons';
 import { removeStaleLegacyCopies } from './utils/seasonProject';
-import { buildPrintLegend, buildPrintTitle, formatPrintDateJa, hasUsualLinks } from './utils/printHeader';
+import PrintSheetHeading from './components/PrintSheetHeading';
+import BatchPrintDialog from './components/BatchPrintDialog';
+import BatchPrintSheets from './components/BatchPrintSheets';
+import { useBatchPrint } from './hooks/useBatchPrint';
+import { batchItemLabel } from './utils/batchPrint';
+import type { BatchPrintItem } from './utils/batchPrint';
 import { isHighlightStale, parseHighlightKey } from './utils/highlight';
 import { BUILDER_PRINT_STYLE } from './utils/builderPrintStyle';
 import { countFatalInfeasibilities } from './utils/fixSuggestions';
@@ -242,6 +247,19 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
   useEffect(() => {
     if (isHighlightStale(highlight, project)) setHighlightKey('');
   }, [project, highlight]);
+
+  // L2h: まとめて印刷。タブも強調も切り替えずに、印刷専用の欄へ組ごとに描いて刷る
+  const [showBatchPrint, setShowBatchPrint] = useState(false);
+  const { items: batchItems, progress: batchProgress, run: runBatchPrint, abort: abortBatchPrint } = useBatchPrint();
+  const handleStartBatchPrint = useCallback(async (items: BatchPrintItem[]) => {
+    const tabName = (id: number) => project.tabs.find(t => t.id === id)?.name || '';
+    const result = await runBatchPrint(items, {
+      label: (it) => batchItemLabel(tabName(it.tabId), it.highlight),
+      beforePrint: () => setShowBatchPrint(false),
+    });
+    if (result.status === 'aborted') showToast('まとめて印刷を中断しました', 'warning', 3000);
+    else if (result.status === 'printed') showToast(`まとめて印刷: ${result.count} 枚分を印刷ダイアログに送りました`, 'success', 4000);
+  }, [runBatchPrint, project.tabs, showToast]);
   // 初回起動なら true。LocalStorage 読込失敗時は安全側で false (邪魔しない)
   const [showOnboarding, setShowOnboarding] = useState(() => {
     try {
@@ -467,14 +485,12 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
 
   // L1f: 印刷見出し用。生成結果パネル等と違い「今表示しているタブ」を刷る。
   const activeTabForPrint = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
-  // L2g: 凡例。★ の説明は、このタブに普段の担当の対応 (ClassEntity.regular) があるときだけ
-  const printLegend = buildPrintLegend(highlight, { showUsual: hasUsualLinks(currentConfig.classes) });
 
   // 親アプリ (app-main) が既に padding と背景色を提供しているので、ここでは
   // ラッパに padding/背景を載せない。font-sans のみ Builder スコープで宣言。
   return (
     // koshu-builder: 罫線ユーティリティの土台を講習側だけに当てる印 (tailwind.css)
-    <div className="font-sans builder-root koshu-builder" onClick={() => setContextMenu(null)}>
+    <div className={`font-sans builder-root koshu-builder ${batchItems ? 'builder-batch-printing' : ''}`} onClick={() => setContextMenu(null)}>
       <style>{BUILDER_PRINT_STYLE}</style>
 
       <Header />
@@ -496,6 +512,7 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
           onShowHelp={() => setShowOnboarding(true)}
           highlightKey={highlightKey}
           setHighlightKey={setHighlightKey}
+          onOpenBatchPrint={() => setShowBatchPrint(true)}
         />
 
         <SummaryPanel
@@ -508,19 +525,24 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
         />
 
         {showConfig && <ConfigModal onClose={handleCloseConfig} season={season} />}
+        {showBatchPrint && (
+          <BatchPrintDialog
+            onClose={() => setShowBatchPrint(false)}
+            onStart={handleStartBatchPrint}
+            progress={batchProgress}
+            onAbort={abortBatchPrint}
+          />
+        )}
 
         {/* L1f: 印刷専用の見出し。Header (プロジェクト名) と TabBar (学年) は
             no-print のため、これが無いと紙面が無記名になり、複数学年を刷った
             ときにどの紙がどの学年か分からない。L2g: 強調の対象と凡例も出す */}
-        <div className="hidden print:block mb-2 builder-print-heading" aria-hidden="true">
-          <div className="text-lg font-bold text-builder-ink">
-            {buildPrintTitle(project.name || seasonDef.label, activeTabForPrint?.name, highlight)}
-          </div>
-          <div className="text-xs text-builder-ink-muted">印刷日: {formatPrintDateJa(new Date())}</div>
-          {printLegend.length > 0 && (
-            <div className="text-xs text-builder-ink builder-print-legend">{printLegend.join('　')}</div>
-          )}
-        </div>
+        {/* builder-main-sheet: まとめて印刷の間は紙面に出さない (builderPrintStyle) */}
+        <PrintSheetHeading
+          projectName={project.name || seasonDef.label}
+          highlight={highlight}
+          className="hidden print:block mb-2 builder-main-sheet"
+        />
 
         {/* N2a: 複数選択中の一括操作バー */}
         {selectedKeys.size > 0 && (
@@ -587,7 +609,17 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
           highlight={highlight}
           selectedKeys={selectedKeys}
           onCellSelect={handleCellSelect}
+          className="builder-main-sheet"
         />
+
+        {/* L2h: まとめて印刷の紙面 (印刷専用の欄。印刷が終わると消える) */}
+        {batchItems && (
+          <BatchPrintSheets
+            items={batchItems}
+            projectName={project.name || seasonDef.label}
+            isCompact={isCompact}
+          />
+        )}
       </div>
 
       <ContextMenu

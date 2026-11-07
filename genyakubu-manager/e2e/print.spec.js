@@ -440,6 +440,81 @@ test("講習時間割作成: 教科の強調が紙面の見出し・凡例・太
   expect(dimOpacity).toBeLessThan(1);
 });
 
+// L2h (2026-11-07): まとめて印刷。タブを切り替えずに (タブ × 強調) の組ごとの紙面を印刷専用の
+// 欄に描き、window.print() する。各組は新しいページから、見出し・凡例・紙面用の文字は個別印刷と
+// 同じ。終わったら (afterprint) 欄を片付け、開いているタブ・強調はそのまま。
+test("講習時間割作成: まとめて印刷が 2 タブ × 2 教科の紙面を組ごとの改ページで刷り、元の状態のまま", async ({
+  page,
+}) => {
+  const project = {
+    ...HIGHLIGHT_PROJECT,
+    tabs: [
+      HIGHLIGHT_PROJECT.tabs[0],
+      {
+        id: 2,
+        name: "中1・2",
+        config: { classes: [{ id: 1, label: "1S" }], subjectCounts: { 国語: 1, 英語: 1 } },
+        schedule: {
+          "d1-p1-c1": { subject: "英語", teacher: "堀上" },
+          "d2-p1-c1": { subject: "国語", teacher: "小松" },
+        },
+      },
+    ],
+  };
+  await page.addInitScript((p) => {
+    window.__printCalls = 0;
+    window.print = () => {
+      window.__printCalls += 1;
+    };
+    if (sessionStorage.getItem("__seeded")) return;
+    localStorage.setItem("builder.schedule_project.winter", JSON.stringify(p));
+    sessionStorage.setItem("__seeded", "1");
+  }, project);
+  await page.goto("/genekibu-kanri/");
+  await openKoshuBuilder(page, { season: "winter" });
+  await page.getByLabel("強調表示").selectOption("t:堀上");
+
+  await page.getByRole("button", { name: "🖨️ まとめて" }).click();
+  const dialog = page.getByRole("dialog", { name: "まとめて印刷" });
+  await expect(dialog).toContainText("2 タブ × 2 強調 = 4 枚");
+  await dialog.getByRole("button", { name: "🖨️ 4 枚を印刷" }).click();
+  await page.waitForFunction(() => window.__printCalls === 1);
+  await expect(dialog).toBeHidden();
+
+  await page.emulateMedia({ media: "print" });
+  await expectPrintChromeHidden(page);
+  // 画面の時間割・見出しは紙面に出ない
+  await expect(page.locator(".print-container.builder-main-sheet")).toBeHidden();
+  const sheets = page.locator(".builder-batch-print .builder-batch-sheet");
+  await expect(sheets).toHaveCount(4);
+  await expect(sheets.locator(".builder-print-heading > div:first-child")).toHaveText([
+    "2026 冬期講習 中123 — 中3【強調: 英語】",
+    "2026 冬期講習 中123 — 中1・2【強調: 英語】",
+    "2026 冬期講習 中123 — 中3【強調: 国語】",
+    "2026 冬期講習 中123 — 中1・2【強調: 国語】",
+  ]);
+  // 各組は新しいページから (2 組目以降)
+  const breaks = await sheets.evaluateAll((els) => els.map((el) => getComputedStyle(el).breakBefore));
+  expect(breaks).toEqual(["auto", "page", "page", "page"]);
+  // セルの中身は「-」ではなくそのタブの科目・講師 (2 組目 = 中1・2 の 1 日目は英語・堀上 = 強調)
+  const second = sheets.nth(1);
+  await expect(second.locator('td[data-highlight="match"] .builder-print-subject')).toHaveText(["英語"]);
+  await expect(second.locator('td[data-highlight="match"] .builder-print-teacher')).toHaveText(["堀上"]);
+  await expect(second.locator('td[data-highlight="dim"] .builder-print-subject')).toHaveText(["国語"]);
+  await expect(page.locator(".builder-batch-print select")).toHaveCount(0);
+
+  // 印刷が終わったら片付け、開いているタブ・強調はそのまま
+  await page.emulateMedia({ media: "screen" });
+  await page.evaluate(() => window.dispatchEvent(new Event("afterprint")));
+  await expect(page.locator(".builder-batch-print")).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: /中3/ })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByLabel("強調表示")).toHaveValue("t:堀上");
+  const stored = await page.evaluate(
+    () => JSON.parse(localStorage.getItem("builder.schedule_project.winter")).activeTabId
+  );
+  expect(stored).toBe(1);
+});
+
 // 通常時間割作成の紙面を、列数の違うセクション (中学部 3 列 / 高校部 8 列)
 // が同居する形で検証する。時間列の幅は `table-layout: fixed` の等分に任せると
 // **セクションの列数で変わる** (実測 A4 縦: 3 列で 171px / 8 列で 76px / 1 列で

@@ -48,7 +48,7 @@ function defaultContext(overrides = {}) {
 
 // ScheduleCell は <td> なので、テストでは <table><tbody><tr> でラップして
 // render する必要がある (jsdom でも valid な DOM 構造を保つため)。
-function renderCell({ dateId = 1, periodId = 1, classId = 1, isCompact = false, highlightTeacher = null, highlightSubject = null, isSelected = false, onCellSelect, contextOverrides = {}, planning = EMPTY_PLANNING } = {}) {
+function renderCell({ dateId = 1, periodId = 1, classId = 1, isCompact = false, highlightTeacher = null, highlightSubject = null, isSelected = false, onCellSelect, contextOverrides = {}, planning = EMPTY_PLANNING, printOnly = false } = {}) {
   const ctx = defaultContext(contextOverrides);
   const utils = render(
     <PlanningContext.Provider value={planning}>
@@ -71,6 +71,7 @@ function renderCell({ dateId = 1, periodId = 1, classId = 1, isCompact = false, 
           highlightSubject={highlightSubject}
           isSelected={isSelected}
           onCellSelect={onCellSelect}
+          printOnly={printOnly}
         />
       </tr></tbody></table>
     </ProjectContext.Provider>
@@ -396,6 +397,25 @@ describe('ScheduleCell — 紙面用の科目・講師の文字 (L2g)', () => {
     expect(printTeacherText('田中', ['堀上'])).toBe('田中');
     expect(printTeacherText('', ['堀上'])).toBe('-');
     expect(printTeacherText(undefined, [])).toBe('-');
+  });
+});
+
+describe('ScheduleCell — まとめて印刷の紙面用 (printOnly, L2h)', () => {
+  it('プルダウンと id を描かず、紙面用の文字・強調の目印・回数は通常と同じ', () => {
+    const schedule = { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } };
+    const { container } = renderCell({
+      printOnly: true,
+      highlightSubject: '英語',
+      contextOverrides: { currentSchedule: schedule, analysis: { subjectOrders: { [makeKey(1, 1, 1)]: 1 } } },
+    });
+    const td = container.querySelector('td');
+    expect(container.querySelectorAll('select')).toHaveLength(0);
+    expect(td.id).toBe('');
+    expect(td.getAttribute('draggable')).toBe('false');
+    expect(td.getAttribute('data-highlight')).toBe('match');
+    expect(container.querySelector('.builder-print-subject').textContent).toBe('英語');
+    expect(container.querySelector('.builder-print-teacher').textContent).toBe('堀上');
+    expect(container.textContent).toContain('①');
   });
 });
 

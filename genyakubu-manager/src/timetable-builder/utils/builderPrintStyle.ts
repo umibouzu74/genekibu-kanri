@@ -106,5 +106,15 @@ export const BUILDER_PRINT_STYLE = `
     line-height: 1.3;
     padding: 1px 2px;
   }
+  /* L2h: まとめて印刷。印刷専用の欄 (.builder-batch-print) に組ごとの紙面を並べ、
+     その間は画面の時間割と見出し (.builder-main-sheet) を紙面に出さない。
+     各組は新しいページから (1 組 = 1 枚目安。日数が多ければ次のページへ続く) */
+  .builder-batch-printing .builder-main-sheet {
+    display: none !important;
+  }
+  .builder-batch-sheet + .builder-batch-sheet {
+    break-before: page;
+    page-break-before: always;
+  }
 }
 `.trim();

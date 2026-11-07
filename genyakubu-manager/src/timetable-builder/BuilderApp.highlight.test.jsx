@@ -2,8 +2,8 @@
 // 強調表示 (L2g 教科 / L2a 講師) と紙面の見出し・凡例 (2026-11-07)。
 // 選んだ強調はタブを切り替えても保ち (教科を選んだままタブを巡回して刷る)、
 // 印刷専用の見出しに強調の対象と凡例を出す。
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import BuilderApp from './BuilderApp';
 import { seasonStorage } from './utils/seasons';
 
@@ -93,5 +93,66 @@ describe('BuilderApp の強調表示と紙面の見出し', () => {
     fireEvent.change(await screen.findByLabelText('強調表示'), { target: { value: 's:国語' } });
     const stored = Object.keys(localStorage).map(k => localStorage.getItem(k)).join('\n');
     expect(stored).not.toContain('s:国語');
+  });
+});
+
+describe('BuilderApp のまとめて印刷 (L2h)', () => {
+  let printSpy;
+  beforeEach(() => {
+    printSpy = vi.spyOn(window, 'print').mockImplementation(() => {});
+  });
+  afterEach(() => printSpy.mockRestore());
+
+  const sheets = () => [...document.querySelectorAll('.builder-batch-print .builder-batch-sheet')];
+  const storedActiveTab = () => JSON.parse(localStorage.getItem(seasonStorage('summer').storageKey)).activeTabId;
+
+  it('タブを切り替えずに 組ごとの紙面を描いて印刷し、afterprint で片付ける', async () => {
+    render(<BuilderApp season="summer" />);
+    fireEvent.change(await screen.findByLabelText('強調表示'), { target: { value: 't:堀上' } });
+    fireEvent.click(screen.getByRole('button', { name: '🖨️ まとめて' }));
+    const dialog = screen.getByRole('dialog', { name: 'まとめて印刷' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '🖨️ 4 枚を印刷' }));
+    await waitFor(() => expect(printSpy).toHaveBeenCalledTimes(1));
+
+    // 教科ごと: 英語 (中3 → 中1・2) → 国語 (中3 → 中1・2)
+    expect(sheets().map(el => el.querySelector('.builder-print-heading > div').textContent)).toEqual([
+      '2026 夏期講習 — 中3【強調: 英語】',
+      '2026 夏期講習 — 中1・2【強調: 英語】',
+      '2026 夏期講習 — 中3【強調: 国語】',
+      '2026 夏期講習 — 中1・2【強調: 国語】',
+    ]);
+    // 2 枚目 (中1・2 × 英語): そのタブのセル (国語・小松) が「-」でなく出て、薄表示
+    const td = sheets()[1].querySelector('td[data-highlight]');
+    expect(td.getAttribute('data-highlight')).toBe('dim');
+    expect(td.querySelector('.builder-print-subject').textContent).toBe('国語');
+    expect(td.querySelector('.builder-print-teacher').textContent).toBe('小松');
+    // 紙面用はプルダウンを描かない
+    expect(document.querySelectorAll('.builder-batch-print select')).toHaveLength(0);
+    // 画面の時間割・見出しは紙面に出さない目印
+    expect(document.querySelector('.builder-batch-printing')).not.toBeNull();
+    expect(document.querySelector('.print-container.builder-main-sheet')).not.toBeNull();
+    // ダイアログは印刷の前に閉じる
+    expect(screen.queryByRole('dialog', { name: 'まとめて印刷' })).toBeNull();
+
+    // タブ・強調は変えていない (保存された activeTabId も)
+    expect(screen.getByRole('tab', { name: /中3/ }).getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByLabelText('強調表示').value).toBe('t:堀上');
+    expect(storedActiveTab()).toBe(1);
+
+    act(() => { window.dispatchEvent(new Event('afterprint')); });
+    expect(sheets()).toHaveLength(0);
+    expect(document.querySelector('.builder-batch-printing')).toBeNull();
+  });
+
+  it('準備中に中断すると印刷しない', async () => {
+    render(<BuilderApp season="summer" />);
+    fireEvent.click(await screen.findByRole('button', { name: '🖨️ まとめて' }));
+    fireEvent.click(screen.getByRole('button', { name: '🖨️ 4 枚を印刷' }));
+    fireEvent.click(screen.getByRole('button', { name: '✕ 中断' }));
+    await screen.findByText('まとめて印刷を中断しました');
+    expect(printSpy).not.toHaveBeenCalled();
+    expect(sheets()).toHaveLength(0);
+    // ダイアログは開いたまま (選び直して刷れる)
+    expect(screen.getByRole('button', { name: '🖨️ 4 枚を印刷' })).toBeTruthy();
   });
 });
