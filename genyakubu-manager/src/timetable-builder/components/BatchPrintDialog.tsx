@@ -76,8 +76,8 @@ export default function BatchPrintDialog({
         </p>
 
         {/* legend の中のボタンは fieldset の disabled が効かないので個別に止める */}
-        <fieldset className="space-y-1" disabled={busy}>
-          <legend className="font-bold flex items-center gap-2">
+        <fieldset className="space-y-1 rounded border border-builder-border px-3 pb-2" disabled={busy}>
+          <legend className="font-bold flex items-center gap-2 px-1">
             タブ
             <button type="button" className={linkClass} disabled={busy} onClick={() => setTabIds(new Set(tabs.map(t => t.id)))}>全部</button>
             <button type="button" className={linkClass} disabled={busy} onClick={() => setTabIds(new Set())}>外す</button>
@@ -92,8 +92,8 @@ export default function BatchPrintDialog({
           </div>
         </fieldset>
 
-        <fieldset className="space-y-1" disabled={busy}>
-          <legend className="font-bold flex items-center gap-2">
+        <fieldset className="space-y-1 rounded border border-builder-border px-3 pb-2" disabled={busy}>
+          <legend className="font-bold flex items-center gap-2 px-1">
             強調
             <button type="button" className={linkClass} disabled={busy} onClick={() => setSubjectSet(new Set(subjects))}>全教科</button>
             <button type="button" className={linkClass} disabled={busy} onClick={() => setSubjectSet(new Set())}>外す</button>
@@ -112,8 +112,8 @@ export default function BatchPrintDialog({
           </div>
         </fieldset>
 
-        <fieldset className="space-y-1" disabled={busy}>
-          <legend className="font-bold">並び</legend>
+        <fieldset className="space-y-1 rounded border border-builder-border px-3 pb-2" disabled={busy}>
+          <legend className="font-bold px-1">並び</legend>
           <div className="flex flex-wrap gap-x-4 gap-y-1">
             <label className="inline-flex items-center gap-1">
               <input type="radio" name="batch-print-order" checked={order === 'subject'} onChange={() => setOrder('subject')} />
