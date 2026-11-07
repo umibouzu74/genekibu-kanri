@@ -23,7 +23,8 @@ import SeasonStartPanel from './components/SeasonStartPanel';
 import { STORAGE_KEY_PROJECT_LEGACY, STORAGE_KEY_ONBOARDING_SEEN, STORAGE_KEY_VIEW_COMPACT, STORAGE_KEY_VIEW_SUMMARY, resolveGenerationParams, resolveBaseSeed } from './utils/constants';
 import { KOSHU_SEASONS, defaultKoshuSeason, koshuSeasonDef, notifyBuilderProjectSaved, seasonStorage, type KoshuSeason } from './utils/seasons';
 import { removeStaleLegacyCopies } from './utils/seasonProject';
-import { formatPrintDateJa } from './utils/printHeader';
+import { buildPrintLegend, buildPrintTitle, formatPrintDateJa, hasUsualLinks } from './utils/printHeader';
+import { isHighlightStale, parseHighlightKey } from './utils/highlight';
 import { BUILDER_PRINT_STYLE } from './utils/builderPrintStyle';
 import { countFatalInfeasibilities } from './utils/fixSuggestions';
 import { computeGenerationFingerprint } from './utils/generationFingerprint';
@@ -228,18 +229,19 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
   const [contextMenu, setContextMenu] = useState<BuilderContextMenuState | null>(null);
   const [clipboard, setClipboard] = useState<CellClipboard | null>(null);
   const [isCompact, setIsCompact] = usePersistedToggle(STORAGE_KEY_VIEW_COMPACT, false);
-  // L2a: 講師ハイライト。指定講師の割当セルをグリッド上で強調する
-  // (集計パネルとグリッドの往復を減らす)。null = ハイライトなし。
-  const [highlightTeacher, setHighlightTeacher] = useState<string | null>(null);
+  // L2a / L2g: 強調表示。選んだ教科 ('s:国語') / 講師 ('t:堀上') のセルをグリッド上で
+  // 強調する (集計パネルとグリッドの往復を減らす。教科は紙で教科ごとに確かめるため)。
+  // '' = なし。localStorage には保存しない。タブを切り替えても保つ (教科を選んだまま
+  // タブを巡回して刷るため)
+  const [highlightKey, setHighlightKey] = useState('');
+  const highlight = useMemo(() => parseHighlightKey(highlightKey), [highlightKey]);
 
-  // §M: ハイライト中の講師がリネーム / 削除されると、全セルが薄表示のまま
-  // 一致ゼロの「幽霊状態」になる (select の値も options に無い)。講師が
-  // 実在しなくなったらハイライトを解除する。
+  // §M: 強調中の教科・講師がリネーム / 削除されると、全セルが薄表示のまま
+  // 一致ゼロの「幽霊状態」になる (select の値も options に無い)。マスタに
+  // 無くなったら強調を解除する。
   useEffect(() => {
-    if (highlightTeacher && !project.teachers.some(t => t.name === highlightTeacher)) {
-      setHighlightTeacher(null);
-    }
-  }, [project.teachers, highlightTeacher]);
+    if (isHighlightStale(highlight, project)) setHighlightKey('');
+  }, [project, highlight]);
   // 初回起動なら true。LocalStorage 読込失敗時は安全側で false (邪魔しない)
   const [showOnboarding, setShowOnboarding] = useState(() => {
     try {
@@ -465,6 +467,8 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
 
   // L1f: 印刷見出し用。生成結果パネル等と違い「今表示しているタブ」を刷る。
   const activeTabForPrint = project.tabs.find(t => t.id === project.activeTabId) || project.tabs[0];
+  // L2g: 凡例。★ の説明は、このタブに普段の担当の対応 (ClassEntity.regular) があるときだけ
+  const printLegend = buildPrintLegend(highlight, { showUsual: hasUsualLinks(currentConfig.classes) });
 
   // 親アプリ (app-main) が既に padding と背景色を提供しているので、ここでは
   // ラッパに padding/背景を載せない。font-sans のみ Builder スコープで宣言。
@@ -490,8 +494,8 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
           onGenerate={handleGenerate}
           onCancelGenerate={handleCancelGenerate}
           onShowHelp={() => setShowOnboarding(true)}
-          highlightTeacher={highlightTeacher}
-          setHighlightTeacher={setHighlightTeacher}
+          highlightKey={highlightKey}
+          setHighlightKey={setHighlightKey}
         />
 
         <SummaryPanel
@@ -507,13 +511,15 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
 
         {/* L1f: 印刷専用の見出し。Header (プロジェクト名) と TabBar (学年) は
             no-print のため、これが無いと紙面が無記名になり、複数学年を刷った
-            ときにどの紙がどの学年か分からない。 */}
-        <div className="hidden print:block mb-2" aria-hidden="true">
+            ときにどの紙がどの学年か分からない。L2g: 強調の対象と凡例も出す */}
+        <div className="hidden print:block mb-2 builder-print-heading" aria-hidden="true">
           <div className="text-lg font-bold text-builder-ink">
-            {(project.name || seasonDef.label)}
-            {activeTabForPrint ? ` — ${activeTabForPrint.name}` : ''}
+            {buildPrintTitle(project.name || seasonDef.label, activeTabForPrint?.name, highlight)}
           </div>
           <div className="text-xs text-builder-ink-muted">印刷日: {formatPrintDateJa(new Date())}</div>
+          {printLegend.length > 0 && (
+            <div className="text-xs text-builder-ink builder-print-legend">{printLegend.join('　')}</div>
+          )}
         </div>
 
         {/* N2a: 複数選択中の一括操作バー */}
@@ -578,7 +584,7 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
         <ScheduleTable
           isCompact={isCompact}
           onContextMenu={handleContextMenu}
-          highlightTeacher={highlightTeacher}
+          highlight={highlight}
           selectedKeys={selectedKeys}
           onCellSelect={handleCellSelect}
         />

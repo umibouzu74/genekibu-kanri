@@ -2,6 +2,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import ScheduleCell from './ScheduleCell';
+import { printTeacherText } from '../utils/printHeader';
+import { EMPTY_PLANNING, PlanningContext } from '../contexts/planningContextValue';
 import { ProjectContext } from '../contexts/projectContextValue';
 import { makeKey, makeNgKey } from '../utils/scheduleKey';
 
@@ -46,9 +48,10 @@ function defaultContext(overrides = {}) {
 
 // ScheduleCell は <td> なので、テストでは <table><tbody><tr> でラップして
 // render する必要がある (jsdom でも valid な DOM 構造を保つため)。
-function renderCell({ dateId = 1, periodId = 1, classId = 1, isCompact = false, highlightTeacher = null, isSelected = false, onCellSelect, contextOverrides = {} } = {}) {
+function renderCell({ dateId = 1, periodId = 1, classId = 1, isCompact = false, highlightTeacher = null, highlightSubject = null, isSelected = false, onCellSelect, contextOverrides = {}, planning = EMPTY_PLANNING } = {}) {
   const ctx = defaultContext(contextOverrides);
   const utils = render(
+    <PlanningContext.Provider value={planning}>
     <ProjectContext.Provider value={ctx}>
       <table><tbody><tr>
         <ScheduleCell
@@ -65,11 +68,13 @@ function renderCell({ dateId = 1, periodId = 1, classId = 1, isCompact = false, 
           isDragOver={false}
           isDragSource={false}
           highlightTeacher={highlightTeacher}
+          highlightSubject={highlightSubject}
           isSelected={isSelected}
           onCellSelect={onCellSelect}
         />
       </tr></tbody></table>
-    </ProjectContext.Provider>,
+    </ProjectContext.Provider>
+    </PlanningContext.Provider>,
   );
   return { ...utils, ctx };
 }
@@ -282,6 +287,115 @@ describe('ScheduleCell — 講師ハイライト (L2a)', () => {
     const td = container.querySelector('td');
     expect(td.hasAttribute('data-teacher-highlight')).toBe(false);
     expect(td.className).not.toContain('opacity-40');
+  });
+});
+
+describe('ScheduleCell — 教科の強調 (L2g)', () => {
+  const schedule = {
+    [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' },
+    [makeKey(1, 1, 2)]: { subject: '数学', teacher: '田中' },
+  };
+
+  it('科目が一致するセルを強調し、紙面用の目印 (data-highlight="match") を付ける', () => {
+    renderCell({ highlightSubject: '英語', contextOverrides: { currentSchedule: schedule } });
+    const td = document.getElementById('select-1-1-1-cell');
+    expect(td.hasAttribute('data-subject-highlight')).toBe(true);
+    expect(td.hasAttribute('data-teacher-highlight')).toBe(false);
+    expect(td.getAttribute('data-highlight')).toBe('match');
+    expect(td.className).toContain('ring-2');
+    expect(td.className).not.toContain('opacity-40');
+  });
+
+  it('科目が違うセルは薄表示 (data-highlight="dim")', () => {
+    renderCell({ classId: 2, highlightSubject: '英語', contextOverrides: { currentSchedule: schedule } });
+    const td = document.getElementById('select-1-1-2-cell');
+    expect(td.hasAttribute('data-subject-highlight')).toBe(false);
+    expect(td.getAttribute('data-highlight')).toBe('dim');
+    expect(td.className).toContain('opacity-40');
+  });
+
+  it('空セルも薄表示にする', () => {
+    renderCell({ dateId: 2, highlightSubject: '英語', contextOverrides: { currentSchedule: schedule } });
+    const td = document.getElementById('select-2-1-1-cell');
+    expect(td.getAttribute('data-highlight')).toBe('dim');
+    expect(td.className).toContain('opacity-40');
+  });
+
+  it('講師の強調も紙面用の目印を持つ (既存の data-teacher-highlight はそのまま)', () => {
+    renderCell({ highlightTeacher: '堀上', contextOverrides: { currentSchedule: schedule } });
+    const td = document.getElementById('select-1-1-1-cell');
+    expect(td.hasAttribute('data-teacher-highlight')).toBe(true);
+    expect(td.getAttribute('data-highlight')).toBe('match');
+  });
+
+  it('選択中のセルは画面では薄くしないが、紙面用の目印は強調どおり (紙に選択は写さない)', () => {
+    renderCell({ classId: 2, isSelected: true, highlightSubject: '英語', contextOverrides: { currentSchedule: schedule } });
+    const td = document.getElementById('select-1-1-2-cell');
+    expect(td.className).not.toContain('opacity-40');
+    expect(td.getAttribute('data-highlight')).toBe('dim');
+  });
+
+  it('強調なしなら目印を付けない', () => {
+    renderCell({ contextOverrides: { currentSchedule: schedule } });
+    const td = document.getElementById('select-1-1-1-cell');
+    expect(td.hasAttribute('data-highlight')).toBe(false);
+    expect(td.hasAttribute('data-subject-highlight')).toBe(false);
+  });
+});
+
+describe('ScheduleCell — 紙面用の科目・講師の文字 (L2g)', () => {
+  const planningWithUsual = {
+    ...EMPTY_PLANNING,
+    usual: { ...EMPTY_PLANNING.usual, hasLinks: true, forClass: (_tab, classId, subject) => (classId === 1 && subject === '英語' ? ['堀上'] : []) },
+  };
+
+  it('講師欄は「★ + 講師名」だけ (プルダウンの「その日」などの付記は入れない)', () => {
+    renderCell({
+      planning: planningWithUsual,
+      contextOverrides: {
+        currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } },
+        analysis: { teacherDailyCounts: { [`12/25(木)-堀上`]: { current: 2, external: 0, total: 2 } } },
+      },
+    });
+    const text = document.querySelector('.builder-print-teacher');
+    expect(text.textContent).toBe('★堀上');
+    // プルダウンの選択肢には付記があるが、紙面の文字には無い
+    const option = document.querySelector('#select-1-1-1-teacher option[value="堀上"]');
+    expect(option.textContent).toMatch(/★堀上 \(.*その日/);
+    expect(text.textContent).not.toContain('その日');
+  });
+
+  it('普段の担当でない講師は ★ なし、講師が空なら「-」', () => {
+    renderCell({
+      planning: planningWithUsual,
+      contextOverrides: { currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '未定' } } },
+    });
+    expect(document.querySelector('.builder-print-teacher').textContent).toBe('未定');
+    cleanup();
+    renderCell({ contextOverrides: { currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語' } } } });
+    expect(document.querySelector('.builder-print-teacher').textContent).toBe('-');
+  });
+
+  it('科目欄は科目名だけ (空なら「-」)。紙面では select を隠して文字を出す', () => {
+    renderCell({ contextOverrides: { currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '堀上' } } } });
+    const subjectText = document.querySelector('.builder-print-subject');
+    expect(subjectText.textContent).toBe('英語');
+    // 画面では隠し、紙面だけで出す
+    expect(subjectText.className).toContain('hidden');
+    expect(subjectText.className).toContain('print:block');
+    expect(document.querySelector('.builder-print-teacher').className).toContain('print:block');
+    expect(document.getElementById('select-1-1-1-subject').className).toContain('print:hidden');
+    expect(document.getElementById('select-1-1-1-teacher').className).toContain('print:hidden');
+    cleanup();
+    renderCell();
+    expect(document.querySelector('.builder-print-subject').textContent).toBe('-');
+  });
+
+  it('printTeacherText: ★ は普段の担当のときだけ', () => {
+    expect(printTeacherText('堀上', ['堀上', '石原'])).toBe('★堀上');
+    expect(printTeacherText('田中', ['堀上'])).toBe('田中');
+    expect(printTeacherText('', ['堀上'])).toBe('-');
+    expect(printTeacherText(undefined, [])).toBe('-');
   });
 });
 

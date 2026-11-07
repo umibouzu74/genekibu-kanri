@@ -8,6 +8,7 @@ import type { ReactNode, ThHTMLAttributes } from 'react';
 import type { DayStatus, ScheduleEntry } from '../types';
 import type { BuilderContextMenuState } from './ContextMenu';
 import { classRoomOf } from '../utils/classRoom';
+import type { Highlight } from '../utils/highlight';
 
 type HeaderContextMenuHandler = (
   e: { preventDefault: () => void; clientX: number; clientY: number },
@@ -101,15 +102,17 @@ const COL_WIDTHS = {
 interface ScheduleTableProps {
   isCompact: boolean;
   onContextMenu: HeaderContextMenuHandler;
-  /** L2a: 強調表示する講師名 (null = なし) */
-  highlightTeacher?: string | null;
+  /** L2a / L2g: 強調表示する教科・講師 (null = なし) */
+  highlight?: Highlight | null;
   /** N2a: 複数選択中のセル key 集合 */
   selectedKeys?: Set<string>;
   /** N2a: Ctrl/Shift+クリックでの選択操作 */
   onCellSelect?: (e: { shiftKey: boolean }, key: string) => void;
 }
 
-export default function ScheduleTable({ isCompact, onContextMenu, highlightTeacher = null, selectedKeys, onCellSelect }: ScheduleTableProps) {
+export default function ScheduleTable({ isCompact, onContextMenu, highlight = null, selectedKeys, onCellSelect }: ScheduleTableProps) {
+  const highlightTeacher = highlight?.kind === 'teacher' ? highlight.value : null;
+  const highlightSubject = highlight?.kind === 'subject' ? highlight.value : null;
   const { currentConfig, handleSwapCells } = useProjectContext();
   const { showToast } = useUI();
   const [dragSource, setDragSource] = useState<{ key: string; data: ScheduleEntry } | null>(null);
@@ -257,6 +260,7 @@ export default function ScheduleTable({ isCompact, onContextMenu, highlightTeach
                       isDragOver={dragOverKey === cellKey}
                       isDragSource={dragSource !== null && dragSource.key === cellKey}
                       highlightTeacher={highlightTeacher}
+                      highlightSubject={highlightSubject}
                       isSelected={!!selectedKeys?.has(cellKey)}
                       onCellSelect={onCellSelect}
                     />

@@ -81,5 +81,30 @@ export const BUILDER_PRINT_STYLE = `
   .print-container tbody.builder-day-group:not(:first-of-type) > tr:first-child > * {
     border-top: 2px solid #1f2430 !important;
   }
+  /* L2g: 強調表示の紙面。画面の強調は ring (box-shadow) だが、細くて白黒では
+     周りの塗りと見分けにくいので、紙面では outline を style まで書いて太く引く
+     (preflight が無いので幅だけのユーティリティでは線が出ない)。画面の見た目は
+     変えない (@media print の中だけ)。薄表示は画面 (opacity-40) より濃くして、
+     紙で周りのコマも読めるようにする */
+  .print-container td[data-highlight="match"] {
+    box-shadow: none !important;
+    outline: 3px solid #1a1a2e !important;
+    outline-offset: -3px;
+  }
+  .print-container td[data-highlight="dim"] {
+    opacity: 0.5 !important;
+  }
+  /* L2g: 紙面の科目欄・講師欄は印刷専用の文字 (科目名 / ★ + 講師名) だけを出す。
+     プルダウン (select) は付記 (「(その日2/6)」等) ごと出て列が狭いと名前が切れ、
+     スナップショット (outerHTML) では選択値が消えるため */
+  .print-container .builder-print-subject {
+    font-size: 12px;
+    line-height: 1.3;
+  }
+  .print-container .builder-print-teacher {
+    font-size: 12px;
+    line-height: 1.3;
+    padding: 1px 2px;
+  }
 }
 `.trim();

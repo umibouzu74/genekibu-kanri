@@ -573,24 +573,58 @@ describe('Toolbar — NG に当たっている割当の一覧', () => {
   });
 });
 
-describe('Toolbar — 講師ハイライト (L2a)', () => {
-  it('setHighlightTeacher があれば講師選択 select を表示し、変更で通知する', () => {
-    const setHighlightTeacher = vi.fn();
+describe('Toolbar — 強調表示 (L2a 講師 / L2g 教科)', () => {
+  const project = {
+    snapshots: [],
+    subjects: ['英語', '数学', '国語'],
+    teachers: [{ name: '堀上' }, { name: '田中' }],
+  };
+
+  it('教科 (科目マスタの順) と講師の optgroup を出し、値は s: / t: のキー', () => {
     renderToolbar({
-      projectOverrides: { project: { snapshots: [], teachers: [{ name: '堀上' }, { name: '田中' }] } },
-      props: { highlightTeacher: null, setHighlightTeacher },
+      projectOverrides: { project },
+      props: { highlightKey: '', setHighlightKey: vi.fn() },
     });
-    const select = screen.getByLabelText('講師ハイライト');
-    fireEvent.change(select, { target: { value: '堀上' } });
-    expect(setHighlightTeacher).toHaveBeenCalledWith('堀上');
-    // 空 (なし) へ戻すと null
-    fireEvent.change(select, { target: { value: '' } });
-    expect(setHighlightTeacher).toHaveBeenCalledWith(null);
+    const select = screen.getByLabelText('強調表示');
+    const groups = [...select.querySelectorAll('optgroup')];
+    expect(groups.map(g => g.label)).toEqual(['教科', '講師']);
+    expect([...groups[0].querySelectorAll('option')].map(o => [o.value, o.textContent])).toEqual([
+      ['s:英語', '英語'],
+      ['s:数学', '数学'],
+      ['s:国語', '国語'],
+    ]);
+    expect([...groups[1].querySelectorAll('option')].map(o => o.value)).toEqual(['t:堀上', 't:田中']);
+    // 先頭は「強調なし」
+    expect(select.querySelector('option').value).toBe('');
+    expect(select.querySelector('option').textContent).toBe('👁 強調表示');
   });
 
-  it('setHighlightTeacher が無ければ select を出さない (後方互換)', () => {
+  it('教科・講師を選ぶとそのキー、なしへ戻すと空文字で通知する', () => {
+    const setHighlightKey = vi.fn();
+    renderToolbar({
+      projectOverrides: { project },
+      props: { highlightKey: '', setHighlightKey },
+    });
+    const select = screen.getByLabelText('強調表示');
+    fireEvent.change(select, { target: { value: 's:国語' } });
+    expect(setHighlightKey).toHaveBeenLastCalledWith('s:国語');
+    fireEvent.change(select, { target: { value: 't:堀上' } });
+    expect(setHighlightKey).toHaveBeenLastCalledWith('t:堀上');
+    fireEvent.change(select, { target: { value: '' } });
+    expect(setHighlightKey).toHaveBeenLastCalledWith('');
+  });
+
+  it('選んでいるキーを select の値に出す', () => {
+    renderToolbar({
+      projectOverrides: { project },
+      props: { highlightKey: 's:数学', setHighlightKey: vi.fn() },
+    });
+    expect(screen.getByLabelText('強調表示').value).toBe('s:数学');
+  });
+
+  it('setHighlightKey が無ければ select を出さない (後方互換)', () => {
     renderToolbar();
-    expect(screen.queryByLabelText('講師ハイライト')).toBeNull();
+    expect(screen.queryByLabelText('強調表示')).toBeNull();
   });
 });
 

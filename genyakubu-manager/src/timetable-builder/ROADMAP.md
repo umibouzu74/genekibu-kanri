@@ -2184,6 +2184,26 @@ CLAUDE.md: 複数講師区切りの横断規約を新設 (正史 "·" / 入力�
   現状は D&D 専用で F2a のキーボード代替方針から取り残されている
 - **L2f (小)**: 貼り付けの内容プレビュー (「📋 貼り付け (英語/田中)」) /
   講師のみ貼り付け / Ctrl+ドラッグでコピー配置
+- ✅ **L2g (2026-11-07)**: 教科ハイライトと紙面の見出し・凡例・講師名 — 紙で教科ごとに
+  担当・回数・偏りを確かめるため。
+  (1) Toolbar の「👁 講師で探す」を「👁 強調表示」に広げ、optgroup「教科」(科目マスタ順)
+  「講師」。値は通常時間割作成と同じ `s:国語` / `t:堀上` (`utils/highlight`)。状態は
+  BuilderApp の `highlightKey` 1 つ (localStorage に保存しない・タブ切替で保つ・マスタから
+  消えたら解除 = `isHighlightStale`)。教科は `entry.subject` 一致を強調、ほか (空セル含む)
+  を薄表示。講師は従来どおり (`data-teacher-highlight`)。
+  (2) 個別印刷 (🖨 window.print のまま): L1f の見出しに【強調: 国語】、その下に凡例
+  (`printHeader.buildPrintTitle` / `buildPrintLegend`)。★ の説明は、そのタブに普段のクラスの
+  対応 (`ClassEntity.regular`) があるときだけ (★ が出ない紙に説明を載せない)。紙面の強調は
+  ring に頼らず `builderPrintStyle` で `td[data-highlight="match"]` に outline 3px solid、
+  `td[data-highlight="dim"]` は opacity 0.5 (画面の 0.4 より濃く)。画面の見た目は不変。
+  (3) 紙面の科目欄・講師欄は印刷専用の文字 (`.builder-print-subject` /
+  `.builder-print-teacher`、★ + 講師名だけ = `printTeacherText`) を出し、select は
+  `print:hidden`。まとめて印刷 (L2h) のスナップショットで select の選択値が消える問題の
+  先回りも兼ねる。ついでに紙面ではドラッグの ⠿ と未ロックの 🔓 を隠した (狭い列で回数の
+  ①と重なっていた。🔒 は残す)
+- **L2h (方式確認中)**: まとめて印刷 — 「🖨 まとめて」のダイアログでタブ × 強調 (教科 /
+  強調なし) を選び、1 組 = 1 枚 (新しいページから、組ごとに L2g の見出し・凡例) で刷る。
+  並びは教科ごと (既定) / タブごと。方式は確認後に決めて CLAUDE.md「印刷システムの二系統」へ
 
 ### L3. ソルバ・制約の実務表現
 

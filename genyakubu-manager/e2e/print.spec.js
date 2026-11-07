@@ -352,6 +352,94 @@ test("講習時間割作成: print で全列収め (横溢れなし) と日付�
   expect(breakInside).toBe("avoid");
 });
 
+// L2g (2026-11-07): 強調表示 (教科) を紙面の見出し・凡例に出し、セルの科目欄・講師欄は
+// select ではなく紙面用の文字 (科目名 / ★ + 講師名) を出す。強調は ring (box-shadow) では
+// なく outline を style まで書いた太枠、ほかは薄表示 (画面より濃い)。画面の見た目は変えない。
+const HIGHLIGHT_PROJECT = (() => {
+  const T = (name, subjects) => ({ name, subjects, ngSlots: [], ngClasses: [], priorityClasses: [] });
+  return {
+    version: 4,
+    name: "2026 冬期講習 中123",
+    createdAt: "2026-10-01T00:00:00.000Z",
+    updatedAt: "2026-10-01T00:00:00.000Z",
+    teachers: [T("小松", ["国語"]), T("堀上", ["英語"])],
+    activeTabId: 1,
+    dates: [{ id: 1, label: "12/25(金)" }, { id: 2, label: "12/26(土)" }],
+    periods: [{ id: 1, label: "1限 (13:00~14:10)" }],
+    tabs: [
+      {
+        id: 1,
+        name: "中3",
+        config: {
+          // 普段のクラスに結び付けたクラスがあるタブなので、凡例に ★ の説明が出る
+          classes: [
+            { id: 1, label: "3S", regular: { grade: "中3", classes: ["S"] } },
+            { id: 2, label: "3A" },
+          ],
+          subjectCounts: { 国語: 1, 英語: 1 },
+        },
+        schedule: {
+          "d1-p1-c1": { subject: "国語", teacher: "小松" },
+          "d1-p1-c2": { subject: "英語", teacher: "堀上" },
+        },
+      },
+    ],
+    subjects: ["英語", "国語"],
+    subjectColors: {},
+    combinedGroups: [],
+    externalCounts: {},
+    externalSessions: [],
+    externalSessionPresets: [],
+    snapshots: [],
+  };
+})();
+
+test("講習時間割作成: 教科の強調が紙面の見出し・凡例・太枠に出て、select の代わりに紙面用の文字が出る", async ({
+  page,
+}) => {
+  await page.addInitScript((project) => {
+    if (sessionStorage.getItem("__seeded")) return;
+    localStorage.setItem("builder.schedule_project.winter", JSON.stringify(project));
+    sessionStorage.setItem("__seeded", "1");
+  }, HIGHLIGHT_PROJECT);
+  await page.goto("/genekibu-kanri/");
+  await openKoshuBuilder(page, { season: "winter" });
+  await page.getByLabel("強調表示").selectOption("s:国語");
+
+  // 画面: select がそのまま出て、紙面用の文字・見出しは隠れている (見た目を変えない)
+  await expect(page.locator("#select-1-1-1-subject")).toBeVisible();
+  await expect(page.locator("#select-1-1-1-cell .builder-print-subject")).toBeHidden();
+  await expect(page.locator(".builder-print-heading")).toBeHidden();
+
+  await page.emulateMedia({ media: "print" });
+  await expectPrintChromeHidden(page);
+
+  const heading = page.locator(".builder-print-heading");
+  await expect(heading).toBeVisible();
+  await expect(heading).toContainText("2026 冬期講習 中123 — 中3【強調: 国語】");
+  await expect(heading).toContainText("太枠 = 国語のコマ / 薄い表示 = それ以外");
+  await expect(heading).toContainText("★ = 普段 (通常授業) このクラスのこの科目を担当している講師");
+
+  // 紙面: select は隠れ、科目名・講師名だけの文字が出る (プルダウンの「その日」などの付記なし)
+  await expect(page.locator("#select-1-1-1-subject")).toBeHidden();
+  await expect(page.locator("#select-1-1-1-teacher")).toBeHidden();
+  await expect(page.locator("#select-1-1-1-cell .builder-print-subject")).toHaveText("国語");
+  await expect(page.locator("#select-1-1-1-cell .builder-print-teacher")).toHaveText("小松");
+  await expect(page.locator("#select-1-1-2-cell .builder-print-teacher")).toHaveText("堀上");
+
+  // 強調のセルは outline の太枠 (ring に頼らない)、ほかは薄表示 (画面の 0.4 より濃い)
+  const match = await page.locator("#select-1-1-1-cell").evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { style: cs.outlineStyle, width: cs.outlineWidth, shadow: cs.boxShadow };
+  });
+  expect(match).toEqual({ style: "solid", width: "3px", shadow: "none" });
+  const dimOpacity = await page
+    .locator("#select-1-1-2-cell")
+    .evaluate((el) => Number(getComputedStyle(el).opacity));
+  expect(dimOpacity).toBeGreaterThan(0.4);
+  expect(dimOpacity).toBeLessThan(1);
+});
+
 // 通常時間割作成の紙面を、列数の違うセクション (中学部 3 列 / 高校部 8 列)
 // が同居する形で検証する。時間列の幅は `table-layout: fixed` の等分に任せると
 // **セクションの列数で変わる** (実測 A4 縦: 3 列で 171px / 8 列で 76px / 1 列で
