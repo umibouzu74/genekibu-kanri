@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
 import { effectiveConfigForTab, makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
-import { autoNgSourceLabel, computeAutoNgEntries } from '../../utils/autoNg';
+import { autoNgSourceLabel, computeAutoNgEntries, describeRegularBusy } from '../../utils/autoNg';
 import { computePresetMemoBackfill } from '../../utils/presetMemoBackfill';
 import { computePresetRenameSyncIds, presetSessionLabel } from '../../utils/presetRenameSync';
 import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
@@ -510,7 +510,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
   const handleClearAllManualNg = async () => {
     if (manualNgTotal === 0) return;
     const ok = await showConfirm(
-      `全講師の手動NG ${manualNgTotal} 件をすべて解除します。\n自動NG (他学年セッション・出勤可能調査の ×) は残ります。\nよろしいですか?`,
+      `全講師の手動NG ${manualNgTotal} 件をすべて解除します。\n自動NG (他学年セッション・通常授業との重なり・出勤可能調査の ×) は残ります。\nよろしいですか?`,
       { title: '手動NGの全解除', danger: true, confirmLabel: '全解除する' },
     );
     if (!ok) return;
@@ -523,7 +523,7 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
   const handleClearAllNg = async () => {
     if (manualNgTotal === 0 && sessions.length === 0) return;
     const ok = await showConfirm(
-      `すべてのNG設定を解除します。\n・手動NG ${manualNgTotal} 件\n・他学年セッション ${sessions.length} 件 (自動NGの派生元のため削除されます)\n(出勤可能調査の × は残ります。消すには 🙋 出勤可能調査で回答を変えてください)\nよろしいですか?`,
+      `すべてのNG設定を解除します。\n・手動NG ${manualNgTotal} 件\n・他学年セッション ${sessions.length} 件 (自動NGの派生元のため削除されます)\n(通常授業との重なり・出勤可能調査の × は残ります。調査の × を消すには 🙋 出勤可能調査で回答を変えてください)\nよろしいですか?`,
       { title: 'NG設定の全解除', danger: true, confirmLabel: 'すべて解除する' },
     );
     if (!ok) return;
@@ -1303,7 +1303,7 @@ function DateSection({
           ) : (
           <div className="px-3 py-2">
             <div className="text-xs font-bold text-builder-ink-muted mb-1">
-              🚫 NG マトリクス — クリックで切替 (NG=赤 / 自=他学年セッションの自動NG / 調=出勤可能調査の × / 空=OK)
+              🚫 NG マトリクス — クリックで切替 (NG=赤 / 自=他学年セッション・通常授業との重なりの自動NG / 調=出勤可能調査の × / 空=OK)
             </div>
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-xs whitespace-nowrap">
@@ -1344,8 +1344,8 @@ function DateSection({
                               const isManualNg = t.ngSlots?.includes(k);
                               const autoEntry = autoEntries?.get(k);
                               const isAutoNg = !!autoEntry;
-                              // 出勤可能調査の × だけが由来の自動NG は「調」(他学年セッション由来は「自」)
-                              const isSurveyOnly = isAutoNg && autoEntry.sessions.length === 0 && !!autoEntry.availability;
+                              // 出勤可能調査の × だけが由来の自動NG は「調」(他学年セッション・通常授業との重なりは「自」)
+                              const isSurveyOnly = isAutoNg && autoEntry.sessions.length === 0 && !autoEntry.regular?.length && !!autoEntry.availability;
                               const cellClass = isManualNg
                                 ? 'bg-builder-red text-white font-bold'
                                 : isAutoNg
@@ -1364,6 +1364,10 @@ function DateSection({
                                   .filter(Boolean)
                                   .join(', ');
                                 tooltipParts.push(`自動NG (他学年: ${memos})`);
+                              }
+                              if (isAutoNg && autoEntry.regular?.length) {
+                                // 本体の通常授業と時刻が重なる / 接する (この画面では直せない。本体の時間割・代行・振替から導出)
+                                tooltipParts.push(`自動NG (${[...new Set(autoEntry.regular.map(describeRegularBusy))].join(', ')})`);
                               }
                               if (isAutoNg && autoEntry.availability) {
                                 tooltipParts.push('出勤可能調査で × (🙋 出勤可能調査で変更)');

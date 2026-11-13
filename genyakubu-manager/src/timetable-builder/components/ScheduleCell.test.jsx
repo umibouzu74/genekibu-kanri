@@ -510,6 +510,39 @@ describe('ScheduleCell — 複数選択 (N2a)', () => {
     expect(options.find(o => o.value === '片岡').disabled).toBe(true);
   });
 
+  it('通常授業との重なり: プルダウンは (NG:通常) で選べない。入っているセルは NG設定違反', () => {
+    const regular = [{ time: '19:55-20:55', label: '附中1 数学' }];
+    const teachers = [
+      { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+      { name: '片岡', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+    ];
+    const analysis = {
+      autoNgByTeacher: new Map([
+        ['片岡', new Map([[makeNgKey('12/25(木)', '1限'), { sessions: [], regular }]])],
+      ]),
+    };
+    const { unmount } = renderCell({
+      contextOverrides: {
+        project: { teachers, subjectColors: {}, combinedGroups: [] },
+        currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語' } },
+        analysis,
+      },
+    });
+    const options = Array.from(document.getElementById('select-1-1-1-teacher').options);
+    const opt = options.find(o => o.value === '片岡');
+    expect(opt.textContent).toBe('片岡 (NG:通常)');
+    expect(opt.disabled).toBe(true);
+    unmount();
+    renderCell({
+      contextOverrides: {
+        project: { teachers, subjectColors: {}, combinedGroups: [] },
+        currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '片岡' } },
+        analysis,
+      },
+    });
+    expect(document.body.textContent).toContain('NG設定違反');
+  });
+
   it('講師プルダウンに「その日 n/上限 他N」を出し、入れると超える講師に「超過」を付ける (B6)', () => {
     renderCell({
       contextOverrides: {

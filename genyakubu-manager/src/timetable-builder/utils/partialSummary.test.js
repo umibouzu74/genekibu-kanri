@@ -130,6 +130,19 @@ describe('diagnoseUnfilledCells (N3b)', () => {
     expect(d.reasons.overDaily).toBe(1);
   });
 
+  it('通常授業との重なり (regularBusy) も NG のブロック理由に数える', () => {
+    const timed = {
+      ...diagConfig,
+      periods: [{ id: 1, label: '1限 (18:00~19:00)' }, { id: 2, label: '2限 (19:10~20:10)' }],
+    };
+    const project = baseProject([teacher('田中', ['数学'])]);
+    const regularBusy = { 田中: { '12/25': [{ time: '19:55-20:55', label: '附中1 数学' }] } };
+    const diag = diagnoseUnfilledCells({}, timed, project, regularBusy);
+    expect(diag.get(makeKey(1, 1, 1)).kind).toBe('searchExhausted');
+    expect(diag.get(makeKey(1, 2, 1))).toMatchObject({ kind: 'noCandidate', reasons: { ng: 1 } });
+    expect(diagnoseUnfilledCells({}, timed, project).get(makeKey(1, 2, 1)).kind).toBe('searchExhausted');
+  });
+
   it('通算上限・連続上限もブロック理由として数える', () => {
     const config3 = {
       dates: [{ id: 1, label: '12/25' }],

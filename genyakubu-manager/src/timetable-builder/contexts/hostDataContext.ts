@@ -3,7 +3,8 @@ import { createContext, useContext } from 'react';
 // 本体アプリ (App.jsx) から講習時間割作成へ渡す読み取り専用のデータ。
 // 講習側は本体のデータに書き込まない (正は本体)。いまは「他校舎の授業」の
 // 取り込み (講師不在・NG の画面)、出勤可能調査の「バイトのみ」の絞り込み、
-// 退職した講師の扱い、行事予定 (講習) との日程の食い違いの確認に使う。本体の外で単体で描くとき (テストなど) は空のまま。
+// 退職した講師の扱い、行事予定 (講習) との日程の食い違いの確認、通常授業との講師の
+// 重なり (自動NG) に使う。本体の外で単体で描くとき (テストなど) は空のまま。
 export interface HostData {
   /** 本体の他校舎の授業 (utils/offsiteLessons の OffsiteLesson[]) */
   offsiteLessons: unknown[];
@@ -34,6 +35,18 @@ export interface HostData {
    * ("genyakuFull" / "genyakuPart" / "yobiko" …、utils/teacherAffiliations)
    */
   teacherCategoriesByYear?: Record<number, Record<string, string>>;
+  /**
+   * 通常授業との講師の重なり (utils/regularBusy → 自動NG) に使う本体のデータ。
+   * regularSlots / regularTimetables / holidays と合わせて、本体の授業時間の集計と
+   * 同じ関数で「その日に実際に教える人」を出す: テスト期間・隔週の基準・代行 / 欠勤・
+   * 時間割調整 (振替・コマ休講・合同・移動)・特別時程・表示期間設定 (終講日)
+   */
+  examPeriods?: unknown[];
+  biweeklyAnchors?: unknown[];
+  substitutes?: unknown[];
+  adjustments?: unknown[];
+  daySchedules?: unknown[];
+  displayCutoff?: unknown;
 }
 
 const EMPTY: HostData = {
@@ -46,6 +59,12 @@ const EMPTY: HostData = {
   regularSlots: [],
   regularTimetables: [],
   teacherCategoriesByYear: {},
+  examPeriods: [],
+  biweeklyAnchors: [],
+  substitutes: [],
+  adjustments: [],
+  daySchedules: [],
+  displayCutoff: undefined,
 };
 
 export const HostDataContext = createContext<HostData>(EMPTY);

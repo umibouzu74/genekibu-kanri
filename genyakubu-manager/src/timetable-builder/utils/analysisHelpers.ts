@@ -8,7 +8,7 @@ import { toCircleNum } from './constants';
 import { quotaForClass, quotasForClass } from './subjectQuota';
 import { forEachCountedAssignment } from './tabUsage';
 import { resolveTeacherDailyLimit } from '../logic/constraints/teacherConstraints';
-import type { AutoNgEntries } from './autoNg';
+import type { AutoNgEntries, RegularBusy } from './autoNg';
 import type {
   CombinedGroup,
   EffectiveConfig,
@@ -304,6 +304,7 @@ export function computeTabViolationCounts({
   externalSessions = [],
   dates = [],
   periods = [],
+  regularBusy = null,
 }: {
   tabs: Tab[];
   globalUsage: GlobalUsage;
@@ -311,11 +312,13 @@ export function computeTabViolationCounts({
   externalSessions?: ExternalSession[];
   dates?: Entity[];
   periods?: Entity[];
+  /** 通常授業との講師の重なり (useAnalysis と同じものを渡す) */
+  regularBusy?: RegularBusy | null;
 }): Record<number, number> {
   const result: Record<number, number> = {};
   // v4: dates / periods は project 共通。自動NG は project の periods で計算し、
   // 各タブの実効 config (classes / subjectCounts + 共通 dates / periods) で分析する。
-  const autoNgByTeacher = computeAutoNgByTeacher(teachers, externalSessions, periods);
+  const autoNgByTeacher = computeAutoNgByTeacher(teachers, externalSessions, periods, regularBusy);
   tabs.forEach(tab => {
     // v4(Y)+E-3: このタブが使う日・使う時限だけで分析する (dates と対称)。
     // periods をプール全体にすると inactive 時限の stale セルまで数え、

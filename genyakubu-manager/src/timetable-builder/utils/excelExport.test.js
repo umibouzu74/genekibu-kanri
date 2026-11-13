@@ -18,7 +18,7 @@ const hoist = (project) => ({
   dates: project.dates || project.tabs?.[0]?.config?.dates || [],
   periods: project.periods || project.tabs?.[0]?.config?.periods || [],
 });
-const buildScheduleWorkbook = (project) => _buildScheduleWorkbook(hoist(project));
+const buildScheduleWorkbook = (project, opts) => _buildScheduleWorkbook(hoist(project), opts);
 const buildTeacherWorkbook = (project) => _buildTeacherWorkbook(hoist(project));
 const computeSubjectStats = (project, subject) => _computeSubjectStats(hoist(project), subject);
 const computeTeacherClassCounts = (project) => _computeTeacherClassCounts(hoist(project));
@@ -192,6 +192,27 @@ describe('buildScheduleWorkbook', () => {
     expect(ws.getCell(3, 3).value).toBe('英語\n堀上(中学2:計2)\n⚠NG');
     // 12/25 2限 = NG ではない → ⚠NG なし
     expect(ws.getCell(4, 3).value).toBe('英語\n堀上(中学2:計2)');
+  });
+
+  it('通常授業との重なり (regularBusy) を渡すと、その時限にも ⚠NG が付く', () => {
+    const base = makeProject();
+    const project = {
+      ...base,
+      tabs: [{
+        ...base.tabs[0],
+        config: {
+          ...base.tabs[0].config,
+          periods: [{ id: 1, label: '1限 (18:00~19:00)' }, { id: 2, label: '2限 (19:10~20:10)' }],
+        },
+      }],
+    };
+    const regularBusy = { 堀上: { '12/25(木)': [{ time: '19:55-20:55', label: '附中1 数学' }] } };
+    const ws = buildScheduleWorkbook(project, { regularBusy }).getWorksheet('メイン');
+    expect(ws.getCell(3, 3).value).toBe('英語\n堀上(中学2:計2)');
+    expect(ws.getCell(4, 3).value).toBe('英語\n堀上(中学2:計2)\n⚠NG');
+    // 渡さなければ従来どおり
+    const plain = buildScheduleWorkbook(project).getWorksheet('メイン');
+    expect(plain.getCell(4, 3).value).toBe('英語\n堀上(中学2:計2)');
   });
 
   it('teacher 未定 (空 or "未定") のセルは中学/計の suffix を付けない', () => {

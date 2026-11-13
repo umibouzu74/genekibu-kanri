@@ -1093,3 +1093,41 @@ describe('generateSinglePattern — planning (B1・B2・B3)', () => {
     expect(days).toContain('仙波');
   });
 });
+
+// ─── 通常授業との講師の重なり (planning.regularBusy) ─────────────────
+describe('generateSinglePattern — 通常授業との重なり (regularBusy)', () => {
+  const T = (name) => ({ name, subjects: ['英語', '数学'], ngSlots: [], ngClasses: [], priorityClasses: [] });
+  const P1 = '1限 (18:00~19:00)';
+  const P2 = '2限 (19:10~20:10)';
+
+  it('通常授業と重なる / 接する時限に講師を入れない (メイン側で解いた regularBusy を自動NG に合流)', () => {
+    const project = makeProject({
+      teachers: [T('石原'), T('河野')],
+      dates: ['1/12(火)', '1/19(火)'],
+      periods: [P1, P2],
+      // 1 日に同じ科目は 1 回なので 2 科目
+      subjectCounts: { 英語: 2, 数学: 2 },
+    });
+    // 石原は 1/12 の 19:40-20:40 (2限に重なる)、河野は 1/19 の 17:00-18:00 (1限に接する)
+    const planning = {
+      regularBusy: {
+        石原: { '1/12(火)': [{ time: '19:40-20:40', label: '高1 高松一 英語' }] },
+        河野: { '1/19(火)': [{ time: '17:00-18:00', label: '中2C 英語' }] },
+      },
+    };
+    for (let seed = 1; seed <= 5; seed++) {
+      const r = generateSinglePattern({ project, activeTabId: 1, seed, planning });
+      expect(r.solution[makeKey(1, 2, 1)].teacher).toBe('河野');
+      expect(r.solution[makeKey(2, 1, 1)].teacher).toBe('石原');
+    }
+  });
+
+  it('ほかに入れる人がいなければ埋めない (ハード制約)。渡さなければ従来どおり埋まる', () => {
+    const project = makeProject({ teachers: [T('石原')], periods: [P1] });
+    const planning = { regularBusy: { 石原: { '12/25(木)': [{ time: '18:30-19:30', label: '中1 英語' }] } } };
+    const blocked = generateSinglePattern({ project, activeTabId: 1, seed: 1, planning });
+    expect(blocked.solution?.[makeKey(1, 1, 1)]?.teacher).not.toBe('石原');
+    const free = generateSinglePattern({ project, activeTabId: 1, seed: 1 });
+    expect(free.solution[makeKey(1, 1, 1)].teacher).toBe('石原');
+  });
+});

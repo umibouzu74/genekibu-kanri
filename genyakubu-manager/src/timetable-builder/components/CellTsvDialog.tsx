@@ -18,7 +18,7 @@ const STATUS: Record<string, { label: string; cls: string }> = {
 export default function CellTsvDialog({ onClose }: { onClose: () => void }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef, { onClose });
-  const { project, importScheduleCells } = useProjectContext();
+  const { project, importScheduleCells, analysis } = useProjectContext();
   const { showToast } = useUI();
   const [allTabs, setAllTabs] = useState(false);
   const exported = useMemo(
@@ -39,7 +39,7 @@ export default function CellTsvDialog({ onClose }: { onClose: () => void }) {
   };
   const check = () => {
     const p = parseCellTsv(text, project, project.activeTabId);
-    setPlan({ ...p, problems: newProblemsAfterWrites(project, p.writes) });
+    setPlan({ ...p, problems: newProblemsAfterWrites(project, p.writes, analysis?.regularBusy) });
   };
   const apply = () => {
     if (!plan || plan.errorCount > 0 || plan.writes.length === 0) return;

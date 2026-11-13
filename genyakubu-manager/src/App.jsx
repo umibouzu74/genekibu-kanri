@@ -2050,6 +2050,14 @@ export default function App() {
               regularSlots={slots}
               regularTimetables={timetables}
               teacherCategoriesByYear={builderTeacherCategories}
+              // 通常授業との講師の重なり (講習の自動NG)。授業時間の集計と同じ関数で
+              // 「その日に実際に教える人」を出すので、同じデータを渡す
+              examPeriods={examPeriods}
+              biweeklyAnchors={biweeklyAnchors}
+              substitutes={subs}
+              adjustments={adjustments}
+              daySchedules={daySchedules}
+              displayCutoff={displayCutoff}
             />
           )}
           {view === VIEWS.REGULAR_BUILDER && !selected && (

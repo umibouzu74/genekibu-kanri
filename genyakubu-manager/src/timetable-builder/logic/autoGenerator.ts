@@ -224,7 +224,8 @@ export function generateSinglePattern({
   /**
    * 組み方の手がかり (B1・B2・B3、utils/planningHints.buildPlanningHints)。
    * 普段の担当を先に・控えめを後に試し、使わない講師は候補にしない。連続出勤日数の
-   * 上限はハード制約。worker は hostData を持たないので呼び出し側が解いて渡す
+   * 上限はハード制約。通常授業との講師の重なり (regularBusy) は自動NG に合流する。
+   * worker は hostData を持たないので呼び出し側が解いて渡す
    */
   planning?: PlanningHints | null;
 }): GenerationResult {
@@ -248,11 +249,13 @@ export function generateSinglePattern({
   const maxConsecutive = project.maxConsecutivePeriods ?? 0;
 
   // 自動NG (他学年セッションと時限の時間重複から派生) を pre-compute。
-  // solver の NG 判定でも手動NGと同等に扱う。
+  // solver の NG 判定でも手動NGと同等に扱う。通常授業との講師の重なり
+  // (planning.regularBusy。メイン側で解いたもの) もここで合流する。
   const autoNgByTeacher = computeAutoNgByTeacher(
     project.teachers,
     project.externalSessions || [],
     currentConfig.periods,
+    planning?.regularBusy,
   );
 
   // H2: 他タブの確定割当 (同時限 busy + 日次コマ数)

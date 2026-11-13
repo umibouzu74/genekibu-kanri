@@ -17,6 +17,7 @@ import { makeKey, findCombinedGroup, isPrimaryCombinedClass, makeExternalKey, ma
 import { quotaForClass } from './subjectQuota';
 import { computeGlobalUsage, makeSubjectOrderMarker } from './analysisHelpers';
 import { computeAutoNgByTeacher } from './autoNg';
+import type { RegularBusy } from './autoNg';
 import { getPeriodTimeRange, getSessionTimeRange } from './timeRange';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { computePresetMemoBackfill } from './presetMemoBackfill';
@@ -173,7 +174,15 @@ export async function downloadWorkbook(workbook: ExcelJS.Workbook, filename: str
 // 完成版レイアウトの distributionExport.buildDistributionWorkbook を使う
 // (旧 L5c の clean オプション = 注記なし学年グリッドは 2026-07-16 に
 // 完成版レイアウトへ置き換えて廃止)。
-export function buildScheduleWorkbook(project: Project): ExcelJS.Workbook {
+/**
+ * ⚠NG の注記に通常授業との講師の重なりも入れるためのオプション (画面の
+ * analysis.regularBusy をそのまま渡す。省略なら手動NG・他学年セッション・調査だけ)
+ */
+export interface ScheduleExcelOptions {
+  regularBusy?: RegularBusy | null;
+}
+
+export function buildScheduleWorkbook(project: Project, { regularBusy = null }: ScheduleExcelOptions = {}): ExcelJS.Workbook {
   const cleaned = cleanSchedule(project);
   const workbook = new ExcelJS.Workbook();
   const subjectColors = project.subjectColors || {};
@@ -209,6 +218,7 @@ export function buildScheduleWorkbook(project: Project): ExcelJS.Workbook {
       project.teachers || [],
       cleaned.externalSessions || [],
       periods,
+      regularBusy,
     );
 
     // N5a: タイトル行。シートを単体で印刷・配布しても「何の・いつの時間割か」
@@ -320,7 +330,7 @@ export function buildScheduleWorkbook(project: Project): ExcelJS.Workbook {
   // 必要/不足コマは作成者向けの分析情報 (配布物には載せない → 配布用は
   // distributionExport 側で科目別シートを作らないことで担保)。
   collectAllSubjects(cleaned).forEach(subject => {
-    buildOneSubjectSheet(workbook, cleaned, subject);
+    buildOneSubjectSheet(workbook, cleaned, subject, { regularBusy });
   });
 
   return workbook;
@@ -349,7 +359,7 @@ function collectAllSubjects(project: Project): string[] {
 //   - teachersFound: Set<string>  teacherStats に登場した講師
 //   - detailRows: [{ date, period, className, tabName, teacher, note }]
 //       note には "合同(...)" / "⚠NG" が入る
-export function computeSubjectStats(project: Project, subject: string) {
+export function computeSubjectStats(project: Project, subject: string, { regularBusy = null }: ScheduleExcelOptions = {}) {
   const combinedGroups = project.combinedGroups || [];
   const teachersByName = new Map((project.teachers || []).map(t => [t.name, t] as const));
   const UNASSIGNED_KEY = '(未定)';
@@ -364,6 +374,7 @@ export function computeSubjectStats(project: Project, subject: string) {
     project.teachers || [],
     project.externalSessions || [],
     project.periods || [],
+    regularBusy,
   );
 
   (project.tabs || []).forEach(tab => {
@@ -451,11 +462,11 @@ export function uniqueSheetName(workbook: ExcelJS.Workbook, baseName: string): s
   }
 }
 
-function buildOneSubjectSheet(workbook: ExcelJS.Workbook, project: Project, subject: string) {
+function buildOneSubjectSheet(workbook: ExcelJS.Workbook, project: Project, subject: string, opts: ScheduleExcelOptions = {}) {
   const safeSubject = subject.replace(/[\\/:?*[\]]/g, '');
   const ws = workbook.addWorksheet(uniqueSheetName(workbook, `科目別_${safeSubject}`));
 
-  const stats = computeSubjectStats(project, subject);
+  const stats = computeSubjectStats(project, subject, opts);
   const subjColor = (project.subjectColors || {})[subject];
   const tabNames = (project.tabs || []).map(t => t.name);
 
@@ -554,8 +565,8 @@ export function buildExcelFilename(project: Pick<Project, 'name'>, suffix: strin
 }
 
 // ─── 全体 Excel: 公開エントリ ──────────────────────────────────────
-export async function downloadScheduleExcel(project: Project) {
-  const workbook = buildScheduleWorkbook(project);
+export async function downloadScheduleExcel(project: Project, opts: ScheduleExcelOptions = {}) {
+  const workbook = buildScheduleWorkbook(project, opts);
   await downloadWorkbook(workbook, buildExcelFilename(project, '全体'));
 }
 
