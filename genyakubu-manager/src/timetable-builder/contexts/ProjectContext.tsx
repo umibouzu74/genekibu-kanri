@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useProject } from '../hooks/useProject';
 import { useAnalysis } from '../hooks/useAnalysis';
+import { useRegularBusy } from '../hooks/useRegularBusy';
 import { ProjectContext } from './projectContextValue';
 import type { ReactNode } from 'react';
 import type { HistoryStackOptions } from '../hooks/useHistoryStack';
@@ -13,10 +14,13 @@ export function ProjectProvider({
   initialProject,
 }: { children: ReactNode } & HistoryStackOptions) {
   const projectState = useProject({ storage, initialProject });
+  // 通常授業との講師の重なり (本体のデータから導出。自動NG に合流する)
+  const regularBusy = useRegularBusy(projectState.project);
   const { analysis, dashboard } = useAnalysis(
     projectState.project,
     projectState.currentSchedule,
-    projectState.currentConfig
+    projectState.currentConfig,
+    regularBusy,
   );
 
   // useContext consumer の再レンダーを抑えるため value object を memo 化する。

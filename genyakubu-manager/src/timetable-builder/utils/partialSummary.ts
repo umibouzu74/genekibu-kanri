@@ -12,6 +12,7 @@
 import { makeKey, makeExternalKey, findCombinedGroup } from './scheduleKey';
 import { canTeachSubject, isNgSlot, isNgClass, resolveTeacherDailyLimit, resolveTeacherConsecutive } from '../logic/constraints/teacherConstraints';
 import { computeAutoNgByTeacher } from './autoNg';
+import type { RegularBusy } from './autoNg';
 import { quotaForClass, quotasForClass } from './subjectQuota';
 import { resolveGenerationParams } from './generationParams';
 import type { EffectiveConfig, Project, Schedule } from '../types';
@@ -93,6 +94,8 @@ export function diagnoseUnfilledCells(
   schedule: Schedule | null | undefined,
   config: Pick<EffectiveConfig, 'dates' | 'periods' | 'classes' | 'subjectCounts' | 'classSubjectCounts'> | null | undefined,
   project: Pick<Project, 'teachers' | 'combinedGroups' | 'externalCounts' | 'externalSessions' | 'maxDailyHours' | 'maxConsecutivePeriods'> | null | undefined,
+  /** 通常授業との講師の重なり (自動作成に渡したものと同じ = analysis.regularBusy) */
+  regularBusy: RegularBusy | null = null,
 ): Map<string, UnfilledCellDiagnosis> {
   const result = new Map<string, UnfilledCellDiagnosis>();
   if (!schedule || !config || !project) return result;
@@ -100,7 +103,7 @@ export function diagnoseUnfilledCells(
   const combinedGroups = project.combinedGroups || [];
   const externalCounts = project.externalCounts || {};
   const { maxDailyHours, maxConsecutivePeriods } = resolveGenerationParams(project);
-  const autoNgByTeacher = computeAutoNgByTeacher(teachers, project.externalSessions || [], config.periods || []);
+  const autoNgByTeacher = computeAutoNgByTeacher(teachers, project.externalSessions || [], config.periods || [], regularBusy);
 
   // ── この案の割当を 1 パスで集計 (合同は 1 コマ扱い = solver と同規則) ──
   const busy = new Set<string>();                 // `${dateId}|${periodId}|${name}`

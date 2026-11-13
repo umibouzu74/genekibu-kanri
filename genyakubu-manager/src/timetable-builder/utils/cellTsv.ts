@@ -14,6 +14,7 @@ import type { Project, Schedule } from '../types';
 import { effectiveConfigForTab, findCombinedGroup, makeKey, makeNgKey, makeExternalKey } from './scheduleKey';
 import { computeGlobalUsage } from './analysisHelpers';
 import { computeAutoNgByTeacher } from './autoNg';
+import type { RegularBusy } from './autoNg';
 import { resolveTeacherDailyLimit } from '../logic/constraints/teacherConstraints';
 import { resolveGenerationParams } from './constants';
 import { parseCsvLine } from './csvImport';
@@ -227,11 +228,16 @@ export function projectWithWrites(project: Project, writes: CellWrite[]): Projec
  * 貼った後に新しく増える問題 (NG・同じ時間の講師の重なり・日上限)。今ある問題は
  * 出さない (貼り付けで増えるものだけ)
  */
-export function newProblemsAfterWrites(project: Project, writes: CellWrite[]): string[] {
+export function newProblemsAfterWrites(
+  project: Project,
+  writes: CellWrite[],
+  /** 通常授業との講師の重なり (画面の analysis.regularBusy) */
+  regularBusy: RegularBusy | null = null,
+): string[] {
   if (writes.length === 0) return [];
   const after = projectWithWrites(project, writes);
   const out: string[] = [];
-  const autoNg = computeAutoNgByTeacher(project.teachers, project.externalSessions || [], project.periods || []);
+  const autoNg = computeAutoNgByTeacher(project.teachers, project.externalSessions || [], project.periods || [], regularBusy);
   const teachers = new Map((project.teachers || []).map(t => [t.name, t]));
   const dateLabel = new Map((project.dates || []).map(d => [d.id, d.label]));
   const periodLabel = new Map((project.periods || []).map(p => [p.id, p.label]));

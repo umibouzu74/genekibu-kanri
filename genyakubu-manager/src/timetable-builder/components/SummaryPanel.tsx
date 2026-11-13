@@ -143,10 +143,10 @@ function PatternStats({ pat }) {
 // 残りはグリッドを目視で探すしかなかった。
 // N3b: セルごとに「なぜ埋まらないか」(候補なし/NG/上限/探索切れ) を添え、
 // 「設定を直すか・もう一度回すか」を判断できるようにする。
-function UnfilledBreakdown({ schedule, config, project }: { schedule: Schedule; config: any; project: any }) {
+function UnfilledBreakdown({ schedule, config, project, regularBusy }: { schedule: Schedule; config: any; project: any; regularBusy?: any }) {
   const { cells, shortages } = summarizeUnfilled(schedule, config);
   if (cells.length === 0) return null;
-  const diagnoses = diagnoseUnfilledCells(schedule, config, project);
+  const diagnoses = diagnoseUnfilledCells(schedule, config, project, regularBusy);
   const hasSearchExhausted = cells.some(c => diagnoses.get(c.key)?.kind === 'searchExhausted');
   const MAX_CELLS = 10;
   return (
@@ -367,7 +367,7 @@ export default function SummaryPanel({ showSummary, generatedPatterns, setGenera
                   )}
                 </div>
                 <PatternStats pat={pat} />
-                {pat.isPartial && <UnfilledBreakdown schedule={pat.schedule} config={patternConfig} project={project} />}
+                {pat.isPartial && <UnfilledBreakdown schedule={pat.schedule} config={patternConfig} project={project} regularBusy={analysis.regularBusy} />}
                 <SummaryTable
                   target={pat.schedule}
                   config={patternConfig}

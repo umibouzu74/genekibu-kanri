@@ -9,7 +9,8 @@ import {
   computeViolations,
   computeInfeasibilities,
 } from '../utils/analysisHelpers';
-import { computeAutoNgByTeacher } from '../utils/autoNg';
+import { EMPTY_REGULAR_BUSY, computeAutoNgByTeacher } from '../utils/autoNg';
+import type { RegularBusy } from '../utils/autoNg';
 import { answeredTeacherNames, computeSurveyDays } from '../utils/availability';
 import { buildFixSuggestions } from '../utils/fixSuggestions';
 import { computeNgViolationList } from '../utils/ngViolations';
@@ -24,7 +25,17 @@ const DEFAULT_MAX_DAILY_HOURS = 6;
 //                 teacherDailyCounts, tabErrorCounts, violations,
 //                 infeasibilities, incompleteDateIds }
 //   - dashboard: { progress, filled, total }
-export function useAnalysis(project: Project, currentSchedule: Schedule, currentConfig: EffectiveConfig) {
+//
+// regularBusy: 通常授業との講師の重なり (hooks/useRegularBusy が本体のデータから
+// 導出したもの)。自動NG に合流させ、analysis.regularBusy としても配る — project から
+// 自動NG を作り直す所 (Excel・自動作成・セルの表の貼り付け確認・未充填の診断) が
+// 同じものを computeAutoNgByTeacher に渡せるように。
+export function useAnalysis(
+  project: Project,
+  currentSchedule: Schedule,
+  currentConfig: EffectiveConfig,
+  regularBusy: RegularBusy = EMPTY_REGULAR_BUSY,
+) {
   const { teacherDailyCounts, globalUsage } = useMemo(
     () => computeGlobalUsage(project.tabs, project.combinedGroups, project.externalCounts, project.externalSessions, project.dates, project.periods),
     [project.tabs, project.combinedGroups, project.externalCounts, project.externalSessions, project.dates, project.periods],
@@ -42,8 +53,9 @@ export function useAnalysis(project: Project, currentSchedule: Schedule, current
       project.teachers,
       project.externalSessions || [],
       project.periods || [],
+      regularBusy,
     ),
-    [project.teachers, project.externalSessions, project.periods],
+    [project.teachers, project.externalSessions, project.periods, regularBusy],
   );
 
   // 出勤可能調査に回答済みの講師 (今の調査の対象マスに記号が 1 つでもある人)。
@@ -77,8 +89,9 @@ export function useAnalysis(project: Project, currentSchedule: Schedule, current
       tabs: project.tabs, globalUsage, teachers: project.teachers,
       externalSessions: project.externalSessions || [],
       dates: project.dates, periods: project.periods,
+      regularBusy,
     }),
-    [project.tabs, globalUsage, project.teachers, project.externalSessions, project.dates, project.periods],
+    [project.tabs, globalUsage, project.teachers, project.externalSessions, project.dates, project.periods, regularBusy],
   );
 
   const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;
@@ -128,8 +141,8 @@ export function useAnalysis(project: Project, currentSchedule: Schedule, current
   );
 
   const analysis = useMemo(
-    () => ({ ...activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds, surveyAnsweredTeachers, ngViolationList }),
-    [activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds, surveyAnsweredTeachers, ngViolationList],
+    () => ({ ...activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds, surveyAnsweredTeachers, ngViolationList, regularBusy }),
+    [activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds, surveyAnsweredTeachers, ngViolationList, regularBusy],
   );
 
   const dashboard = useMemo(

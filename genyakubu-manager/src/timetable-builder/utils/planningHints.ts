@@ -5,12 +5,13 @@
 // どれも時間割のデータ・人の設定から決まる (使用履歴は使わない、A18)。
 // 本体のデータ (所属) は hostData から読み取り専用で受ける。自動作成は Web Worker で
 // 走るので、ここで名前の集合まで解いた PlanningHints を渡す (worker は hostData を
-// 持たない)。
+// 持たない)。通常授業との講師の重なり (regularBusy) も同じ経路で渡す。
 import type { DayStreakRule, Project, Teacher, TeacherUsage } from '../types';
 import { effectiveConfigForTab } from './scheduleKey';
 import { getPeriodTimeRange } from './timeRange';
 import { projectBaseYmd, resolveDateLabelsYmd } from './courseDates';
 import type { UsualTeachersIndex } from './usualTeachersIndex';
+import type { RegularBusy } from './autoNg';
 
 export const YOBIKO_CATEGORY = 'yobiko';
 
@@ -195,6 +196,12 @@ export interface PlanningHints {
     periodIds: number[];
     dayIndexByDateId: Array<[number, number]>;
   }>;
+  /**
+   * 通常授業との講師の重なり (utils/regularBusy がメイン側で「講師 → 日付ラベル →
+   * その日に教える通常授業」まで解いたもの)。自動作成はこれを自動NG に合流させ、
+   * 通常授業と重なる / 接する時限に講師を入れない (ハード制約 = ほかの NG と同じ)
+   */
+  regularBusy?: RegularBusy;
 }
 
 export function buildPlanningHints(
@@ -202,8 +209,10 @@ export function buildPlanningHints(
   activeTabId: number,
   usualIndex: UsualTeachersIndex | null,
   categories: Record<string, string>,
+  regularBusy: RegularBusy | null = null,
 ): PlanningHints {
   const hints: PlanningHints = {};
+  if (regularBusy && Object.keys(regularBusy).length > 0) hints.regularBusy = regularBusy;
   const tab = (project.tabs || []).find(t => t.id === activeTabId);
   if (tab && usualIndex?.hasLinks) {
     const usual: Record<string, string[]> = {};

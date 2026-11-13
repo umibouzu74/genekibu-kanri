@@ -364,7 +364,7 @@ function ScheduleApp({ season }: { season: KoshuSeason }) {
       project,
       activeTabId: project.activeTabId,
       // 普段の担当・講師の使い方・連続出勤日数の上限 (B1・B3・B2)
-      planning: buildPlanningHints(project, project.activeTabId, planningCtx.usual, planningCtx.categories),
+      planning: buildPlanningHints(project, project.activeTabId, planningCtx.usual, planningCtx.categories, analysis?.regularBusy),
       numPatterns: NUM_PATTERNS,
       baseSeed,
       onPattern: (index, result) => {
@@ -770,13 +770,15 @@ function SeasonWorkspace({
     );
   }
   return (
-    <ProjectProvider storage={storage} initialProject={decided.initialProject}>
-      <HostDataContext.Provider value={hostData}>
+    // 本体のデータは ProjectProvider より外 (通常授業との講師の重なり = 自動NG を
+    // ProjectProvider が本体のデータから導出する。hooks/useRegularBusy)
+    <HostDataContext.Provider value={hostData}>
+      <ProjectProvider storage={storage} initialProject={decided.initialProject}>
         <UsualTeachersProvider>
           <ScheduleApp season={season} />
         </UsualTeachersProvider>
-      </HostDataContext.Provider>
-    </ProjectProvider>
+      </ProjectProvider>
+    </HostDataContext.Provider>
   );
 }
 
@@ -811,6 +813,12 @@ export default function BuilderApp({
   regularSlots = EMPTY_HOST_LIST,
   regularTimetables = EMPTY_HOST_LIST,
   teacherCategoriesByYear = EMPTY_HOST_CATEGORIES,
+  examPeriods = EMPTY_HOST_LIST,
+  biweeklyAnchors = EMPTY_HOST_LIST,
+  substitutes = EMPTY_HOST_LIST,
+  adjustments = EMPTY_HOST_LIST,
+  daySchedules = EMPTY_HOST_LIST,
+  displayCutoff,
 }: Partial<HostData> & {
   season?: KoshuSeason;
   onSeasonChange?: (season: KoshuSeason) => void;
@@ -830,8 +838,18 @@ export default function BuilderApp({
       regularSlots,
       regularTimetables,
       teacherCategoriesByYear,
+      examPeriods,
+      biweeklyAnchors,
+      substitutes,
+      adjustments,
+      daySchedules,
+      displayCutoff,
     }),
-    [offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents, seniorKoshuItems, regularSlots, regularTimetables, teacherCategoriesByYear],
+    [
+      offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents, seniorKoshuItems,
+      regularSlots, regularTimetables, teacherCategoriesByYear,
+      examPeriods, biweeklyAnchors, substitutes, adjustments, daySchedules, displayCutoff,
+    ],
   );
   // 季節ごとに作り直すのは作業領域だけ (key)。UIProvider も中に入れて作り直すので、
   // 開いたままの確認ダイアログが、季節を切り替えた後に前の季節の操作 (リセット・

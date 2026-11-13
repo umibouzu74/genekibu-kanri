@@ -7,12 +7,13 @@
 // 手で拾った)。全タブを通して、当たっている割当を理由つきで並べる。
 //
 // 判定は computeActiveAnalysis と同じ (手動NG = teacher.ngSlots、自動NG =
-// computeAutoNgByTeacher の Map)。タブの使う日・使う時限 (effectiveConfigForTab)
+// computeAutoNgByTeacher の Map。他学年セッション・通常授業との重なり・調査の ×)。タブの使う日・使う時限 (effectiveConfigForTab)
 // の外のセルは数えない (画面に出ないセル)。合同授業のように同じ日・時限・講師・
 // 科目で複数クラスに入っている割当は 1 件にまとめる。
 
 import { effectiveConfigForTab, makeKey, makeNgKey } from './scheduleKey';
 import { formatHHmm, getSessionTimeRange } from './timeRange';
+import { describeRegularBusy } from './autoNg';
 import type { AutoNgEntries } from './autoNg';
 import { normalizeSessionCourse } from './externalSessionShape';
 import type { Project, Teacher } from '../types';
@@ -28,7 +29,7 @@ export interface NgViolationItem {
   classLabels: string[];
   subject: string;
   teacher: string;
-  /** NG の理由 (「予備校４限 14:20〜15:30」「手動NG」「出勤可能調査で ×」) */
+  /** NG の理由 (「予備校４限 14:20〜15:30」「通常授業 附中1 数学 19:55-20:55」「手動NG」「出勤可能調査で ×」) */
   reasons: string[];
 }
 
@@ -74,6 +75,11 @@ export function computeNgViolationList(
           const reasons: string[] = [];
           (auto?.sessions || []).forEach(s => {
             const text = describeSession(s);
+            if (!reasons.includes(text)) reasons.push(text);
+          });
+          // 通常授業との重なり (本体の時間割・代行・振替から導出。utils/regularBusy)
+          (auto?.regular || []).forEach(r => {
+            const text = describeRegularBusy(r);
             if (!reasons.includes(text)) reasons.push(text);
           });
           if (auto?.availability) reasons.push('出勤可能調査で ×');

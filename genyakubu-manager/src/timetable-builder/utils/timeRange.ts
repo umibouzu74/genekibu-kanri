@@ -136,6 +136,19 @@ export function timeRangesOverlap(a: TimeRange | null | undefined, b: TimeRange 
   return a.startMin < b.endMin && b.startMin < a.endMin;
 }
 
+// 2 つの時間帯が重なるか、**端が接する** (19:00 終了と 19:00 開始) か。
+// 通常授業との重なり (utils/regularBusy → autoNg) だけが使う: 間が 0 分だと
+// 教室の移動が間に合わないので NG に倒す (2026-11-13 確定)。他学年セッションの
+// 自動NG は従来どおり timeRangesOverlap (端点接触は非重複)。
+//   - 終了不明の側は「点」として、他方の [start, end] (両端含む) に入るかを見る
+export function timeRangesOverlapOrTouch(a: TimeRange | null | undefined, b: TimeRange | null | undefined): boolean {
+  if (!a || !b) return false;
+  if (a.startMin == null || b.startMin == null) return false;
+  const aEnd = a.endMin ?? a.startMin;
+  const bEnd = b.endMin ?? b.startMin;
+  return a.startMin <= bEnd && b.startMin <= aEnd;
+}
+
 // minutes を "HH:mm" に整形 (UI 表示・プレビュー用)。null/undefined は null。
 export function formatHHmm(minutes: number | null | undefined): string | null {
   if (minutes == null) return null;

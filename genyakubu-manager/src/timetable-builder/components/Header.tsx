@@ -29,6 +29,7 @@ export default function Header() {
     handleSaveJson,
     handleLoadJson,
     updateProjectName,
+    analysis,
   } = useProjectContext();
   const { showToast, showConfirm } = useUI();
 
@@ -90,7 +91,8 @@ export default function Header() {
     }
     try {
       if (type === 'all') {
-        await mod.downloadScheduleExcel(project);
+        // ⚠NG の注記は画面と同じ自動NG (通常授業との重なりも) で出す
+        await mod.downloadScheduleExcel(project, { regularBusy: analysis?.regularBusy });
         showToast('全体Excelをダウンロードしました');
       } else if (type === 'distribution') {
         // 掲示・配布用の完成版レイアウト (例年の紙面を再現、注記なし)
