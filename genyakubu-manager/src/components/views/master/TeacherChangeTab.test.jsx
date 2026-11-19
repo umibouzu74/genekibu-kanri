@@ -53,3 +53,47 @@ describe("TeacherChangeTab: 期間に授業のあるコマだけ既定でチェ�
     expect(next.filter((s) => s.teacherChanges).map((s) => s.id)).toEqual([1, 814, 820]);
   });
 });
+
+describe("TeacherChangeTab: 担当が変わる授業日と新担当の重なり (P2-4)", () => {
+  it("◯日まで を入れると、実際に変わる授業日を数える (1/8 金・1/12 火・1/15 金・1/19 火・1/22 金)", () => {
+    setup();
+    expect(screen.getByText("担当が変わる授業 計 5 回")).toBeInTheDocument();
+    const items = screen.getByRole("list", { name: "担当が変わる授業" }).querySelectorAll("li");
+    expect([...items].map((li) => li.textContent.slice(0, 4))).toEqual(["1/8 ", "1/12", "1/15", "1/19", "1/22"]);
+  });
+
+  it("休講で実施されない日は理由つきで別に出す", () => {
+    setup({ holidays: [{ id: 1, date: "2027-01-15", label: "休講", scope: ["全部"] }] });
+    expect(screen.getByText("担当が変わる授業 計 4 回")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "実施されない日" }).textContent).toMatch(/1\/15.*休講・テスト期間/);
+  });
+
+  it("新担当がその時間に別の授業を持っていれば知らせる (登録はできる)", () => {
+    const kawai = mk(900, 4, { teacher: "川井", grade: "中2", subj: "数学", room: "601" });
+    const saveSlots = vi.fn();
+    render(
+      <ToastProvider render={() => null}>
+        <TeacherChangeTab slots={[...SLOTS, kawai]} timetables={TTS} saveSlots={saveSlots} isAdmin />
+      </ToastProvider>
+    );
+    fireEvent.change(screen.getByLabelText("旧担当"), { target: { value: "福武" } });
+    fireEvent.change(screen.getByLabelText("開始日"), { target: { value: "2027-01-04" } });
+    fireEvent.change(screen.getByLabelText("新担当"), { target: { value: "川井" } });
+    fireEvent.change(screen.getByLabelText("◯日まで（任意）"), { target: { value: "2027-01-22" } });
+    const alert = screen.getByText(/川井 はこの時間に別の予定があります/).closest("[role=alert]");
+    expect(alert.textContent).toMatch(/1\/12.*中2.*数学/);
+    expect(screen.getByRole("button", { name: "2 コマに担当変更を付ける" })).toBeEnabled();
+  });
+
+  it("期限なしなら最初の数回と「以降も毎週」", () => {
+    const saveSlots = vi.fn();
+    render(
+      <ToastProvider render={() => null}>
+        <TeacherChangeTab slots={SLOTS} timetables={TTS} saveSlots={saveSlots} isAdmin />
+      </ToastProvider>
+    );
+    fireEvent.change(screen.getByLabelText("旧担当"), { target: { value: "福武" } });
+    fireEvent.change(screen.getByLabelText("開始日"), { target: { value: "2027-01-04" } });
+    expect(screen.getByText(/担当が変わる授業（最初の 8 回。以降も毎週）/)).toBeInTheDocument();
+  });
+});

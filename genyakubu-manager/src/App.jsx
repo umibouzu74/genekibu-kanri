@@ -1733,6 +1733,11 @@ export default function App() {
               sessionOverrides={sessionOverrides}
               subs={subs}
               saveSubs={saveSubs}
+              daySchedules={daySchedules}
+              specialEvents={specialEvents}
+              extraLessons={extraLessons}
+              offsiteLessons={offsiteLessons}
+              koshuLessons={koshuLessons}
               tab={masterTab}
               onTabChange={setMasterTab}
             />

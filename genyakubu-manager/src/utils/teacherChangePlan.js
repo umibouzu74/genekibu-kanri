@@ -19,6 +19,13 @@ import {
 import { firstSubjToken } from "./cohorts";
 import { currentTimetableIdsForGrade, isTimetableActiveForDate } from "./timetable";
 import { shiftDate } from "../components/views/dashboardHelpers";
+import {
+  buildDayOccupancy,
+  collectDayRescheduleCandidates,
+  findOccupancyConflicts,
+} from "./dayReschedule";
+import { computeSessionNumber } from "./sessionCount";
+import { timesOverlap } from "./teacherConflicts";
 
 /** その日の担当 (主担当の名前の配列と隔週の相手) */
 function teachersOn(slot, dateStr) {
@@ -228,3 +235,90 @@ export function describeTeacherChange({ change, prevTeacher }) {
   const to = change.partner ? `${change.teacher} / ${change.partner}` : change.teacher;
   return `${m}/${d}〜 ${to}${prevTeacher && prevTeacher !== change.teacher ? `（前：${prevTeacher}）` : ""}`;
 }
+
+// ─── 実際に変わる授業日と、新担当の重なり (2026-11-19、P2-4) ─────────────
+// 「2 コマに担当変更を付ける」だけでは何日の授業が何回変わるのか分からず、
+// 新担当がその時間に別の授業を持っていても何も出なかった。
+
+/** 期限なしのときに並べる授業の回数 (コマごと)。以降は「以降毎週」 */
+export const OPEN_ENDED_LESSON_LIMIT = 4;
+const SCAN_DAY_LIMIT = 400;
+
+/**
+ * 担当変更で担当が変わる授業日。実施の判定は日まるごと振替と同じ
+ * (dayReschedule.collectDayRescheduleCandidates = isSlotHeldOnDate + 表示期間)。
+ * 実施されない日は理由つきで別に返す。コマの時間割の期間外の日 (前の期・次の期) は
+ * 並べない (その期のコマではないので)。期限なしならコマごとに最初の数回だけ。
+ * @param {{slots: object[], from: string, until?: string|null, ctx: object,
+ *          limit?: number}} args slots は対象のコマ
+ * @returns {{lessons: {date: string, slot: object, sessionNo: number}[],
+ *            skipped: {date: string, slot: object, reason: string}[],
+ *            openEnded: boolean}}
+ */
+export function listChangeLessonDates({ slots, from, until = null, ctx, limit = OPEN_ENDED_LESSON_LIMIT }) {
+  const lessons = [];
+  const skipped = [];
+  if (!from || !Array.isArray(slots) || slots.length === 0) return { lessons, skipped, openEnded: !until };
+  const end = until && until >= from ? until : null;
+  for (const slot of slots) {
+    let held = 0;
+    let date = from;
+    for (let i = 0; i < SCAN_DAY_LIMIT && (!end || date <= end); i++, date = shiftDate(date, 1)) {
+      if (!end && held >= limit) break;
+      const r = collectDayRescheduleCandidates({ slots: [slot], dateStr: date, ctx });
+      if (r.candidates.length > 0) {
+        held += 1;
+        lessons.push({ date, slot, sessionNo: computeSessionNumber(slot, date, ctx) });
+      } else if (r.skipped.length > 0 && r.skipped[0].reason !== "時間割の期間外") {
+        skipped.push({ date, slot, reason: r.skipped[0].reason });
+      }
+    }
+  }
+  const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.slot.id - b.slot.id);
+  return { lessons: lessons.sort(byDate), skipped: skipped.sort(byDate), openEnded: !end };
+}
+
+/**
+ * 新担当がその授業の時間に塞がっているもの (警告。適用は止めない)。見るのは
+ * 日まるごと振替と同じ塞がり (dayReschedule.buildDayOccupancy: 本体の通常授業
+ * (代行・欠勤を入れた後)・振替で入るコマ・追加授業・他校舎の授業) と、講習
+ * (講習時間割作成の仮確定・確定のコマ。builderLessons の KoshuLesson)。
+ * 担当を変えるそのコマ自身は数えない。
+ * @returns {{date: string, slot: object, label: string}[]}
+ */
+export function findNewTeacherConflicts({
+  lessons,
+  newTeacher,
+  slots,
+  adjustments = [],
+  extraLessons = [],
+  subs = [],
+  offsiteLessons = [],
+  koshuLessons = [],
+  ctx,
+}) {
+  const names = splitTeacherField(newTeacher);
+  if (names.length === 0) return [];
+  const out = [];
+  const occupancyByDate = new Map();
+  for (const { date, slot } of lessons || []) {
+    let occ = occupancyByDate.get(date);
+    if (!occ) {
+      occ = buildDayOccupancy({ slots, dateStr: date, adjustments, extraLessons, subs, offsiteLessons, ctx });
+      occupancyByDate.set(date, occ);
+    }
+    const time = slot.time;
+    const others = occ.filter((o) => !(o.kind === "normal" && o.slot?.id === slot.id));
+    for (const c of findOccupancyConflicts(others, { time, teachers: names })) {
+      if (c.kind === "teacher") out.push({ date, slot, label: c.label });
+    }
+    for (const k of koshuLessons || []) {
+      if (!k || k.date !== date || !names.includes(k.teacher) || !k.time) continue;
+      if (!timesOverlap(k.time, time)) continue;
+      const what = [k.frameName || k.projectName, k.grade, k.cls, k.subj].filter(Boolean).join(" ");
+      out.push({ date, slot, label: `${k.teacher} / ${k.time} ${what} (講習)` });
+    }
+  }
+  return out;
+}
+
