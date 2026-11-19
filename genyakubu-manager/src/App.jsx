@@ -83,6 +83,8 @@ import {
 import {
   applyOrphanCleanup,
   cascadeOrphansForSlots,
+  countSlotReferences,
+  detectOrphans,
   describeOrphanDetection,
   listOrphanDetection,
 } from "./utils/orphanCleanup";
@@ -685,9 +687,57 @@ export default function App() {
     saveHolidays,
   });
   const subsCrud = useSubsCrud({ subs, saveSubs });
+  // cascade と同じ対象 (代行・調整・回数補正・旧式の授業セット) を、反映後の
+  // slots に対して掃除する。ReflectDialog が saveSlots の直後に呼ぶ。
+  // 残すと孤立データになり、そのバックアップのインポートで警告が出続ける
+  // (2026-09-04)。反映ダイアログの確認文で「一緒に削除される」と断っている
+  const handleSlotsReflected = useCallback(
+    (nextSlots) => {
+      const r = cascadeOrphansForSlots({
+        slots: nextSlots,
+        subs,
+        adjustments,
+        sessionOverrides,
+        classSets,
+        holidays,
+      });
+      if (r.changed.subs) saveSubs(r.nextSubs);
+      if (r.changed.adjustments) saveAdjustments(r.nextAdjustments);
+      if (r.changed.sessionOverrides) saveSessionOverrides(r.nextOverrides);
+      if (r.changed.classSets) saveClassSets(r.nextClassSets);
+      if (r.changed.holidays) saveHolidays(r.nextHolidays);
+      return r.detection;
+    },
+    [
+      subs,
+      adjustments,
+      sessionOverrides,
+      classSets,
+      holidays,
+      saveSubs,
+      saveAdjustments,
+      saveSessionOverrides,
+      saveClassSets,
+      saveHolidays,
+    ]
+  );
+
+  // コマを消す前の下見 (消すと孤立する代行・調整などの件数)。時間割の削除・
+  // 同じ内容のコマの整理の確認ダイアログが使う (handleSlotsReflected と同じ対象)
+  const detectSlotRemoval = useCallback(
+    (nextSlots) =>
+      detectOrphans({ slots: nextSlots, subs, adjustments, sessionOverrides, classSets, holidays }),
+    [subs, adjustments, sessionOverrides, classSets, holidays]
+  );
+  // コマごとの参照の数 (同じ内容のコマの整理で、参照されている側を既定で残す)
+  const slotReferenceCounts = useMemo(
+    () => countSlotReferences({ subs, adjustments, sessionOverrides, classSets, holidays }),
+    [subs, adjustments, sessionOverrides, classSets, holidays]
+  );
   const ttCrud = useTimetablesCrud({
     timetables, saveTimetables, slots, saveSlots,
     classSets, saveClassSets, saveDisplayCutoff,
+    detectSlotRemoval, onSlotsRemoved: handleSlotsReflected,
   });
   const adjCrud = useAdjustmentsCrud({ adjustments, saveAdjustments });
 
@@ -1052,41 +1102,6 @@ export default function App() {
   );
 
   // 通常時間割作成の「置き換え」反映で消えたコマの後始末。コマ削除の
-  // cascade と同じ対象 (代行・調整・回数補正・旧式の授業セット) を、反映後の
-  // slots に対して掃除する。ReflectDialog が saveSlots の直後に呼ぶ。
-  // 残すと孤立データになり、そのバックアップのインポートで警告が出続ける
-  // (2026-09-04)。反映ダイアログの確認文で「一緒に削除される」と断っている
-  const handleSlotsReflected = useCallback(
-    (nextSlots) => {
-      const r = cascadeOrphansForSlots({
-        slots: nextSlots,
-        subs,
-        adjustments,
-        sessionOverrides,
-        classSets,
-        holidays,
-      });
-      if (r.changed.subs) saveSubs(r.nextSubs);
-      if (r.changed.adjustments) saveAdjustments(r.nextAdjustments);
-      if (r.changed.sessionOverrides) saveSessionOverrides(r.nextOverrides);
-      if (r.changed.classSets) saveClassSets(r.nextClassSets);
-      if (r.changed.holidays) saveHolidays(r.nextHolidays);
-      return r.detection;
-    },
-    [
-      subs,
-      adjustments,
-      sessionOverrides,
-      classSets,
-      holidays,
-      saveSubs,
-      saveAdjustments,
-      saveSessionOverrides,
-      saveClassSets,
-      saveHolidays,
-    ]
-  );
-
   // ─── g-prefix chord navigation ──────────────────────────────────
   // `g` を押した直後の 1.2 秒以内に 2 キー目を押すと、対応するビューへ遷移する。
   // 入力要素・モーダル表示中は無効化して、文字入力やダイアログ操作を妨げない。
@@ -1738,6 +1753,8 @@ export default function App() {
               sessionOverrides={sessionOverrides}
               daySchedules={daySchedules}
               adjustments={adjustments}
+              slotReferenceCounts={slotReferenceCounts}
+              detectSlotRemoval={detectSlotRemoval}
               isAdmin={isAdmin}
               sectionRequest={timetableSectionRequest}
               onConsumeSectionRequest={() => setTimetableSectionRequest(null)}

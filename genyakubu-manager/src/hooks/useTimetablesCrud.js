@@ -5,6 +5,8 @@ import { nextNumericId } from "../utils/schema";
 import { applyTimeBulkEdit } from "../utils/timeBulkEdit";
 import { isLegacySet } from "../utils/classSets";
 import { dropTimetableFromCutoff } from "../utils/timetable";
+import { countDuplicatesInTarget } from "../utils/duplicateSlots";
+import { describeOrphanDetection } from "../utils/orphanCleanup";
 
 /**
  * Timetable CRUD hook.
@@ -17,7 +19,13 @@ import { dropTimetableFromCutoff } from "../utils/timetable";
  *   saveClassSets?: (v: import("../types").ClassSet[]) => void,
  *   saveDisplayCutoff?: (v: import("../types").DisplayCutoff
  *     | ((prev: import("../types").DisplayCutoff) => import("../types").DisplayCutoff)) => void,
+ *   detectSlotRemoval?: (nextSlots: import("../types").Slot[]) => {total: number} | null,
+ *   onSlotsRemoved?: (nextSlots: import("../types").Slot[]) => {total: number} | null,
  * }} deps
+ *
+ * detectSlotRemoval / onSlotsRemoved はコマを消したときの孤立データ (代行・調整・
+ * 回数補正・休講日の例外…) の下見と後始末 (App の handleSlotsReflected。
+ * utils/orphanCleanup.cascadeOrphansForSlots)。
  */
 export function useTimetablesCrud({
   timetables,
@@ -27,6 +35,8 @@ export function useTimetablesCrud({
   classSets,
   saveClassSets,
   saveDisplayCutoff,
+  detectSlotRemoval,
+  onSlotsRemoved,
 }) {
   const toasts = useToasts();
   const crud = useCrudResource({ list: timetables, save: saveTimetables });
@@ -42,35 +52,89 @@ export function useTimetablesCrud({
     [crud]
   );
 
+  // 時間割の削除 (cascade あり → confirmedRemove)。コマのある時間割は、
+  // コマも一緒に削除するか、デフォルト時間割へ移すかを確認ダイアログで選ぶ
+  // (2026-11-19、P1-2)。以前は移すだけだったので、複製で作った時間割を消すと
+  // 複製元と同じコマがデフォルト側に二重に入った。どちらも既定にしない
+  // (コマごと消すと代行・調整も消え、移すと二重になりうるので、人が選ぶ)
   const remove = useCallback(
     async (id) => {
       if (id === 1) {
         toasts.error("デフォルト時間割は削除できません");
         return;
       }
+      const target = timetables.find((t) => t.id === id);
+      const defaultName = timetables.find((t) => t.id === 1)?.name || "デフォルト時間割";
       const linkedSlots = slots.filter((s) => s.timetableId === id);
-      const msg = linkedSlots.length
-        ? `この時間割には ${linkedSlots.length} 件のコマが割り当てられています。\n削除するとコマはデフォルト時間割に移動します。`
-        : "この時間割を削除しますか？";
+      const remaining = slots.filter((s) => s.timetableId !== id);
+      // この時間割だけの表示期間設定・終講日を外す (id を使い回したときに
+      // 新しい時間割へ黙って効かないように)
+      const dropCutoff = () => saveDisplayCutoff?.((prev) => dropTimetableFromCutoff(prev, id));
+      if (linkedSlots.length === 0) {
+        await crud.confirmedRemove(id, {
+          title: "時間割の削除",
+          message: `「${target?.name || "この時間割"}」を削除しますか？`,
+          successMsg: "時間割を削除しました",
+          cascade: dropCutoff,
+        });
+        return;
+      }
+      const detection = detectSlotRemoval ? detectSlotRemoval(remaining) : null;
+      const dupCount = countDuplicatesInTarget(linkedSlots, slots, 1);
       await crud.confirmedRemove(id, {
         title: "時間割の削除",
-        message: msg,
+        message:
+          `「${target?.name || "この時間割"}」を削除します。\n` +
+          `この時間割には ${linkedSlots.length} 件のコマがあります。コマをどうするか選んでください。`,
+        okLabel: "削除する",
         successMsg: "時間割を削除しました",
-        cascade: () => {
-          // この時間割だけの表示期間設定・終講日を外す (id を使い回したときに
-          // 新しい時間割へ黙って効かないように)
-          saveDisplayCutoff?.((prev) => dropTimetableFromCutoff(prev, id));
-          if (linkedSlots.length) {
-            saveSlots(
-              slots.map((s) =>
-                s.timetableId === id ? { ...s, timetableId: 1 } : s
-              )
-            );
+        choices: [
+          {
+            value: "delete",
+            label: `コマも一緒に削除する（${linkedSlots.length} コマ）`,
+            description:
+              detection && detection.total > 0
+                ? `このコマに付いている ${describeOrphanDetection(detection)} も消えます / 外れます`
+                : "このコマに付いている代行・調整などはありません",
+          },
+          {
+            value: "move",
+            label: `コマを「${defaultName}」へ移す`,
+            description:
+              dupCount > 0
+                ? `⚠ 同じ内容のコマが「${defaultName}」に ${dupCount} 件あります。移すとそのコマは二重に入ります`
+                : `「${defaultName}」に同じ内容のコマはありません`,
+            warn: dupCount > 0,
+          },
+        ],
+        cascade: (_id, how) => {
+          dropCutoff();
+          if (how === "delete") {
+            saveSlots(remaining);
+            const done = onSlotsRemoved ? onSlotsRemoved(remaining) : null;
+            if (done && done.total > 0) {
+              toasts.info(`紐付けの切れたデータを掃除しました（${describeOrphanDetection(done)}）`);
+            }
+          } else {
+            saveSlots(slots.map((s) => (s.timetableId === id ? { ...s, timetableId: 1 } : s)));
           }
         },
       });
     },
-    [slots, saveSlots, toasts, crud, saveDisplayCutoff]
+    [slots, saveSlots, toasts, crud, saveDisplayCutoff, timetables, detectSlotRemoval, onSlotsRemoved]
+  );
+
+  // コマをまとめて消す (同じ内容のコマの整理)。確認は呼び出し側 (cascade あり)。
+  // 消したコマに付いた代行・調整などは孤立データの掃除と同じく片付ける
+  const removeSlots = useCallback(
+    (ids) => {
+      const drop = new Set((ids || []).map(String));
+      if (drop.size === 0) return null;
+      const next = slots.filter((s) => !drop.has(String(s.id)));
+      saveSlots(next);
+      return onSlotsRemoved ? onSlotsRemoved(next) : null;
+    },
+    [slots, saveSlots, onSlotsRemoved]
   );
 
   const duplicate = useCallback(
@@ -174,5 +238,5 @@ export function useTimetablesCrud({
     [timetables, saveTimetables, saveSlots, classSets, saveClassSets, toasts]
   );
 
-  return { add, update, remove, duplicate, applyDuplicate, bulkRetime };
+  return { add, update, remove, removeSlots, duplicate, applyDuplicate, bulkRetime };
 }
