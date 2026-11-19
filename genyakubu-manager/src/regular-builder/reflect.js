@@ -17,6 +17,7 @@ import {
   gradeMatchesTimetable,
   groupsForTimetable,
   hasTimetableCutoffGroups,
+  isFirstTermTimetable,
   sharedCutoffGroups,
 } from "../utils/timetable";
 import { isOrientationEnabledForGrade } from "../utils/sessionCount";
@@ -395,7 +396,8 @@ export function buildSwitchPlan({
  * @param {{displayCutoff: import("../types").DisplayCutoff|null|undefined,
  *          startDate: string, endDate?: string|null,
  *          followDates?: boolean, clearOrientation?: boolean,
- *          timetableId?: number|null}} params
+ *          timetableId?: number|null, timetables?: object[]|null,
+ *          grades?: string[]|null}} params
  * @returns {{next: import("../types").DisplayCutoff,
  *            groupLabels: string[], cohortCount: number,
  *            orientationLabels: string[], changed: boolean}}
@@ -407,6 +409,8 @@ export function buildCutoffFollowUp({
   followDates = true,
   clearOrientation = false,
   timetableId = null,
+  timetables = null,
+  grades = null,
 }) {
   const groups = displayCutoff?.groups || [];
   const cohorts = displayCutoff?.cohorts || [];
@@ -430,12 +434,17 @@ export function buildCutoffFollowUp({
   const staleCohorts = cohorts.filter(
     (c) => c.date && c.date < startDate && c.timetableId == null
   );
-  // 「オリエンを外す」の対象は、いま有効になっているグループだけ
-  // (未設定 = 中学部のみ有効の既定にも追従する)。
+  // 「オリエンを外す」の対象は、新しい期でいま有効になっているグループだけ
+  // (未設定 = 年度の最初の期の中学部だけ有効の既定にも追従する。timetables を
+  // 渡せば新しい期が年度の最初の期かを見る。渡さなければ最初の期とみなす)。
+  const firstTerm = isFirstTermTimetable(
+    { id: timetableId ?? undefined, startDate, grades: grades || [] },
+    timetables || []
+  );
   const orientationLabels = clearOrientation
     ? template
         .filter((g) =>
-          isOrientationEnabledForGrade((g.grades || [])[0], { groups: [g] })
+          isOrientationEnabledForGrade((g.grades || [])[0], { groups: [g] }, { firstTerm })
         )
         .map((g) => g.label)
     : [];

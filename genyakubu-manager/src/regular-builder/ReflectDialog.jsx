@@ -197,9 +197,15 @@ export function ReflectDialog({
   const cutoffPreview = useMemo(
     () =>
       useSwitch && startDate
-        ? buildCutoffFollowUp({ displayCutoff, startDate, clearOrientation: true })
+        ? buildCutoffFollowUp({
+            displayCutoff,
+            startDate,
+            clearOrientation: true,
+            timetables,
+            grades: opts.grades,
+          })
         : null,
-    [useSwitch, displayCutoff, startDate]
+    [useSwitch, displayCutoff, startDate, timetables, opts.grades]
   );
   // 実際に書き戻すもの (チェックした項目だけを適用する)
   const cutoffPatch = useMemo(
@@ -211,9 +217,11 @@ export function ReflectDialog({
             endDate: endDate || null,
             followDates: followCutoff,
             clearOrientation,
+            timetables,
+            grades: opts.grades,
           })
         : null,
-    [useSwitch, displayCutoff, startDate, endDate, followCutoff, clearOrientation]
+    [useSwitch, displayCutoff, startDate, endDate, followCutoff, clearOrientation, timetables, opts.grades]
   );
   const orientationTargets = cutoffPreview?.orientationLabels || [];
   const canFollowCutoff =
@@ -336,6 +344,8 @@ export function ReflectDialog({
         followDates: followCutoff,
         clearOrientation,
         timetableId: result.timetableId,
+        timetables,
+        grades: opts.grades,
       });
       if (patch.changed) saveDisplayCutoff?.(patch.next);
     }

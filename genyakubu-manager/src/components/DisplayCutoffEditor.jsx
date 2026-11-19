@@ -12,6 +12,7 @@ import {
   getTimetableStatusOn,
   groupsForTimetable,
   hasTimetableCutoffGroups,
+  isFirstTermTimetable,
   resolveCutoffGroupTimetables,
   sharedCutoffGroups,
   summarizeCutoffGroups,
@@ -100,6 +101,8 @@ export function DisplayCutoffEditor({
     return defaultTimetableIdOn(allSlots || [], ttList, today) ?? ttList[0].id;
   }, [scoped, pickedTimetableId, ttList, allSlots, today]);
   const timetable = timetableId != null ? ttList.find((t) => t.id === timetableId) || null : null;
+  // オリエンの既定 (未設定のグループ) は年度の最初の期だけオン (2026-11-19)
+  const firstTerm = timetable ? isFirstTermTimetable(timetable, ttList) : true;
   const groups = useMemo(
     () => (timetableId == null ? allGroups : groupsForTimetable(allGroups, timetableId)),
     [allGroups, timetableId]
@@ -322,7 +325,9 @@ export function DisplayCutoffEditor({
           <b>開始日は「第N回」のカウント起点でもあります</b>
           （期の途中で動かすと回数が数え直しになります）。
           「オリエン」＝ 開始日以降の初回授業日の1限をオリエンテーション扱いにして
-          授業回数に数えません。2学期以降などオリエンが入らない期はオフにします。
+          授業回数に数えません。対象は本科のコマだけです（プレップなど学年をまたぐコマ・
+          附属・コマの編集で「オリエンの対象外」にしたコマは除く）。
+          設定していないグループは、年度の最初の期（1学期）の中学部だけオンになります。
         </div>
         {timetableId != null && (
           <div style={{ marginTop: 6 }}>
@@ -439,13 +444,15 @@ export function DisplayCutoffEditor({
           // 時間割の開始日から
           const startsBeforeTimetable =
             !!timetable?.startDate && !!group.startDate && group.startDate < timetable.startDate;
-          // 未設定 (従来データ) は中学部のみ有効の既定値を解決して表示する。
+          // 未設定は既定 (年度の最初の期の中学部だけオン) を解決して表示する。
           const orientationOn =
             typeof group.orientationFirstDay === "boolean"
               ? group.orientationFirstDay
-              : isOrientationEnabledForGrade((group.grades || [])[0], {
-                  groups: [group],
-                });
+              : isOrientationEnabledForGrade(
+                  (group.grades || [])[0],
+                  { groups: [group] },
+                  { firstTerm }
+                );
           const invertedRange =
             group.startDate && group.date && group.startDate > group.date;
           const last = lastSessions.get(cutoffGroupKey(group));
@@ -489,7 +496,7 @@ export function DisplayCutoffEditor({
                   </button>
                 )}
                 <label
-                  title="開始日以降の初回授業日の1限をオリエンテーション扱いにし、授業回数に数えません（2学期以降などオリエンが無い期はオフ）"
+                  title="開始日以降の初回授業日の1限（本科のコマ）をオリエンテーション扱いにし、授業回数に数えません（設定しなければ年度の最初の期の中学部だけオン）"
                   style={{
                     display: "inline-flex",
                     alignItems: "center",

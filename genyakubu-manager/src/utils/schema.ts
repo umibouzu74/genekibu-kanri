@@ -82,6 +82,7 @@ export function isSlot(x: unknown): x is Slot {
         (x.biweeklyAnchors as unknown[]).every((a) => isBiweeklyAnchor(a)))) &&
     (x.irregular === undefined || typeof x.irregular === "boolean") &&
     (x.separateWeekdayCount === undefined || typeof x.separateWeekdayCount === "boolean") &&
+    (x.noOrientation === undefined || typeof x.noOrientation === "boolean") &&
     (x.sessionStartNumber === undefined || isNumber(x.sessionStartNumber)) &&
     (x.onlyDates === undefined ||
       (Array.isArray(x.onlyDates) &&

@@ -127,10 +127,28 @@ describe("ReflectDialog (期切替)", () => {
     expect(saved.cohorts).toEqual([]);
   });
 
+  it("オリエンを設定していないグループは 2学期では既にオフなので「新しい期はオリエンなし」を出さない", () => {
+    const { dates } = renderDialog({
+      displayCutoff: {
+        groups: [{ label: "中学部", grades: ["中3"], startDate: "2026-04-01", date: "2026-08-31" }],
+        cohorts: [],
+      },
+    });
+    fireEvent.click(switchCheckbox());
+    fireEvent.change(dates()[0], { target: { value: "2026-09-01" } });
+    expect(screen.queryByRole("checkbox", { name: /新しい期はオリエンなしにする/ })).toBeNull();
+  });
+
   it("「新しい期はオリエンなし」だけを選ぶと日付は触らない", async () => {
     const displayCutoff = {
       groups: [
-        { label: "中学部", grades: ["中3"], startDate: "2026-04-01", date: "2026-08-31" },
+        {
+          label: "中学部",
+          grades: ["中3"],
+          startDate: "2026-04-01",
+          date: "2026-08-31",
+          orientationFirstDay: true,
+        },
       ],
       cohorts: [],
     };

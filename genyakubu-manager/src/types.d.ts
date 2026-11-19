@@ -30,6 +30,9 @@ export interface Slot {
   // sessionStartNumber: その期の最初の回を第N回から数える (2 学期は⑨から)
   separateWeekdayCount?: boolean;
   sessionStartNumber?: number;
+  // 開講日 1 限のオリエンの対象外 (内申対策など、本科と同じ学年でも授業の前に
+  // 簡単に済ませるコマ。sessionCount.isOrientationTargetSlot)
+  noOrientation?: boolean;
   // 担当の切り替え (utils/biweekly の slotOnDate、A5)。その日の担当 = from が
   // その日以前で一番新しい切り替えの teacher、無ければ teacher。from の昇順
   teacherChanges?: TeacherChange[];

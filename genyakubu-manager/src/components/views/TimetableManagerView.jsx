@@ -165,9 +165,15 @@ export function TimetableManagerView({
   const dupCutoffPreview = useMemo(
     () =>
       dupForm?.startDate
-        ? buildCutoffFollowUp({ displayCutoff, startDate: dupForm.startDate, clearOrientation: true })
+        ? buildCutoffFollowUp({
+            displayCutoff,
+            startDate: dupForm.startDate,
+            clearOrientation: true,
+            timetables,
+            grades: dupForm.grades,
+          })
         : null,
-    [dupForm, displayCutoff]
+    [dupForm, displayCutoff, timetables]
   );
 
   // ─── 目次 / セクションへのスクロール ───────────────────────────
@@ -300,11 +306,13 @@ export function TimetableManagerView({
         followDates: dupForm.followCutoff,
         clearOrientation: dupForm.clearOrientation,
         timetableId: dupPlan.timetable?.id ?? null,
+        timetables,
+        grades: dupForm.grades,
       });
       if (patch.changed) onSaveDisplayCutoff(patch.next);
     }
     cancelDuplicate();
-  }, [dupForm, dupChecks, dupAckKey, dupPlan, ttCrud, cancelDuplicate, displayCutoff, onSaveDisplayCutoff]);
+  }, [dupForm, dupChecks, dupAckKey, dupPlan, ttCrud, cancelDuplicate, displayCutoff, onSaveDisplayCutoff, timetables]);
 
   const outsideGrades = useMemo(
     () => findSlotsOutsideTimetableGrades(slots, timetables),

@@ -333,6 +333,15 @@ describe("DisplayCutoffEditor: 時間割ごとの表示期間", () => {
     expect(onSave.mock.calls[0][0].groups).toEqual([SHARED]);
   });
 
+  it("オリエンの既定は年度の最初の期だけオン (未設定のグループ)", () => {
+    const { pick } = renderScoped({ groups: [SHARED], cohorts: [] });
+    const box = () => screen.getByRole("checkbox", { name: /初回1限はオリエン/ });
+    pick(1);
+    expect(box()).toBeChecked();
+    pick(3);
+    expect(box()).not.toBeChecked();
+  });
+
   it("開始日が時間割の開始日より前なら、表示は時間割の開始日からと添える", () => {
     const { pick } = renderScoped({ groups: [{ ...SHARED, startDate: "2026-04-07" }], cohorts: [] });
     pick(3);

@@ -398,6 +398,50 @@ export function findGroupForGrade(grade, groups) {
   return null;
 }
 
+// ─── 年度の最初の期 (オリエンの既定、2026-11-19) ──────────────────
+// 開講日 1 限のオリエンは年度の最初の期 (1学期) にだけある。未設定の学年
+// グループは、コマの時間割が年度の最初の期のときだけオリエンを既定でオンに
+// する (sessionCount.isOrientationEnabledForSlot)。
+// 年度は 3 月始まりで見る (新年度の授業を 3 月から始めても、その年度の最初の
+// 期として扱えるように。2学期・3学期 (8 月・1 月始まり) の判定には影響しない)。
+
+function termYearOf(dateStr) {
+  const y = Number(dateStr.slice(0, 4));
+  const m = Number(dateStr.slice(5, 7));
+  return m >= 3 ? y : y - 1;
+}
+
+function timetableGradesOverlap(a, b) {
+  if (!Array.isArray(a) || a.length === 0 || !Array.isArray(b) || b.length === 0) return true;
+  const expand = (list) => new Set(list.flatMap((g) => expandGradeRange(g)));
+  const sa = expand(a);
+  return [...expand(b)].some((g) => sa.has(g));
+}
+
+/**
+ * 年度の最初の期の時間割か。同じ年度 (3 月始まり) に、学年の重なる時間割で
+ * これより前に始まるものが無ければ最初の期。開始日の無い時間割 (1 つだけの
+ * 運用) は最初の期とみなす (従来どおりオリエンを既定でオン)。まだ作っていない
+ * 時間割 (期切替の下見) は {startDate, grades} だけ渡せばよい。
+ * @param {{id?: number, startDate?: string | null, grades?: string[], type?: string}} timetable
+ * @param {import("../types").Timetable[]} timetables
+ * @returns {boolean}
+ */
+export function isFirstTermTimetable(timetable, timetables) {
+  if (!timetable || !timetable.startDate) return true;
+  const year = termYearOf(timetable.startDate);
+  return !(timetables || []).some(
+    (t) =>
+      t &&
+      t.id !== timetable.id &&
+      (t.type || "regular") === "regular" &&
+      t.startDate &&
+      t.startDate < timetable.startDate &&
+      termYearOf(t.startDate) === year &&
+      timetableGradesOverlap(t.grades, timetable.grades)
+  );
+}
+
 // ─── 学年グループと時間割 (期) の結び付き (2026-11-19) ─────────────
 // 学年グループ (表示期間設定) は時間割に結び付けて持てる (CutoffGroup.timetableId)。
 //   - 結び付いたグループは、その時間割のコマにだけ効く
