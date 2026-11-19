@@ -1,4 +1,4 @@
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   ADJ_COLOR,
   DAY_BG as DB,
@@ -269,6 +269,9 @@ export function WeekView({
   visibility = DEFAULT_EVENT_VISIBILITY,
   onChangeVisibility,
   availableTags = [],
+  // 表示中の週の月曜を親に知らせる (上の曜日チップ・週計がどの期の数字かを
+  // 添えるため。App。P3-9)
+  onWeekChange,
 }) {
   const toasts = useOptionalToasts();
   const showExam = isEventKindVisible(visibility, EVENT_KIND.EXAM);
@@ -280,6 +283,9 @@ export function WeekView({
   // 見比べる使い方のため)
   const [weekBase, setWeekBase] = useState(todayStr);
   const weekMonday = useMemo(() => weekMondayOf(weekBase), [weekBase]);
+  useEffect(() => {
+    onWeekChange?.(weekMonday);
+  }, [weekMonday, onWeekChange]);
   // 曜日 → 表示中の週のその曜日の日付 ("月" → "2026-09-14")
   const weekDates = useMemo(() => {
     const m = {};

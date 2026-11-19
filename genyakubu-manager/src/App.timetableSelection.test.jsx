@@ -5,7 +5,7 @@
 // 閲覧用の端末だけ前の期のまま、が起きた (2026-10-21)。古い端末に残った選択は
 // 読まずに消す。
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import App from "./App";
 import { ToastProvider } from "./hooks/useToasts";
 import { ConfirmProvider } from "./hooks/useConfirm";
@@ -123,5 +123,18 @@ describe("App の今の時間割", () => {
     expect(sidebarTeachers().getByText("前期だけの講師")).toBeInTheDocument();
     const next = sidebarTeachers().getByText("後期の講師").closest("button");
     expect(within(next).getByText("0")).toBeInTheDocument();
+  });
+
+  it("講師の月間で別の期の月を開くと、週計がどの期の数字かを添える (P3-9)", async () => {
+    setup({ slots: [slot(1, "通年の講師", 1), slot(2, "通年の講師", 2)] });
+    renderApp();
+    await findBadge();
+    fireEvent.click(sidebarTeachers().getByText("通年の講師").closest("button"));
+    await screen.findByRole("button", { name: "前の月" });
+    // 今月 (9 月 = 2学期) では添えない
+    expect(screen.queryByText(/の週計です/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "前の月" }));
+    expect(await screen.findByText(/2学期 の週計です/)).toBeInTheDocument();
+    expect(screen.getByText(/表示中の月は 1学期/)).toBeInTheDocument();
   });
 });

@@ -41,6 +41,7 @@ import { useExamPrepSchedulesCrud } from "./hooks/useExamPrepSchedulesCrud";
 import { useDataIO } from "./hooks/useDataIO";
 import {
   defaultTimetableIdOn,
+  describeCurrentTimetables,
   filterSlotsCurrentOn,
   filterSlotsCurrentOrUpcoming,
   resolveCutoffGroupTimetables,
@@ -1202,6 +1203,29 @@ export default function App() {
     return { total, byDay };
   }, [currentSlots, selected]);
   const selSlotCount = selDayCounts.total;
+  // 曜日チップ・週計は今の時間割 (今日) の数。表示中の週・月が今日と別の期の
+  // ときだけ、どの期の数字かを添える (2026-11-19、P3-9。1/4 の週を開いても
+  // 2学期の数のままで、3学期の週の数と取り違えた)
+  const [weekViewMonday, setWeekViewMonday] = useState(null);
+  const chipTermNote = useMemo(() => {
+    if (!selected || !Array.isArray(timetables) || timetables.length <= 1) return null;
+    const viewed =
+      view === VIEWS.WEEK
+        ? weekViewMonday
+        : view === VIEWS.MONTH
+          ? `${vy}-${String(vm).padStart(2, "0")}-01`
+          : null;
+    if (!viewed) return null;
+    const termsOn = (d) => describeCurrentTimetables(slots, timetables, d).timetables.map((x) => x.timetable);
+    const key = (list) => list.map((t) => t.id).sort().join(",");
+    const now = termsOn(todayStr);
+    const shown = termsOn(viewed);
+    if (now.length === 0 || shown.length === 0 || key(now) === key(shown)) return null;
+    return {
+      now: now.map((t) => t.name).join("・"),
+      shown: shown.map((t) => t.name).join("・"),
+    };
+  }, [selected, timetables, view, weekViewMonday, vy, vm, slots, todayStr]);
 
   // ─── Print ──────────────────────────────────────────────────────
   // popup window を開いて #main-content の innerHTML をコピーし、
@@ -1574,6 +1598,12 @@ export default function App() {
               <div style={{ fontSize: 11, fontWeight: 800 }}>週計</div>
               <div style={{ fontSize: 18, fontWeight: 800 }}>{formatCount(selSlotCount)}</div>
             </div>
+            {chipTermNote && (
+              <div style={{ alignSelf: "center", fontSize: 11, color: "#9a6b00", lineHeight: 1.5 }}>
+                ↑ {chipTermNote.now} の週計です
+                <span style={{ color: "#888" }}>（表示中の{view === VIEWS.WEEK ? "週" : "月"}は {chipTermNote.shown}）</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -2240,6 +2270,7 @@ export default function App() {
           )}
           {selected && view === VIEWS.WEEK && (
             <WeekView
+              onWeekChange={setWeekViewMonday}
               teacher={selected}
               slots={slots}
               subs={subs}
