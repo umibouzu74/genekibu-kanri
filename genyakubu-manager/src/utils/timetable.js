@@ -398,6 +398,169 @@ export function findGroupForGrade(grade, groups) {
   return null;
 }
 
+// ─── 学年グループと時間割 (期) の結び付き (2026-11-19) ─────────────
+// 学年グループ (表示期間設定) は時間割に結び付けて持てる (CutoffGroup.timetableId)。
+//   - 結び付いたグループは、その時間割のコマにだけ効く
+//   - 時間割に 1 つでも結び付いたグループがあれば、その時間割のコマは
+//     結び付いたグループだけで見る (共通のグループには落ちない)
+//   - 結び付いたグループが無い時間割のコマは、結び付いていないグループ
+//     (= 共通の設定。この仕組みより前のデータはこれだけ) で見る
+// 次の期に合わせて共通の開始日を動かすと、前の期の月がまるごと「開講前」に
+// なっていた (2026-11-19 の P1-1)。前の期は自分の設定 (結び付いたグループ) を
+// 持つので、共通の開始日で落ちない。旧データは resolveCutoffGroupTimetables が
+// 読み込みのたびに補う。
+
+const groupsByTimetableCache = new WeakMap();
+
+/**
+ * その時間割のコマに効く学年グループの一覧。結び付いたグループがあれば
+ * それだけ、無ければ結び付いていない (共通の) グループ。timetableId が
+ * null / undefined なら共通のグループ。
+ * @param {import("../types").CutoffGroup[] | undefined} groups
+ * @param {number | null | undefined} timetableId
+ * @returns {import("../types").CutoffGroup[]}
+ */
+export function groupsForTimetable(groups, timetableId) {
+  if (!Array.isArray(groups)) return [];
+  let byTimetable = groupsByTimetableCache.get(groups);
+  if (!byTimetable) {
+    byTimetable = new Map();
+    groupsByTimetableCache.set(groups, byTimetable);
+  }
+  const key = timetableId ?? null;
+  let list = byTimetable.get(key);
+  if (!list) {
+    const bound = key == null ? [] : groups.filter((g) => g && g.timetableId === key);
+    list = bound.length > 0 ? bound : groups.filter((g) => g && g.timetableId == null);
+    byTimetable.set(key, list);
+  }
+  return list;
+}
+
+/**
+ * 結び付いていない (共通の) 学年グループ。
+ * @param {import("../types").CutoffGroup[] | undefined} groups
+ */
+export function sharedCutoffGroups(groups) {
+  return groupsForTimetable(groups, null);
+}
+
+/**
+ * その時間割に結び付いた学年グループがあるか。
+ * @param {import("../types").CutoffGroup[] | undefined} groups
+ * @param {number} timetableId
+ */
+export function hasTimetableCutoffGroups(groups, timetableId) {
+  return Array.isArray(groups) && groups.some((g) => g && g.timetableId === timetableId);
+}
+
+/**
+ * コマに効く学年グループ (コマの時間割の結び付きを見る)。表示期間・第N回の
+ * 起点・オリエンはどれもこれで引く。学年だけで引く findGroupForGrade を
+ * コマの判定に使わない (前の期のコマに今の期の開始日が当たる)。
+ * @param {import("../types").Slot} slot
+ * @param {import("../types").CutoffGroup[] | undefined} groups
+ * @returns {import("../types").CutoffGroup | null}
+ */
+export function findGroupForSlot(slot, groups) {
+  if (!slot || !slot.grade) return null;
+  return findGroupForGrade(slot.grade, groupsForTimetable(groups, slot.timetableId ?? 1));
+}
+
+/**
+ * 学年グループを区別するキー。共通のグループは名前、結び付いたグループは
+ * 名前 + 時間割 (同じ名前のグループが期ごとに並ぶため)。
+ * @param {import("../types").CutoffGroup} group
+ * @returns {string}
+ */
+export function cutoffGroupKey(group) {
+  if (!group) return "";
+  return group.timetableId != null ? `${group.label}@${group.timetableId}` : group.label;
+}
+
+/**
+ * 時間割を消したときに、その時間割に結び付いた学年グループとコース別終講日を
+ * 外す。時間割の id は最大 + 1 で振るので、残すと後から作った時間割に黙って
+ * 効く。何も外さなければ同じオブジェクトを返す。
+ * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
+ * @param {number} timetableId
+ */
+export function dropTimetableFromCutoff(displayCutoff, timetableId) {
+  if (!displayCutoff || typeof displayCutoff !== "object") return displayCutoff;
+  const groups = Array.isArray(displayCutoff.groups) ? displayCutoff.groups : null;
+  const cohorts = Array.isArray(displayCutoff.cohorts) ? displayCutoff.cohorts : null;
+  const keptGroups = groups ? groups.filter((g) => !g || g.timetableId !== timetableId) : groups;
+  const keptCohorts = cohorts ? cohorts.filter((c) => !c || c.timetableId !== timetableId) : cohorts;
+  if (keptGroups?.length === groups?.length && keptCohorts?.length === cohorts?.length) {
+    return displayCutoff;
+  }
+  return {
+    ...displayCutoff,
+    ...(groups ? { groups: keptGroups } : {}),
+    ...(cohorts ? { cohorts: keptCohorts } : {}),
+  };
+}
+
+/**
+ * 時間割に結び付いていない学年グループ (この仕組みより前のデータ) を読む。
+ * 共通のグループは「その開始日の時点で有効な時間割とそれ以降の期」の設定と
+ * みなし、**その開始日より前に終わっている時間割**には、その時間割の期間
+ * (開始日〜終了日) を表示期間とするグループを補う。当時の開始日・終了日・
+ * オリエンの設定は残っていないので、時間割の期間とコース別終講日だけで
+ * 決まる (オリエンは未設定 = 既定)。共通の開始日より前に終わっていない
+ * グループは、そのまま写す (結び付いたグループがある時間割は、結び付いた
+ * グループだけで見るため)。
+ *
+ * **保存はしない** (読み込みのたびに補う。cohorts.resolveCohortTimetables と
+ * 同じ)。表示期間設定の画面で保存したときに補った値ごと書かれる。
+ * 何も補わなければ同じオブジェクトを返す。
+ * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
+ * @param {import("../types").Timetable[]} timetables
+ * @param {import("../types").Slot[]} slots
+ * @returns {import("../types").DisplayCutoff | null | undefined}
+ */
+export function resolveCutoffGroupTimetables(displayCutoff, timetables, slots) {
+  const groups = displayCutoff?.groups;
+  if (!Array.isArray(groups) || groups.length === 0) return displayCutoff;
+  if (!Array.isArray(timetables) || timetables.length === 0) return displayCutoff;
+  const shared = groups.filter((g) => g && g.timetableId == null);
+  if (!shared.some((g) => g.startDate)) return displayCutoff;
+  const gradesByTimetable = new Map();
+  for (const s of slots || []) {
+    if (!s || !s.grade) continue;
+    const id = s.timetableId ?? 1;
+    let set = gradesByTimetable.get(id);
+    if (!set) gradesByTimetable.set(id, (set = new Set()));
+    set.add(s.grade);
+  }
+  const added = [];
+  for (const tt of timetables) {
+    if (!tt || !tt.endDate || hasTimetableCutoffGroups(groups, tt.id)) continue;
+    const grades = gradesByTimetable.get(tt.id);
+    if (!grades) continue;
+    const endedBefore = (g) => !!g.startDate && tt.endDate < g.startDate;
+    const hit = [...grades].some((grade) => {
+      const g = findGroupForGrade(grade, shared);
+      return !!g && endedBefore(g);
+    });
+    if (!hit) continue;
+    for (const g of shared) {
+      added.push(
+        endedBefore(g)
+          ? {
+              label: g.label,
+              grades: [...(g.grades || [])],
+              startDate: tt.startDate || null,
+              date: tt.endDate,
+              timetableId: tt.id,
+            }
+          : { ...g, timetableId: tt.id }
+      );
+    }
+  }
+  return added.length > 0 ? { ...displayCutoff, groups: [...groups, ...added] } : displayCutoff;
+}
+
 /**
  * Check whether a date is outside the display range for a given grade.
  * Returns true when dateStr falls before startDate or after date (end).
@@ -444,7 +607,7 @@ export function isSlotBeyondCutoff(dateStr, slot, displayCutoff) {
 
 /**
  * isSlotBeyondCutoff が見ている窓そのもの (コマ 1 つぶんの表示期間)。
- *   - startDate: 学年グループの開始日
+ *   - startDate: 学年グループ (コマの時間割に効くもの、findGroupForSlot) の開始日
  *   - endDate:   コース別終講日。無ければ学年グループの終了日
  * 未設定の端は null (その側には制限なし)。iCal 書き出しの DTSTART / UNTIL
  * のように「期間として」要るところはここから引き、窓の決め方を
@@ -455,7 +618,9 @@ export function isSlotBeyondCutoff(dateStr, slot, displayCutoff) {
  */
 export function getSlotCutoffRange(slot, displayCutoff) {
   if (!displayCutoff || !slot) return { startDate: null, endDate: null };
-  const group = findGroupForGrade(slot.grade, displayCutoff.groups);
+  // 学年グループはコマの時間割に効くもの (前の期のコマに今の期の開始日を
+  // 当てない。findGroupForSlot)
+  const group = findGroupForSlot(slot, displayCutoff.groups);
   const cohort = findCohortCutoff(slot, displayCutoff.cohorts);
   return {
     startDate: group?.startDate || null,
@@ -470,27 +635,29 @@ export function getSlotCutoffRange(slot, displayCutoff) {
  * @param {import("../types").Slot[]} slots
  * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
  * @returns {Map<string, {slotCount: number, days: string[], slotIds: number[]}>}
- *   key は group.label
+ *   key は cutoffGroupKey (共通のグループは label、時間割に結び付いたグループは
+ *   label@時間割 id)。コマはコマの時間割に効くグループ (findGroupForSlot) に数える
  */
 export function summarizeCutoffGroups(slots, displayCutoff) {
   const out = new Map();
   const groups = displayCutoff?.groups;
   if (!Array.isArray(groups)) return out;
   for (const g of groups) {
-    out.set(g.label, { slotCount: 0, days: [], slotIds: [] });
+    out.set(cutoffGroupKey(g), { slotCount: 0, days: [], slotIds: [] });
   }
   const daySets = new Map();
   for (const s of slots || []) {
     if (!s || !s.grade) continue;
-    const group = findGroupForGrade(s.grade, groups);
+    const group = findGroupForSlot(s, groups);
     if (!group) continue;
-    const entry = out.get(group.label);
+    const key = cutoffGroupKey(group);
+    const entry = out.get(key);
     if (!entry) continue;
     entry.slotCount += 1;
     entry.slotIds.push(s.id);
     if (s.day) {
-      let set = daySets.get(group.label);
-      if (!set) daySets.set(group.label, (set = new Set()));
+      let set = daySets.get(key);
+      if (!set) daySets.set(key, (set = new Set()));
       set.add(s.day);
     }
   }
@@ -515,7 +682,7 @@ export function findUngroupedGrades(slots, displayCutoff) {
   const counts = new Map();
   for (const s of slots || []) {
     if (!s || !s.grade) continue;
-    if (findGroupForGrade(s.grade, groups)) continue;
+    if (findGroupForSlot(s, groups)) continue;
     counts.set(s.grade, (counts.get(s.grade) || 0) + 1);
   }
   return [...counts.entries()]
@@ -524,8 +691,10 @@ export function findUngroupedGrades(slots, displayCutoff) {
 }
 
 /**
- * 実際にコマを持っている学年グループの label 集合。
+ * 実際にコマを持っている学年グループのキー (cutoffGroupKey) の集合。
  * getDayCutoffKind / isEntireDayBeyondCutoff の opts.activeGroupLabels に渡す。
+ * 共通のグループのキーは label なので、時間割に結び付いたグループが無ければ
+ * 従来どおり label の集合。
  * @param {import("../types").Slot[]} slots その運用の全コマ (講師で絞らない)
  * @param {import("../types").DisplayCutoff | null | undefined} displayCutoff
  * @returns {Set<string>}
@@ -546,7 +715,7 @@ export function getCutoffGroupLabelsWithSlots(slots, displayCutoff) {
  *   - null     : 1 つでも期間内のグループがある
  * 「未確定 (終講後)」と「開講前」は紙面・画面の文言が逆になるので分けている。
  *
- * opts.activeGroupLabels を渡すと、その label に含まれないグループ (=
+ * opts.activeGroupLabels を渡すと、そのキー (cutoffGroupKey) に含まれないグループ (=
  * コマが 1 つも無いグループ) を判定から除く。運用していない学年グループの
  * 終了日が空のままだと、他が全部終わってもバナーが出ないため。
  * ただし 1 つも残らないときは絞り込みを無かったことにして全グループで
@@ -563,20 +732,26 @@ export function getDayCutoffKind(dateStr, displayCutoff, opts = {}) {
   // コマを持つグループだけに絞る。ただし 1 つも該当しないとき (コマ未登録、
   // grades を空にした「全学年」1 グループ運用など) は判定材料が無くなるので
   // 絞り込み自体を無かったことにする。
-  const scoped = active ? groups.filter((g) => active.has(g.label)) : groups;
+  const scoped = active ? groups.filter((g) => active.has(cutoffGroupKey(g))) : groups;
   const list = scoped.length > 0 ? scoped : groups;
+  // 同じ名前のグループ (中1・2 など) は期ごとに窓が並ぶ (時間割に結び付いた
+  // グループ)。1 つのグループとして、どれかの窓の中なら期間内、どの窓の外でも
+  // これから始まる窓があれば「開講前」、無ければ「終講後」とみなす。前の期の
+  // 窓が終わっていることで、期と期の間が「混在」にならないように
+  const kindByLabel = new Map();
+  for (const group of list) {
+    const isBefore = !!group.startDate && dateStr < group.startDate;
+    const isAfter = !isBefore && !!group.date && dateStr > group.date;
+    if (!isBefore && !isAfter) return null; // 期間内のグループがある
+    if (kindByLabel.get(group.label) !== "before") {
+      kindByLabel.set(group.label, isBefore ? "before" : "after");
+    }
+  }
   let before = 0;
   let after = 0;
-  for (const group of list) {
-    if (group.startDate && dateStr < group.startDate) {
-      before += 1;
-      continue;
-    }
-    if (group.date && dateStr > group.date) {
-      after += 1;
-      continue;
-    }
-    return null; // 期間内のグループがある
+  for (const kind of kindByLabel.values()) {
+    if (kind === "before") before += 1;
+    else after += 1;
   }
   if (before && after) return "mixed";
   return before ? "before" : "after";

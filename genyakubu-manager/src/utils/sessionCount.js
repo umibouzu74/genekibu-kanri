@@ -36,7 +36,7 @@ import { getSlotWeekType, isBiweekly } from "./biweekly";
 import { slotGroupKey } from "./parallelSlots";
 import { buildSlotCohortIndex } from "./cohorts";
 import { buildClassSetIndex, buildClassSetOwnerIndex, isDayCountSet } from "./classSets";
-import { isTimetableActiveForDate, findGroupForGrade } from "./timetable";
+import { isTimetableActiveForDate, findGroupForGrade, findGroupForSlot } from "./timetable";
 import { isSlotScheduledOnDate } from "./slotDates";
 
 // "YYYY-MM-DD" → Date (ローカル)
@@ -71,11 +71,45 @@ export function getGradeStartDate(grade, displayCutoff) {
 // 2 学期以降のようにオリエンが入らない期は、表示期間設定でオフにする。
 export function isOrientationEnabledForGrade(grade, displayCutoff) {
   if (!grade) return false;
-  const group = findGroupForGrade(grade, displayCutoff?.groups);
+  return orientationEnabledFor(findGroupForGrade(grade, displayCutoff?.groups), grade);
+}
+
+function orientationEnabledFor(group, grade) {
   if (group && typeof group.orientationFirstDay === "boolean") {
     return group.orientationFirstDay;
   }
   return gradeToDept(grade) === "中学部";
+}
+
+// コマの学年グループ (コマの時間割に効くもの、timetable.findGroupForSlot)。
+// 回数の起点とオリエンはこちらで引く。学年だけで引くと、前の期のコマに
+// 今の期の開始日・オリエンの設定が当たる (2026-11-19 の P1-1)
+function slotGroupOf(slot, displayCutoff) {
+  if (!displayCutoff || !Array.isArray(displayCutoff.groups)) return null;
+  return findGroupForSlot(slot, displayCutoff.groups);
+}
+
+/**
+ * コマの学年グループの開始日 (コマの時間割に効くグループ)。未設定 / グループ
+ * なしは null。
+ * @param {object} slot
+ * @param {object} displayCutoff
+ * @returns {string | null}
+ */
+export function getSlotGroupStartDate(slot, displayCutoff) {
+  return slotGroupOf(slot, displayCutoff)?.startDate || null;
+}
+
+/**
+ * コマの学年グループの「開講日 1 限をオリエン扱いにする」(コマの時間割に
+ * 効くグループ。未設定は中学部のみ有効の既定)。
+ * @param {object} slot
+ * @param {object} displayCutoff
+ * @returns {boolean}
+ */
+export function isOrientationEnabledForSlot(slot, displayCutoff) {
+  if (!slot || !slot.grade) return false;
+  return orientationEnabledFor(slotGroupOf(slot, displayCutoff), slot.grade);
 }
 
 // slot の所属時間割がその日に有効か。ctx.timetables 未指定 (単一時間割
@@ -92,7 +126,7 @@ function isSlotTimetableActive(slot, dateStr, ctx) {
 // 所属時間割の startDate の遅い方。後期など期を切り替えた時間割では
 // 時間割の開始日が起点になり、「第N回」は期ごとに 1 から数え直しになる。
 export function getSlotCountStartDate(slot, ctx) {
-  const gradeStart = getGradeStartDate(slot.grade, ctx.displayCutoff);
+  const gradeStart = getSlotGroupStartDate(slot, ctx.displayCutoff);
   let ttStart = null;
   if (Array.isArray(ctx.timetables)) {
     const tt = ctx.timetables.find((t) => t.id === (slot.timetableId ?? 1));
@@ -260,8 +294,8 @@ function findPoolFirstDate(pool, startDate, ctx) {
 //     ので 4/9 (木) が初開講日。その日の同セット内最早時刻が 1 限。
 function isOrientationSlot(slot, dateStr, ctx) {
   if (!ctx.orientationOnFirstDay) return false;
-  if (!isOrientationEnabledForGrade(slot.grade, ctx.displayCutoff)) return false;
-  const startDate = getGradeStartDate(slot.grade, ctx.displayCutoff);
+  if (!isOrientationEnabledForSlot(slot, ctx.displayCutoff)) return false;
+  const startDate = getSlotGroupStartDate(slot, ctx.displayCutoff);
   if (!startDate) return false;
 
   // pool: 「1 限目」判定の対象スロット群。

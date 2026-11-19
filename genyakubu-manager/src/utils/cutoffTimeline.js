@@ -7,7 +7,12 @@
 // 位置は 0..1 の割合で返す (描画側で % にする)。日付の無い端は openStart /
 // openEnd を立てて、描画側で「続いている」ことを示す。
 
-import { findGroupForGrade, summarizeCutoffGroups } from "./timetable";
+import {
+  cutoffGroupKey,
+  findGroupForGrade,
+  groupsForTimetable,
+  summarizeCutoffGroups,
+} from "./timetable";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -155,8 +160,14 @@ export function buildCutoffTimeline({
     });
   }
 
+  // 時間割に結び付いた学年グループがあるときは、どの時間割のコマも従っていない
+  // 共通のグループ (コマ 0) を並べない (期ごとの行が並ぶので紛らわしい)
+  const anyBound = groups.some((g) => g && g.timetableId != null);
   for (const g of groups) {
-    const info = summary.get(g.label) || { slotCount: 0, slotIds: [] };
+    const info = summary.get(cutoffGroupKey(g)) || { slotCount: 0, slotIds: [] };
+    if (anyBound && g.timetableId == null && info.slotCount === 0) continue;
+    const groupTimetable =
+      g.timetableId != null ? timetables.find((t) => t.id === g.timetableId) : null;
     const invalid = !!(g.startDate && g.date && g.startDate > g.date);
     const tt = latestTimetableEndForGroup(timetables, slotById, info.slotIds);
     // 時間割はまだ有効なのに表示期間が先に終わっている区間
@@ -167,10 +178,14 @@ export function buildCutoffTimeline({
       uncovered = { ...bar(uStart, uEnd), endDate: uEnd, openEnd: tt.open };
     }
     rows.push({
-      key: `group-${g.label}`,
+      key: `group-${cutoffGroupKey(g)}`,
       kind: "group",
       label: g.label,
-      sub: `${info.slotCount} コマ`,
+      sub: groupTimetable
+        ? `${groupTimetable.name}・${info.slotCount} コマ`
+        : anyBound
+          ? `共通・${info.slotCount} コマ`
+          : `${info.slotCount} コマ`,
       startDate: g.startDate || null,
       endDate: g.date || null,
       openStart: !g.startDate,
@@ -184,7 +199,8 @@ export function buildCutoffTimeline({
     if (!includeCohorts) continue;
     for (const c of cohorts) {
       if (!c.date) continue;
-      if (findGroupForGrade(c.grade, groups)?.label !== g.label) continue;
+      // その終講日の時間割に効く学年グループ (時間割の付いていない終講日は共通)
+      if (findGroupForGrade(c.grade, groupsForTimetable(groups, c.timetableId)) !== g) continue;
       // 時間割に結び付いた終講日 (A1) は時間割の名前を添える (同じコースが
       // 期ごとに並ぶので)。時間割が 1 つだけなら添えない
       const tt =

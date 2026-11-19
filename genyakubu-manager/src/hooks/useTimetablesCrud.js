@@ -4,6 +4,7 @@ import { useCrudResource } from "./useCrudResource";
 import { nextNumericId } from "../utils/schema";
 import { applyTimeBulkEdit } from "../utils/timeBulkEdit";
 import { isLegacySet } from "../utils/classSets";
+import { dropTimetableFromCutoff } from "../utils/timetable";
 
 /**
  * Timetable CRUD hook.
@@ -14,6 +15,8 @@ import { isLegacySet } from "../utils/classSets";
  *   saveSlots: (v: import("../types").Slot[]) => void,
  *   classSets?: import("../types").ClassSet[],
  *   saveClassSets?: (v: import("../types").ClassSet[]) => void,
+ *   saveDisplayCutoff?: (v: import("../types").DisplayCutoff
+ *     | ((prev: import("../types").DisplayCutoff) => import("../types").DisplayCutoff)) => void,
  * }} deps
  */
 export function useTimetablesCrud({
@@ -23,6 +26,7 @@ export function useTimetablesCrud({
   saveSlots,
   classSets,
   saveClassSets,
+  saveDisplayCutoff,
 }) {
   const toasts = useToasts();
   const crud = useCrudResource({ list: timetables, save: saveTimetables });
@@ -53,6 +57,9 @@ export function useTimetablesCrud({
         message: msg,
         successMsg: "時間割を削除しました",
         cascade: () => {
+          // この時間割だけの表示期間設定・終講日を外す (id を使い回したときに
+          // 新しい時間割へ黙って効かないように)
+          saveDisplayCutoff?.((prev) => dropTimetableFromCutoff(prev, id));
           if (linkedSlots.length) {
             saveSlots(
               slots.map((s) =>
@@ -63,7 +70,7 @@ export function useTimetablesCrud({
         },
       });
     },
-    [slots, saveSlots, toasts, crud]
+    [slots, saveSlots, toasts, crud, saveDisplayCutoff]
   );
 
   const duplicate = useCallback(

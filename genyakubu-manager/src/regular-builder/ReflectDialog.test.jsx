@@ -120,7 +120,10 @@ describe("ReflectDialog (期切替)", () => {
 
     await waitFor(() => expect(saveDisplayCutoff).toHaveBeenCalled());
     const saved = saveDisplayCutoff.mock.calls[0][0];
-    expect(saved.groups[0].date).toBe("2026-12-25");
+    // 前の期のコマが従う学年グループはそのまま (前の期の表示・第N回を変えない)
+    expect(saved.groups[0]).toEqual(displayCutoff.groups[0]);
+    // 新しい時間割 (id 2) だけの学年グループとして終了日を直す
+    expect(saved.groups[1]).toMatchObject({ label: "中学部", timetableId: 2, date: "2026-12-25" });
     expect(saved.cohorts).toEqual([]);
   });
 
@@ -141,8 +144,10 @@ describe("ReflectDialog (期切替)", () => {
 
     await waitFor(() => expect(saveDisplayCutoff).toHaveBeenCalled());
     const saved = saveDisplayCutoff.mock.calls[0][0];
-    expect(saved.groups[0].orientationFirstDay).toBe(false);
-    expect(saved.groups[0].date).toBe("2026-08-31"); // 日付は据え置き
+    // 前の期のオリエンの設定は変えない (前の期の第N回が変わらないように)
+    expect(saved.groups[0]).toEqual(displayCutoff.groups[0]);
+    expect(saved.groups[1]).toMatchObject({ timetableId: 2, orientationFirstDay: false });
+    expect(saved.groups[1].date).toBe("2026-08-31"); // 日付は据え置き
   });
 
   it("何も選ばなければ表示期間設定は触らない", async () => {

@@ -549,6 +549,13 @@ export interface CutoffGroup {
   // 未設定 (undefined / null) は従来既定 = 中学部のみ有効。
   // 2 学期以降のようにオリエンが入らない期は false にする。
   orientationFirstDay?: boolean | null;
+  // このグループが効く時間割 (2026-11-19)。付いていればその時間割のコマにだけ
+  // 効く。時間割に 1 つでも結び付いたグループがあれば、その時間割のコマは
+  // 結び付いたグループだけで見る。無いグループは結び付いたグループの無い
+  // 時間割に効く共通の設定 (utils/timetable.groupsForTimetable)。共通の開始日
+  // より前に終わった時間割には読み込みのたびに補う
+  // (utils/timetable.resolveCutoffGroupTimetables)
+  timetableId?: number;
 }
 
 // ─── Cohort cutoff (コース別 終講日) ─────────────────────────────

@@ -852,6 +852,51 @@ describe("buildCutoffFollowUp (期切替に合わせた表示期間設定の追�
     expect(r.cohortCount).toBe(1);
   });
 
+  it("timetableId を渡すと、新しい時間割だけの学年グループとして書く (前の期の設定は変えない)", () => {
+    const r = buildCutoffFollowUp({
+      displayCutoff,
+      startDate: "2026-09-01",
+      endDate: "2026-12-25",
+      clearOrientation: true,
+      timetableId: 3,
+    });
+    expect(r.changed).toBe(true);
+    // 前の期のコマが従う共通のグループはそのまま
+    expect(r.next.groups.slice(0, 2)).toEqual(displayCutoff.groups);
+    // 新しい時間割 (3) のグループ: 終了日を延ばし、オリエンを外す。開始日は写したまま
+    expect(r.next.groups.slice(2)).toEqual([
+      { ...displayCutoff.groups[0], date: "2026-12-25", orientationFirstDay: false, timetableId: 3 },
+      { ...displayCutoff.groups[1], timetableId: 3 },
+    ]);
+    expect(r.groupLabels).toEqual(["中1・2"]);
+  });
+
+  it("timetableId を渡しても、直すグループが無ければ学年グループは足さない", () => {
+    const r = buildCutoffFollowUp({ displayCutoff, startDate: "2026-09-01", followDates: false, timetableId: 3 });
+    expect(r.changed).toBe(false);
+    const onlyCohorts = buildCutoffFollowUp({
+      displayCutoff: { groups: [{ ...displayCutoff.groups[1] }], cohorts: displayCutoff.cohorts },
+      startDate: "2026-09-01",
+      timetableId: 3,
+    });
+    expect(onlyCohorts.changed).toBe(true);
+    expect(onlyCohorts.next.groups).toHaveLength(1);
+  });
+
+  it("前の期に結び付いた学年グループは、新しい期の追従の対象にしない", () => {
+    const withOwn = {
+      groups: [
+        ...displayCutoff.groups,
+        { label: "中1・2", grades: ["中1", "中2"], startDate: "2026-04-07", date: "2026-07-17", timetableId: 1 },
+      ],
+      cohorts: [],
+    };
+    const r = buildCutoffFollowUp({ displayCutoff: withOwn, startDate: "2026-09-01", timetableId: 3 });
+    expect(r.groupLabels).toEqual(["中1・2"]);
+    expect(r.next.groups[2]).toEqual(withOwn.groups[2]); // 1学期の設定はそのまま
+    expect(r.next.groups[3]).toMatchObject({ timetableId: 3, date: null, startDate: "2026-04-07" });
+  });
+
   it("followDates: false かつオリエンも外さないなら changed: false", () => {
     const r = buildCutoffFollowUp({
       displayCutoff,

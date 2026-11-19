@@ -43,6 +43,7 @@ import {
   defaultTimetableIdOn,
   filterSlotsCurrentOn,
   filterSlotsCurrentOrUpcoming,
+  resolveCutoffGroupTimetables,
 } from "./utils/timetable";
 import { useToday } from "./hooks/useToday";
 import { slotWeight, formatCount, isSlotForTeacher, slotTeacherNamesEver, slotsOnDate } from "./utils/biweekly";
@@ -341,9 +342,17 @@ export default function App() {
 
   // コース別終講日のうち時間割の付いていない旧データに、終講日の時点の時間割を
   // 補ったもの (A1。保存はしない)。どの画面もこちらを見る。コース別終講日の画面で
-  // 保存すると補った値ごと書かれる (utils/cohorts.resolveCohortTimetables)
+  // 保存すると補った値ごと書かれる (utils/cohorts.resolveCohortTimetables)。
+  // 学年グループも同じく、共通の開始日より前に終わった時間割 (前の期) に
+  // その期の設定を補う (utils/timetable.resolveCutoffGroupTimetables。
+  // 前の期の月が「開講前」にならないように。保存はしない)
   const displayCutoff = useMemo(
-    () => resolveCohortTimetables(storedDisplayCutoff, timetables, slots),
+    () =>
+      resolveCutoffGroupTimetables(
+        resolveCohortTimetables(storedDisplayCutoff, timetables, slots),
+        timetables,
+        slots
+      ),
     [storedDisplayCutoff, timetables, slots]
   );
 
@@ -678,7 +687,7 @@ export default function App() {
   const subsCrud = useSubsCrud({ subs, saveSubs });
   const ttCrud = useTimetablesCrud({
     timetables, saveTimetables, slots, saveSlots,
-    classSets, saveClassSets,
+    classSets, saveClassSets, saveDisplayCutoff,
   });
   const adjCrud = useAdjustmentsCrud({ adjustments, saveAdjustments });
 

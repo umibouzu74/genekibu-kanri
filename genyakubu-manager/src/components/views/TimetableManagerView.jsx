@@ -292,12 +292,14 @@ export function TimetableManagerView({
     ttCrud.applyDuplicate(dupPlan, dupForm.sourceName);
     // 表示期間設定も新しい期に合わせる (チェックしたときだけ)
     if (dupForm.startDate && (dupForm.followCutoff || dupForm.clearOrientation)) {
+      // 複製した時間割だけの学年グループとして書く (複製元の期の設定は変えない)
       const patch = buildCutoffFollowUp({
         displayCutoff,
         startDate: dupForm.startDate,
         endDate: dupForm.endDate || null,
         followDates: dupForm.followCutoff,
         clearOrientation: dupForm.clearOrientation,
+        timetableId: dupPlan.timetable?.id ?? null,
       });
       if (patch.changed) onSaveDisplayCutoff(patch.next);
     }
@@ -607,6 +609,7 @@ export function TimetableManagerView({
       <div id={timetableSectionAnchorId(TIMETABLE_SECTION.DISPLAY_CUTOFF)} style={anchorStyle}>
         <DisplayCutoffEditor
           slots={slots}
+          timetables={timetables}
           displayCutoff={displayCutoff}
           onSave={onSaveDisplayCutoff}
           isAdmin={isAdmin}
@@ -978,7 +981,8 @@ function DuplicateOptions({ form, setForm, sourceGrades, plan, cutoffPreview, sl
                 <span style={{ display: "block", fontSize: 10, color: "#888" }}>
                   {cutoffPreview.groupLabels.length > 0 &&
                     `${cutoffPreview.groupLabels.join("・")} の終了日を${form.endDate ? ` ${form.endDate} に` : "「なし」に"}変更`}
-                  （このままだと新しい期のコマが画面に出ません）
+                  （このままだと新しい期のコマが画面に出ません。複製した時間割だけの設定として保存し、
+                  複製元の期の設定はそのまま）
                 </span>
               </span>
             </label>

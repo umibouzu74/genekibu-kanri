@@ -12,6 +12,7 @@ import {
   filterSlotsOfTimetable,
   findGroupForGrade,
   getTimetableStatusOn,
+  groupsForTimetable,
 } from "../utils/timetable";
 import { fmtDate } from "../data";
 import { fmtDateWeekday, fmtMDWeekday } from "../utils/dateHelpers";
@@ -76,6 +77,9 @@ export function CohortCutoffEditor({
         ? fullCutoff
         : {
             ...(fullCutoff || {}),
+            // 学年グループもこの時間割のコマに効くものだけ (終了日の案・警告が
+            // 前の期 / 次の期のグループを見ないように)
+            groups: groupsForTimetable(fullCutoff?.groups, timetableId),
             cohorts: (fullCutoff?.cohorts || []).filter((c) =>
               cohortCutoffAppliesToTimetable(c, timetableId)
             ),
@@ -117,7 +121,8 @@ export function CohortCutoffEditor({
         }
       }
     }
-    onSaveFull({ ...(next || {}), cohorts: out });
+    // 学年グループは絞ったものを渡しているので、全体のものに戻して書く
+    onSaveFull({ ...(next || {}), groups: fullCutoff?.groups || next?.groups || [], cohorts: out });
   };
   const [query, setQuery] = useState("");
   const [unsetOnly, setUnsetOnly] = useState(false);

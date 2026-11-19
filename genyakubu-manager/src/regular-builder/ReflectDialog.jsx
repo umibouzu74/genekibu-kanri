@@ -326,7 +326,19 @@ export function ReflectDialog({
     // 表示期間設定の追従 (チェックしたときだけ)。時間割の有効期間とは
     // 別のフィルタなので、ここを直さないと新しい期のコマが画面に出ない
     const followedCutoff = useSwitch && !!cutoffPatch?.changed;
-    if (followedCutoff) saveDisplayCutoff?.(cutoffPatch.next);
+    if (followedCutoff) {
+      // 新しい期の時間割だけの学年グループとして書く (前の期のコマが従う
+      // 設定は変えない。utils/timetable.groupsForTimetable)
+      const patch = buildCutoffFollowUp({
+        displayCutoff,
+        startDate,
+        endDate: endDate || null,
+        followDates: followCutoff,
+        clearOrientation,
+        timetableId: result.timetableId,
+      });
+      if (patch.changed) saveDisplayCutoff?.(patch.next);
+    }
     // 反映した時点の状態を自動スナップショットで残す (「本体に出したのは
     // どの状態か」に後から必ず戻れる安全網)。他のスナップショット操作と
     // 同じく Ctrl+Z で取り消せる
@@ -571,7 +583,8 @@ export function ReflectDialog({
                     ]
                       .filter(Boolean)
                       .join(" / ")}
-                    （このままだと新しい期のコマがダッシュボード等に出ません）
+                    （このままだと新しい期のコマがダッシュボード等に出ません。
+                    新しい時間割だけの設定として保存し、前の期の設定はそのまま）
                   </span>
                 </span>
               </label>
@@ -589,7 +602,7 @@ export function ReflectDialog({
                   新しい期はオリエンなしにする（初回1限も回数に数える）
                   <span style={{ fontSize: 10, color: "#888", fontWeight: 400, display: "block" }}>
                     {orientationTargets.join("・")} の「初回1限はオリエン」を外します
-                    （2学期以降のようにオリエンが入らない期向け）
+                    （2学期以降のようにオリエンが入らない期向け。前の期の設定はそのまま）
                   </span>
                 </span>
               </label>

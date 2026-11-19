@@ -27,7 +27,7 @@ const COHORT_ID = "M|中1|火金";
 function renderEditor(cohortDate, groupPatch = {}, opts = {}) {
   const displayCutoff = {
     ...(opts.displayCutoff || {}),
-    groups: [
+    groups: opts.groups || [
       {
         label: "中1・2",
         grades: ["中1", "中2"],
@@ -325,6 +325,23 @@ describe("CohortCutoffEditor — 時間割ごとの終講日 (A1)", () => {
     ]);
     fireEvent.change(picker, { target: { value: "3" } });
     expect(screen.getByLabelText("中1 火金 の終講日")).toHaveValue("2026-12-18");
+  });
+
+  it("学年グループは選んだ時間割に効くもので見て、保存では全体の学年グループを残す", () => {
+    const shared = { label: "中1・2", grades: ["中1", "中2"], startDate: "2026-04-07", date: "2027-03-31" };
+    const own3 = { ...shared, date: "2026-12-10", timetableId: 3 };
+    const cohort = { id: COHORT_ID, label: "中1 火金", grade: "中1", date: "2026-12-18", timetableId: 3 };
+    const { onSave } = renderEditor(null, {}, {
+      slots,
+      timetables: TTS,
+      groups: [shared, own3],
+      displayCutoff: { cohorts: [cohort] },
+    });
+    fireEvent.change(screen.getByLabelText("終講日を設定する時間割"), { target: { value: "3" } });
+    // 2学期のコマは 2学期だけの学年グループ (終了日 12/10) に従う
+    expect(screen.getByText(/グループ終了日 \(2026-12-10\) より後です/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("中1 火金 の終講日"), { target: { value: "2026-12-09" } });
+    expect(onSave.mock.calls.at(-1)[0].groups).toEqual([shared, own3]);
   });
 
   it("時間割の付いていない旧データを片方の時間割で消しても、ほかの時間割には残す", () => {

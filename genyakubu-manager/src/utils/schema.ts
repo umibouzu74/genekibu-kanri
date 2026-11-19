@@ -182,7 +182,9 @@ export function isCutoffGroup(x: unknown): x is CutoffGroup {
     // 開講日 1 限のオリエン扱い (未設定 = 中学部のみ有効の既定)
     (x.orientationFirstDay === undefined ||
       x.orientationFirstDay === null ||
-      typeof x.orientationFirstDay === "boolean")
+      typeof x.orientationFirstDay === "boolean") &&
+    // 効く時間割 (無い = 共通)
+    (x.timetableId === undefined || x.timetableId === null || typeof x.timetableId === "number")
   );
 }
 
