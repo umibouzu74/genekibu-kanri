@@ -3,6 +3,9 @@ import { DAY_COLOR as DC, gradeColor as GC } from "../data";
 import { formatBiweeklyNote } from "../utils/biweekly";
 import { formatSessionNumber } from "../utils/sessionCount";
 
+// 右上の ✏️ 🗑 (12px + 余白 2px × 2 ずつ + 間 2px) の幅
+const ICONS_WIDTH = 42;
+
 function SlotCardImpl({
   slot,
   compact,
@@ -37,6 +40,10 @@ function SlotCardImpl({
           flexWrap: "wrap",
           fontSize: 10,
           color: "#888",
+          // 右上の編集・削除のアイコンの幅ぶん空ける (回数 + 学年 + 時刻が 1 行に
+          // 入る狭いカードで「19:00-2✏0」のように時刻に重なっていた。P3-10)。
+          // 入りきらなければ折り返す
+          paddingRight: onEdit ? ICONS_WIDTH : 0,
         }}
       >
         {hasSessionBadge && (
