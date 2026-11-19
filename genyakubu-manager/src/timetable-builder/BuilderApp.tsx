@@ -819,6 +819,7 @@ export default function BuilderApp({
   adjustments = EMPTY_HOST_LIST,
   daySchedules = EMPTY_HOST_LIST,
   displayCutoff,
+  teacherAways = EMPTY_HOST_LIST,
 }: Partial<HostData> & {
   season?: KoshuSeason;
   onSeasonChange?: (season: KoshuSeason) => void;
@@ -844,11 +845,12 @@ export default function BuilderApp({
       adjustments,
       daySchedules,
       displayCutoff,
+      teacherAways,
     }),
     [
       offsiteLessons, holidays, partTimeStaffNames, retiredTeacherNames, specialEvents, seniorKoshuItems,
       regularSlots, regularTimetables, teacherCategoriesByYear,
-      examPeriods, biweeklyAnchors, substitutes, adjustments, daySchedules, displayCutoff,
+      examPeriods, biweeklyAnchors, substitutes, adjustments, daySchedules, displayCutoff, teacherAways,
     ],
   );
   // 季節ごとに作り直すのは作業領域だけ (key)。UIProvider も中に入れて作り直すので、

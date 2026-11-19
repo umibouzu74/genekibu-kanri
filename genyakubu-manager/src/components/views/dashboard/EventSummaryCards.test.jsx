@@ -29,3 +29,28 @@ describe("EventSummaryCards — 今後7日の休暇", () => {
     expect(screen.queryByRole("button")).toBeNull();
   });
 });
+
+describe("EventSummaryCards — 今後7日の不在 (講師の不在期間、P2-6)", () => {
+  const awaySoon = [
+    { id: 1, teacher: "福武", startDate: "2026-10-12", endDate: "2026-10-22", memo: "研修" },
+    { id: 2, teacher: "川井", startDate: "2026-10-20", endDate: "2026-10-20" },
+  ];
+
+  it("不在期間の 1 行から不在期間の画面のその 1 件へ (紙には出さない)", () => {
+    const onOpenTeacherAway = vi.fn();
+    const { container } = render(
+      <EventSummaryCards todayStr="2026-10-16" awaySoon={awaySoon} onOpenTeacherAway={onOpenTeacherAway} />
+    );
+    expect(screen.getByText("🧳 今後7日の不在")).toBeInTheDocument();
+    expect(container.firstChild.className).toMatch(/no-print/);
+    fireEvent.click(screen.getByRole("button", { name: "福武 不在 10/12〜10/22 (研修)" }));
+    expect(onOpenTeacherAway).toHaveBeenCalledWith({ id: 1 });
+    expect(screen.getByRole("button", { name: "川井 不在 10/20 (これから)" })).toBeInTheDocument();
+  });
+
+  it("導線が無くても文字で出す (閲覧者も見られる)", () => {
+    render(<EventSummaryCards todayStr="2026-10-16" awaySoon={awaySoon} />);
+    expect(screen.getByText("福武 不在 10/12〜10/22 (研修)")).toBeInTheDocument();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+});

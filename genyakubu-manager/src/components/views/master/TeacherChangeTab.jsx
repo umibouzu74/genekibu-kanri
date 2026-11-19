@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DAYS, sortSlots as sortS } from "../../../data";
 import { S } from "../../../styles/common";
 import { useToasts } from "../../../hooks/useToasts";
@@ -60,6 +60,10 @@ export function TeacherChangeTab({
   extraLessons = [],
   offsiteLessons = [],
   koshuLessons = [],
+  // ほかの画面から入れておく値 ({oldTeacher, from, until, memo, token})。講師の
+  // 不在期間の「担当変更（期間限定）にする」から。受け取ったら onConsumePrefill で消す
+  prefill = null,
+  onConsumePrefill,
 }) {
   const toasts = useToasts();
   // 授業日の一覧 (実施判定・第N回) に使う。ダッシュボードと同じ ctx
@@ -88,6 +92,22 @@ export function TeacherChangeTab({
   const [school, setSchool] = useState("");
   // 既定から切り替えたコマ (既定は期間に授業のあるコマだけチェック。P2-3)
   const [toggled, setToggled] = useState(() => new Set());
+  useEffect(() => {
+    if (!prefill?.token) return;
+    setOldTeacher(prefill.oldTeacher || "");
+    setNewTeacher("");
+    setFrom(prefill.from || "");
+    setUntil(prefill.until || "");
+    setMemo(prefill.memo || "");
+    setGrade("");
+    setDay("");
+    setSubj("");
+    setSchool("");
+    setToggled(new Set());
+    onConsumePrefill?.();
+    // token が変わったときだけ入れ直す
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill?.token]);
 
   const teacherNames = useMemo(() => {
     const set = new Set();

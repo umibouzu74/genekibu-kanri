@@ -866,3 +866,37 @@ describe("MonthView 担当の切り替え (A5)", () => {
     expect(cardDates()).toBe(0);
   });
 });
+
+// 講師の不在期間 (P2-6)。日付の横に「🧳不在」、月の上に期間。どちらも画面だけ
+// (no-print: 月間は画像にしてバイトへ送るので講師の事情を広げない)
+describe("MonthView の不在期間", () => {
+  const aways = [
+    { id: 1, teacher: "堀上", startDate: "2026-06-29", endDate: "2026-07-02", memo: "研修" },
+    { id: 2, teacher: "福江", startDate: "2026-07-10", endDate: "2026-07-11" },
+  ];
+
+  it("この講師の期間の日だけに印を出し、月の上に期間を並べる (no-print)", () => {
+    const onOpen = vi.fn();
+    const { container } = render(<MonthView {...baseProps} teacherAways={aways} onOpenTeacherAway={onOpen} />);
+    // 7/1・7/2 の 2 日 (6/29・6/30 は前の月)。福江の分は出さない
+    const chips = screen.getAllByRole("button", { name: "堀上 不在 6/29〜7/2 (研修)" });
+    expect(chips).toHaveLength(2);
+    for (const c of chips) expect(c.className).toMatch(/no-print/);
+    const banner = screen.getByRole("group", { name: "堀上 の不在期間" });
+    expect(banner.className).toMatch(/no-print/);
+    expect(banner).toHaveTextContent("不在 6/29〜7/2 (研修)");
+    fireEvent.click(chips[0]);
+    expect(onOpen).toHaveBeenCalledWith({ id: 1 });
+    // 紙面に出る部分 (no-print の外) には「不在」の字が無い
+    const printable = [...container.querySelectorAll(".month-print-root *")].filter(
+      (el) => !el.closest(".no-print") && el.children.length === 0
+    );
+    expect(printable.some((el) => /不在/.test(el.textContent))).toBe(false);
+  });
+
+  it("この月に掛からなければ何も出さない", () => {
+    render(<MonthView {...baseProps} month={8} teacherAways={aways} />);
+    expect(screen.queryByText("🧳不在")).toBeNull();
+    expect(screen.queryByRole("group", { name: "堀上 の不在期間" })).toBeNull();
+  });
+});

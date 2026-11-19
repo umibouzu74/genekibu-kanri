@@ -97,3 +97,28 @@ describe("TeacherChangeTab: 担当が変わる授業日と新担当の重なり 
     expect(screen.getByText(/担当が変わる授業（最初の 8 回。以降も毎週）/)).toBeInTheDocument();
   });
 });
+
+describe("TeacherChangeTab: ほかの画面から値を入れて開く (講師の不在期間、P2-6)", () => {
+  it("旧担当・開始日・◯日まで・メモが入り、新担当だけ選べばよい状態になる", () => {
+    const onConsumePrefill = vi.fn();
+    render(
+      <ToastProvider render={() => null}>
+        <TeacherChangeTab
+          slots={SLOTS}
+          timetables={TTS}
+          saveSlots={vi.fn()}
+          isAdmin
+          prefill={{ oldTeacher: "福武", from: "2027-01-04", until: "2027-01-22", memo: "研修", token: 1 }}
+          onConsumePrefill={onConsumePrefill}
+        />
+      </ToastProvider>
+    );
+    expect(screen.getByLabelText("旧担当")).toHaveValue("福武");
+    expect(screen.getByLabelText("開始日")).toHaveValue("2027-01-04");
+    expect(screen.getByLabelText("◯日まで（任意）")).toHaveValue("2027-01-22");
+    expect(screen.getByLabelText("新担当")).toHaveValue("");
+    expect(onConsumePrefill).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("担当が変わる授業 計 5 回")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "2 コマに担当変更を付ける" })).toBeDisabled();
+  });
+});

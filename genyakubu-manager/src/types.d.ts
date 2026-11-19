@@ -439,6 +439,18 @@ export interface CardForget {
   recordedAt?: string; // 最後に記録した日時 (ISO)
 }
 
+// ─── Teacher away (講師の不在期間、2026-11-19) ─────────────────────
+// 講師が何日も続けて来られない期間 (utils/teacherAway.js)。講師 1 人 × 期間で 1 件。
+// 授業は動かさない (代行・担当の切り替えは登録画面から人が選んで作る)。講習時間割
+// 作成の自動NG・講師の月間 / 週間・ダッシュボード・代行候補の目印に使う。
+export interface TeacherAway {
+  id: number;
+  teacher: string; // 講師 1 名
+  startDate: string; // "YYYY-MM-DD"
+  endDate: string; // "YYYY-MM-DD" (1 日だけなら startDate と同じ)
+  memo?: string;
+}
+
 // ─── 高校部・予備校の講習 (utils/seniorKoshu、2026-10-27) ────────────
 // 期 (日の並び) × 時限 (時刻) × 担当 (講師 1 人 × 学年 × 講座名)。講師の月間に
 // 出し、講習時間割作成が取り込んで自動NG にする。
@@ -621,6 +633,7 @@ export interface ExportBundle {
   yoteihyoMapping?: YoteihyoMappingEntry[];
   yoteihyoConfirmed?: YoteihyoConfirmation[];
   cardForgets?: CardForget[];
+  teacherAways?: TeacherAway[];
 }
 
 export interface ValidationResult<T> {

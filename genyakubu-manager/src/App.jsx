@@ -59,7 +59,7 @@ import { colors, font, S } from "./styles/common";
 import { LS, SS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
 import { EVENT_KIND, eventSectionAnchorId } from "./constants/eventKinds";
-import { DEFAULT_MASTER_TAB } from "./constants/masterTabs";
+import { DEFAULT_MASTER_TAB, MASTER_TAB } from "./constants/masterTabs";
 import { DEFAULT_STAFF_TAB, STAFF_TAB } from "./constants/staffTabs";
 import { normalizeMinutesTab } from "./constants/minutesTabs";
 import { defaultKoshuSeason, isKoshuSeason } from "./timetable-builder/utils/seasons";
@@ -189,6 +189,9 @@ const HandoverView = lazy(() =>
 const OffsiteLessonView = lazy(() =>
   import("./components/views/OffsiteLessonView").then((m) => ({ default: m.OffsiteLessonView }))
 );
+const TeacherAwayView = lazy(() =>
+  import("./components/views/TeacherAwayView").then((m) => ({ default: m.TeacherAwayView }))
+);
 const SeniorKoshuView = lazy(() =>
   import("./components/views/SeniorKoshuView").then((m) => ({ default: m.SeniorKoshuView }))
 );
@@ -263,6 +266,7 @@ const VIEW_TITLES = {
   [VIEWS.SENIOR_KOSHU]: "高校・予備校の講習",
   [VIEWS.YOTEIHYO]: "予定表チェック",
   [VIEWS.LEAVE]: "有給・半休",
+  [VIEWS.TEACHER_AWAY]: "講師の不在期間",
 };
 
 export default function App() {
@@ -339,6 +343,8 @@ export default function App() {
     saveYoteihyoConfirmed,
     cardForgets,
     saveCardForgets,
+    teacherAways,
+    saveTeacherAways,
     eventVisibility,
     saveEventVisibility,
   } = appData;
@@ -523,6 +529,9 @@ export default function App() {
   // 他校舎の授業の画面への要求 ({id} = その 1 件を開く / {teacher} = その講師で
   // 新規登録を始める。token は同じ要求の繰り返しも効かせるため)
   const [offsiteFocus, setOffsiteFocus] = useState(null);
+  // 講師の不在期間の画面へ渡す要求 ({id} / {teacher}) と、担当変更タブに入れておく値
+  const [teacherAwayFocus, setTeacherAwayFocus] = useState(null);
+  const [teacherChangePrefill, setTeacherChangePrefill] = useState(null);
   // 複数日の欠勤登録ダイアログ。null = 閉じている / { teachers?, date? } = 開く
   const [multiDayAbsence, setMultiDayAbsence] = useState(null);
   // 講師の月間から 1 日の有給・半休を入れるダイアログ。null = 閉じている / { name, date }
@@ -1004,6 +1013,27 @@ export default function App() {
       selectView(VIEWS.OFFSITE, () =>
         setOffsiteFocus(req ? { ...req, token: Date.now() } : null)
       );
+    },
+    [selectView]
+  );
+
+  // 講師の不在期間の画面を開く。{id} でその 1 件、{teacher} でその講師の新規登録
+  // (講師の月間・週間・ダッシュボードの目印・Cmd+K から)
+  const openTeacherAway = useCallback(
+    (req) => {
+      selectView(VIEWS.TEACHER_AWAY, () =>
+        setTeacherAwayFocus(req ? { ...req, token: Date.now() } : null)
+      );
+    },
+    [selectView]
+  );
+  // 担当変更タブ (コースマスター管理) を値を入れた状態で開く (講師の不在期間から)
+  const openTeacherChange = useCallback(
+    (req) => {
+      selectView(VIEWS.MASTER, () => {
+        setMasterTab(MASTER_TAB.TEACHER_CHANGE);
+        setTeacherChangePrefill(req ? { ...req, token: Date.now() } : null);
+      });
     },
     [selectView]
   );
@@ -1668,6 +1698,8 @@ export default function App() {
               onEditExtraLesson={openExtraLessonEditor}
               staffLeave={handoverEnabled ? staffLeave : null}
               onOpenLeave={openLeave}
+              teacherAways={teacherAways}
+              onOpenTeacherAway={openTeacherAway}
             />
           )}
           {/* ダッシュボードの下のメニュー (メインメニューの小さい版)。紙面には
@@ -1768,6 +1800,8 @@ export default function App() {
               extraLessons={extraLessons}
               offsiteLessons={offsiteLessons}
               koshuLessons={koshuLessons}
+              teacherChangePrefill={teacherChangePrefill}
+              onConsumeTeacherChangePrefill={() => setTeacherChangePrefill(null)}
               tab={masterTab}
               onTabChange={setMasterTab}
             />
@@ -2000,6 +2034,22 @@ export default function App() {
               onSelectTeacher={selectTeacher}
             />
           )}
+          {view === VIEWS.TEACHER_AWAY && !selected && (
+            <TeacherAwayView
+              teacherAways={teacherAways}
+              onSave={saveTeacherAways}
+              isAdmin={isAdmin}
+              teacherNames={allTeacherNames}
+              teacherKana={teacherKana}
+              // 期間中の授業は授業時間の集計と同じ材料で拾う (カード忘れと共有)
+              lessonData={cardForgetLessonData}
+              focusRequest={teacherAwayFocus}
+              onConsumeFocus={() => setTeacherAwayFocus(null)}
+              onSelectTeacher={selectTeacher}
+              onOpenTeacherChange={isAdmin ? openTeacherChange : undefined}
+              onOpenAbsence={isAdmin ? (init) => setMultiDayAbsence(init) : undefined}
+            />
+          )}
           {view === VIEWS.SENIOR_KOSHU && !selected && (
             <SeniorKoshuView
               data={seniorKoshu}
@@ -2119,6 +2169,8 @@ export default function App() {
               adjustments={adjustments}
               daySchedules={daySchedules}
               displayCutoff={displayCutoff}
+              // 講師の不在期間 (期間の講習の日の全時限を自動NG にする)
+              teacherAways={teacherAways}
             />
           )}
           {view === VIEWS.REGULAR_BUILDER && !selected && (
@@ -2224,6 +2276,8 @@ export default function App() {
               extraLessons={extraLessons}
               offsiteLessons={offsiteLessons}
               onOpenOffsite={(id) => openOffsite({ id })}
+              teacherAways={teacherAways}
+              onOpenTeacherAway={openTeacherAway}
               onOpenMultiDayAbsence={(init) => setMultiDayAbsence(init || {})}
               onOpenChainSubstitution={(date) => {
                 selectView(VIEWS.SUBS, () => setSubsInitFilter({ tab: "chain", date }));
@@ -2291,6 +2345,8 @@ export default function App() {
               onEditExtraLesson={openExtraLessonEditor}
               offsiteLessons={offsiteLessons}
               onOpenOffsite={openOffsite}
+              teacherAways={teacherAways}
+              onOpenTeacherAway={openTeacherAway}
               displayCutoff={displayCutoff}
               timetables={timetables}
               visibility={eventVisibility}
@@ -2337,6 +2393,8 @@ export default function App() {
                   ? (date) => openCardForget({ name: selected, date })
                   : undefined
               }
+              teacherAways={teacherAways}
+              onOpenTeacherAway={openTeacherAway}
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}
@@ -2582,6 +2640,19 @@ export default function App() {
               isAdmin
                 ? (teacher) => {
                     openOffsite({ teacher });
+                    setCmdPaletteOpen(false);
+                  }
+                : undefined
+            }
+            teacherAways={teacherAways}
+            onOpenTeacherAway={(req) => {
+              openTeacherAway(req);
+              setCmdPaletteOpen(false);
+            }}
+            onAddTeacherAway={
+              isAdmin
+                ? (teacher) => {
+                    openTeacherAway({ teacher });
                     setCmdPaletteOpen(false);
                   }
                 : undefined

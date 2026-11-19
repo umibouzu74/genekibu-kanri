@@ -34,7 +34,8 @@ export function MultiDayAbsenceDialog({
   partTimeStaff = [],
   teacherKana = {},
   sessionCtx: sessionCtxProp = null,
-  // 欠勤組み換えから開いたときの初期値 { teachers, date }
+  // 欠勤組み換えから開いたときの初期値 { teachers, date }。講師の不在期間からは
+  // { teachers, fromDate, toDate, memo }
   initial = null,
   saveSubs,
   onClose,
@@ -65,10 +66,12 @@ export function MultiDayAbsenceDialog({
 
   const [teachers, setTeachers] = useState(() => initial?.teachers || []);
   const [teacherQuery, setTeacherQuery] = useState("");
-  const [fromDate, setFromDate] = useState(() => initial?.date || todayStr);
-  const [toDate, setToDate] = useState(() => initial?.date || todayStr);
+  const [fromDate, setFromDate] = useState(() => initial?.fromDate || initial?.date || todayStr);
+  const [toDate, setToDate] = useState(
+    () => initial?.toDate || initial?.fromDate || initial?.date || todayStr
+  );
   const [mode, setMode] = useState("pending");
-  const [memo, setMemo] = useState("");
+  const [memo, setMemo] = useState(() => initial?.memo || "");
   const [excluded, setExcluded] = useState(() => new Set());
   const [leaveKind, setLeaveKind] = useState(null);
 

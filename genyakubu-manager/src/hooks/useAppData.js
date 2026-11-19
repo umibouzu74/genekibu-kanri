@@ -34,6 +34,7 @@ import { migrateCourseMapping } from "../utils/yoteihyo/courseMapping";
 import { migrateYoteihyoConfirmed } from "../utils/yoteihyo/confirmations";
 import { DEFAULT_ATTENDANCE_SETTINGS, sanitizeAttendanceSettings } from "../utils/partTimeAttendanceSettings";
 import { migrateCardForgets } from "../utils/cardForgets";
+import { migrateTeacherAways } from "../utils/teacherAway";
 import {
   DEFAULT_SPECIAL_EVENT_DISPLAY,
   normalizeSpecialEventDisplay,
@@ -259,6 +260,12 @@ export function useAppData({ toasts, isAdmin }) {
     migrate: migrateCardForgets,
     onError: onStorageError,
   });
+  // 講師の不在期間 (講師 × 期間)。代行を探す人・講習を組む人が見るので閲覧者も
+  // 読める appData/。授業は動かさない目印 (utils/teacherAway)
+  const [teacherAways, saveTeacherAways] = useSyncedStorage(LS.teacherAways, EMPTY_LIST, {
+    migrate: migrateTeacherAways,
+    onError: onStorageError,
+  });
   // 引継ぎメモ (責任者 → 後任)。閲覧者 (匿名ログイン) は appData/ を全部
   // 読めるので、管理者だけが読める adminData/ に置き、管理者のときだけ購読する。
   // 有給・半休も同じ (人事の記録)。handoverEnabled = 管理者だけのデータを扱えるか
@@ -354,6 +361,8 @@ export function useAppData({ toasts, isAdmin }) {
     saveAttendanceSettings,
     cardForgets,
     saveCardForgets,
+    teacherAways,
+    saveTeacherAways,
     eventVisibility,
     saveEventVisibility,
   };

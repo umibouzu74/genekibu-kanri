@@ -31,6 +31,7 @@ import { migrateStaffLeave } from "../utils/staffLeave";
 import { migrateCourseMapping } from "../utils/yoteihyo/courseMapping";
 import { migrateYoteihyoConfirmed } from "../utils/yoteihyo/confirmations";
 import { migrateCardForgets } from "../utils/cardForgets";
+import { migrateTeacherAways } from "../utils/teacherAway";
 import {
   DEFAULT_SPECIAL_EVENT_DISPLAY,
   normalizeSpecialEventDisplay,
@@ -70,6 +71,7 @@ export function useDataIO({
   yoteihyoCourseMapping,
   yoteihyoConfirmed,
   cardForgets,
+  teacherAways,
   saveSlots,
   saveHolidays,
   saveBiweeklyBase,
@@ -101,6 +103,7 @@ export function useDataIO({
   saveYoteihyoCourseMapping,
   saveYoteihyoConfirmed,
   saveCardForgets,
+  saveTeacherAways,
   lsKeys,
   setImporting,
   setShowDataMgr,
@@ -156,6 +159,8 @@ export function useDataIO({
           yoteihyoConfirmed,
           // バイトのカード忘れ (出退勤のカードを通し忘れた日)
           cardForgets,
+          // 講師の不在期間
+          teacherAways,
           // 表示する時間割は日付で決まるので、端末ごとの選択 (旧 activeTimetableId)
           // は持ち出さない。旧バックアップに入っていても読み込みでは無視する
         },
@@ -174,7 +179,7 @@ export function useDataIO({
       console.error(err);
       toasts.error("エクスポートに失敗しました");
     }
-  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, specialEventDisplay, extraLessons, daySchedules, fuzokuPlan, offsiteLessons, seniorKoshu, yobikoEvents, handoverNotes, handoverEnabled, teacherAffiliations, staffLeave, yoteihyoCourseMapping, yoteihyoConfirmed, cardForgets, toasts]);
+  }, [slots, holidays, biweeklyBase, biweeklyAnchors, adjustments, subs, partTimeStaff, subjectCategories, subjects, timetables, displayCutoff, examPeriods, examPrepSchedules, classSets, sessionOverrides, teacherSubjects, teacherKana, specialEvents, specialEventDisplay, extraLessons, daySchedules, fuzokuPlan, offsiteLessons, seniorKoshu, yobikoEvents, handoverNotes, handoverEnabled, teacherAffiliations, staffLeave, yoteihyoCourseMapping, yoteihyoConfirmed, cardForgets, teacherAways, toasts]);
 
   const handleImport = useCallback(
     async (e) => {
@@ -302,6 +307,11 @@ export function useDataIO({
           if (Array.isArray(d.cardForgets) && saveCardForgets) {
             saveCardForgets(migrateCardForgets(d.cardForgets));
           }
+          // 講師の不在期間も旧バックアップには無い (v30 より前) ので、欠けているときは
+          // 現状維持 — 空で上書きしない
+          if (Array.isArray(d.teacherAways) && saveTeacherAways) {
+            saveTeacherAways(migrateTeacherAways(d.teacherAways));
+          }
           if (d.teacherSubjects && typeof d.teacherSubjects === "object" && !Array.isArray(d.teacherSubjects)) {
             saveTeacherSubjects(d.teacherSubjects);
           }
@@ -388,6 +398,7 @@ export function useDataIO({
       saveYoteihyoCourseMapping,
       saveYoteihyoConfirmed,
       saveCardForgets,
+      saveTeacherAways,
       handoverEnabled,
       setImporting,
       setShowDataMgr,
@@ -439,6 +450,8 @@ export function useDataIO({
     if (saveOffsiteLessons) saveOffsiteLessons([]);
     if (saveSeniorKoshu) saveSeniorKoshu(EMPTY_SENIOR_KOSHU);
     if (saveYobikoEvents) saveYobikoEvents([]);
+    // 講師の不在期間は時間割まわりの予定 (休講日・他校舎の授業と同じ) なので消す
+    if (saveTeacherAways) saveTeacherAways([]);
     // localStorage キーの removeItem だけでは React state と Firebase 側が
     // 残り、リロード / 他端末同期で復活してしまうので save で明示的に空にする
     // (export / import には含まれるのに reset だけ漏れていた)
@@ -481,6 +494,7 @@ export function useDataIO({
     saveOffsiteLessons,
     saveSeniorKoshu,
     saveYobikoEvents,
+    saveTeacherAways,
     saveTeacherAffiliations,
     saveYoteihyoCourseMapping,
     saveYoteihyoConfirmed,

@@ -309,3 +309,51 @@ describe('通常授業との重なり → 自動NG を見る所', () => {
     expect(structuredClone(busy)).toEqual(busy);
   });
 });
+
+describe('講師の不在期間 → 自動NG (P2-6)', () => {
+  const AWAY = [
+    { id: 1, teacher: '福江', startDate: '2027-01-12', endDate: '2027-01-15', memo: '研修' },
+    // 講習の講師マスタに居ない人は入れない
+    { id: 2, teacher: '川井', startDate: '2027-01-12', endDate: '2027-01-20' },
+  ];
+  const project = makeProject();
+
+  it('期間に入る講習の日の全時限が NG (通常授業が無くても)。期間の外の日は NG にならない', () => {
+    const busy = buildRegularBusy(project, { teacherAways: AWAY }, '2026-11-13');
+    expect(Object.keys(busy)).toEqual(['福江']);
+    expect(Object.keys(busy['福江'])).toEqual(['1/12(火)', '1/13(水)', '1/15(金)']);
+    const ng = computeAutoNgByTeacher(project.teachers, [], project.periods, busy).get('福江');
+    for (const d of ['1/12(火)', '1/13(水)', '1/15(金)']) {
+      for (const p of [P1, P2, P3]) expect(ng.has(makeNgKey(d, p))).toBe(true);
+    }
+    expect(ng.has(makeNgKey('1/19(火)', P1))).toBe(false);
+    expect(ng.has(makeNgKey('12/25(金)', P1))).toBe(false);
+  });
+
+  it('見え方は「不在」、理由は期間とメモ。時刻の無い時限も NG', () => {
+    const busy = buildRegularBusy(project, { teacherAways: AWAY }, '2026-11-13');
+    const periods = [...project.periods, { id: 9, label: '特別枠' }];
+    const entry = computeAutoNgByTeacher(project.teachers, [], periods, busy).get('福江').get(makeNgKey('1/13(水)', '特別枠'));
+    expect(autoNgSourceLabel(entry)).toBe('不在');
+    expect(describeRegularBusy(entry.regular[0])).toBe('不在 1/12〜1/15 (研修)');
+  });
+
+  it('通常授業と並んで載る。⚠ の一覧の理由にも出る', () => {
+    const busy = buildRegularBusy(
+      project,
+      { regularSlots: [slot(1)], regularTimetables: TIMETABLES, teacherAways: [{ id: 1, teacher: '片岡', startDate: '2027-01-13', endDate: '2027-01-13' }] },
+      '2026-11-13',
+    );
+    const entry = computeAutoNgByTeacher(project.teachers, [], project.periods, busy).get('片岡').get(makeNgKey('1/13(水)', P2));
+    expect(autoNgSourceLabel(entry)).toBe('不在・通常');
+    const withCell = makeProject({ schedule: { [makeKey(3, 1, 1)]: { subject: '数学', teacher: '片岡' } } });
+    const list = computeNgViolationList(withCell, computeAutoNgByTeacher(withCell.teachers, [], withCell.periods, busy));
+    expect(list).toHaveLength(1);
+    expect(list[0].reasons).toEqual(['不在 1/13']);
+  });
+
+  it('不在期間が無ければ従来どおり (同じ空の参照)', () => {
+    expect(buildRegularBusy(project, { teacherAways: [] }, '2026-11-13')).toBe(EMPTY_REGULAR_BUSY);
+    expect(buildRegularBusy(project, { teacherAways: [{ id: 1, teacher: '福江', startDate: '2026-12-01', endDate: '2026-12-02' }] }, '2026-11-13')).toBe(EMPTY_REGULAR_BUSY);
+  });
+});

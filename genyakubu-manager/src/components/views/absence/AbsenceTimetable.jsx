@@ -73,6 +73,7 @@ export function AbsenceTimetable({
   examPeriodsToday = [], // 当日に該当するテスト期間 (バナー表示用)
   sessionOverrides, // 振替の skip 自動付与判定用 (既存override 検出)
   offsiteToday = [], // この日に他校舎へ授業に出ている予定 (重なり・代行候補の「他校舎」)
+  awaysToday = [], // この日に不在期間に入っている講師の記録 (代行候補の「🧳 不在」)
   // 他日から振替で入ってくるコマ (adjustmentDisplay.buildIncomingCards の
   // コマの形。id は "rs:<振替の id>")。通常のコマと同じグリッドにカードで並べる
   incomingCards = [],
@@ -1593,6 +1594,7 @@ export function AbsenceTimetable({
           allTeachers={allTeachers}
           teachers={activeTeachersFor(subPicker.slot)}
           assignments={teacherAssignments}
+          awaysToday={awaysToday}
           subsByTeacher={Object.fromEntries(
             subsForSlot(subPicker.slot).map((x) => [x.originalTeacher, x])
           )}

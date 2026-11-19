@@ -18,6 +18,7 @@
 import type {
   BiweeklyAnchor,
   CardForget,
+  TeacherAway,
   ClassSet,
   ClassSetUnit,
   CohortCutoff,
@@ -53,7 +54,7 @@ import type {
 import { SPECIAL_EVENT_TYPE_BY_KEY } from "../constants/specialEvents";
 import { upgradeSpecialEventTypes } from "./specialEventTypes";
 
-export const CURRENT_SCHEMA_VERSION = 29;
+export const CURRENT_SCHEMA_VERSION = 30;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -430,6 +431,18 @@ export function isCardForget(x: unknown): x is CardForget {
   for (const k of ["inTime", "outTime", "memo", "recordedAt"] as const) {
     if (x[k] !== undefined && !isString(x[k])) return false;
   }
+  return true;
+}
+
+// 講師の不在期間 (utils/teacherAway)。形だけを見る: 開始 > 終了・終了日の欠けは
+// 読み込みの migrateTeacherAways が直すので、1 件のためにバックアップ全体を拒まない
+export function isTeacherAway(x: unknown): x is TeacherAway {
+  if (!isObject(x)) return false;
+  if (!isNumber(x.id)) return false;
+  if (!isString(x.teacher) || x.teacher.trim() === "") return false;
+  if (!isIsoDate(x.startDate)) return false;
+  if (x.endDate !== undefined && !isIsoDate(x.endDate)) return false;
+  if (x.memo !== undefined && !isString(x.memo)) return false;
   return true;
 }
 
@@ -827,6 +840,7 @@ export function validateExportBundle(
     ["yoteihyoMapping", isYoteihyoMappingEntry],
     ["yoteihyoConfirmed", isYoteihyoConfirmation],
     ["cardForgets", isCardForget],
+    ["teacherAways", isTeacherAway],
   ] as const) {
     const list = raw[key];
     if (list == null) continue;
@@ -1241,6 +1255,10 @@ export function migrateExportBundle(raw: unknown): unknown {
   //             足すだけで既存データの変換は不要 (v26 と同じく「理解する schema」の
   //             切れ目として版を上げる)。古い版の端末は切り替え・時刻を知らないので、
   //             リリース後は全端末で再読み込みしてもらう。
+
+  // v29 → v30: teacherAways (講師の不在期間: 講師 × 開始日 × 終了日) を追加。
+  //             既定値で埋めない (無ければ現状維持)。表示期間設定の学年グループの
+  //             timetableId・Slot.noOrientation もこの版から (足すだけで変換は不要)。
 
   bundle.schemaVersion = CURRENT_SCHEMA_VERSION;
   return bundle;

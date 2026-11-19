@@ -290,3 +290,41 @@ describe("CommandPalette: 講師のコマ数とコマの結果の期 (P3-7)", ()
     expect(slotTexts[1]).toContain("2026 1学期");
   });
 });
+
+// 講師の不在期間 (P2-6)。講師名・メモで引け、終わった期間は出さない。登録は管理者だけ
+describe("CommandPalette の講師の不在期間", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("講師名で引くと、終わっていない不在期間がその 1 件を開く項目として出る", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 11, 20, 12, 0));
+    const onOpenTeacherAway = vi.fn();
+    renderPalette({
+      teacherAways: [
+        { id: 1, teacher: "福江", startDate: "2027-01-04", endDate: "2027-01-22", memo: "研修" },
+        { id: 2, teacher: "福江", startDate: "2026-11-01", endDate: "2026-11-03" },
+      ],
+      onOpenTeacherAway,
+    });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "福江" } });
+    const hits = screen.getAllByRole("option").filter((o) => o.textContent.includes("不在"));
+    expect(hits.map((o) => o.textContent)).toEqual([expect.stringContaining("福江 不在 1/4〜1/22 (研修)")]);
+    fireEvent.click(hits[0]);
+    expect(onOpenTeacherAway).toHaveBeenCalledWith({ id: 1 });
+  });
+
+  it("「不在期間を登録」は管理者 (onAddTeacherAway を渡したとき) だけ。画面へもビュー名で飛べる", () => {
+    const onAddTeacherAway = vi.fn();
+    const { onSelectView } = renderPalette({ onAddTeacherAway, selectedTeacher: "福江" });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "不在期間" } });
+    fireEvent.click(screen.getByRole("option", { name: /福江 の不在期間を登録/ }));
+    expect(onAddTeacherAway).toHaveBeenCalledWith("福江");
+    cleanup();
+    const fns = renderPalette();
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "不在期間" } });
+    expect(screen.queryByRole("option", { name: /不在期間を登録/ })).toBeNull();
+    fireEvent.click(screen.getByRole("option", { name: /講師の不在期間 \(研修/ }));
+    expect(fns.onSelectView).toHaveBeenCalledWith(VIEWS.TEACHER_AWAY);
+    expect(onSelectView).not.toHaveBeenCalled();
+  });
+});

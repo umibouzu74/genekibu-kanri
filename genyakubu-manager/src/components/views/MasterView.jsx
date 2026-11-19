@@ -75,6 +75,9 @@ export function MasterView({
   extraLessons = [],
   offsiteLessons = [],
   koshuLessons = [],
+  // 担当変更タブに入れておく値 ({oldTeacher, from, until, memo, token}。講師の不在期間から)
+  teacherChangePrefill = null,
+  onConsumeTeacherChangePrefill,
   tab: tabProp,
   onTabChange,
 }) {
@@ -282,6 +285,8 @@ export function MasterView({
           extraLessons={extraLessons}
           offsiteLessons={offsiteLessons}
           koshuLessons={koshuLessons}
+          prefill={teacherChangePrefill}
+          onConsumePrefill={onConsumeTeacherChangePrefill}
         />
       </div>
     );

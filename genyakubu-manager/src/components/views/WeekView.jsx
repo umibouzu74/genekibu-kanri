@@ -28,12 +28,13 @@ import {
   rescheduleTeacherLabel,
 } from "../../utils/adjustmentDisplay";
 import { upcomingExtraLessons } from "../../utils/extraLessons";
-import { EXTRA_LESSON_COLOR, OFFSITE_LESSON_COLOR as OC } from "../../constants/colors";
+import { EXTRA_LESSON_COLOR, OFFSITE_LESSON_COLOR as OC, TEACHER_AWAY_COLOR } from "../../constants/colors";
 import {
   formatOffsitePeriod,
   formatOffsiteTime,
   offsiteDayStatus,
 } from "../../utils/offsiteLessons";
+import { awayForTeacherOn, awaysInRange, describeAway } from "../../utils/teacherAway";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { useOptionalToasts } from "../../hooks/useToasts";
 import { S } from "../../styles/common";
@@ -264,6 +265,10 @@ export function WeekView({
   // onOpenOffsite({id} | {teacher}) で他校舎の授業の画面を開く
   offsiteLessons = [],
   onOpenOffsite,
+  // 講師の不在期間 (utils/teacherAway)。週に掛かるものを上に、列の見出しに「🧳不在」
+  // (画面だけ)。onOpenTeacherAway({id}) で不在期間の画面のその 1 件を開く
+  teacherAways = [],
+  onOpenTeacherAway,
   displayCutoff,
   timetables = [],
   visibility = DEFAULT_EVENT_VISIBILITY,
@@ -295,6 +300,11 @@ export function WeekView({
     return m;
   }, [weekMonday]);
   const weekSaturday = weekDates["土"];
+  // この週 (月〜土) に掛かるこの講師の不在期間
+  const weekAways = useMemo(
+    () => awaysInRange(teacherAways, weekMonday, weekSaturday, teacher),
+    [teacherAways, weekMonday, weekSaturday, teacher]
+  );
   // 「今週」= 今日を基準にしたときに出る週。日曜は翌週を指すので、月〜土の
   // 範囲で今日を挟む判定だと日曜に「今週」が点かず t / 今週が効いていない
   // ように見える
@@ -816,6 +826,51 @@ export function WeekView({
           )}
         </span>
       </div>
+      {weekAways.length > 0 && (
+        <div
+          className="no-print"
+          role="group"
+          aria-label={`${teacher} の不在期間`}
+          style={{
+            background: TEACHER_AWAY_COLOR.bannerBg,
+            border: `1px solid ${TEACHER_AWAY_COLOR.bannerBorder}`,
+            borderRadius: 8,
+            padding: "6px 12px",
+            marginBottom: 10,
+            display: "flex",
+            flexWrap: "wrap",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+          }}
+        >
+          <span style={{ fontWeight: 800, color: TEACHER_AWAY_COLOR.deep }}>🧳 この週に不在:</span>
+          {weekAways.map((r) =>
+            onOpenTeacherAway ? (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => onOpenTeacherAway({ id: r.id })}
+                style={{
+                  border: `1px solid ${TEACHER_AWAY_COLOR.bannerBorder}`,
+                  background: "#fff",
+                  color: TEACHER_AWAY_COLOR.deep,
+                  borderRadius: 12,
+                  padding: "2px 10px",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                {describeAway(r, { withTeacher: false })}
+              </button>
+            ) : (
+              <span key={r.id} style={{ color: TEACHER_AWAY_COLOR.deep }}>
+                {describeAway(r, { withTeacher: false })}
+              </span>
+            )
+          )}
+        </div>
+      )}
       {upcomingEvents.length > 0 && (
         <div
           style={{
@@ -1319,6 +1374,23 @@ export function WeekView({
                 <span style={{ fontSize: 11, letterSpacing: 0, opacity: 0.9 }}>
                   {fmtMD(colDate)}
                 </span>
+                {weekAways.length > 0 && awayForTeacherOn(weekAways, teacher, colDate) && (
+                  <span
+                    className="no-print"
+                    title={describeAway(awayForTeacherOn(weekAways, teacher, colDate))}
+                    style={{
+                      fontSize: 9,
+                      letterSpacing: 0,
+                      background: "#fff",
+                      color: TEACHER_AWAY_COLOR.deep,
+                      padding: "0 5px",
+                      borderRadius: 8,
+                      fontWeight: 800,
+                    }}
+                  >
+                    🧳不在
+                  </span>
+                )}
                 {isTodayCol && (
                   <span
                     style={{

@@ -4,7 +4,7 @@ import { createContext, useContext } from 'react';
 // 講習側は本体のデータに書き込まない (正は本体)。いまは「他校舎の授業」の
 // 取り込み (講師不在・NG の画面)、出勤可能調査の「バイトのみ」の絞り込み、
 // 退職した講師の扱い、行事予定 (講習) との日程の食い違いの確認、通常授業との講師の
-// 重なり (自動NG) に使う。本体の外で単体で描くとき (テストなど) は空のまま。
+// 重なりと講師の不在期間 (自動NG) に使う。本体の外で単体で描くとき (テストなど) は空のまま。
 export interface HostData {
   /** 本体の他校舎の授業 (utils/offsiteLessons の OffsiteLesson[]) */
   offsiteLessons: unknown[];
@@ -47,6 +47,11 @@ export interface HostData {
   adjustments?: unknown[];
   daySchedules?: unknown[];
   displayCutoff?: unknown;
+  /**
+   * 本体の講師の不在期間 (utils/teacherAway の TeacherAway[]、P2-6)。期間に入る講習の
+   * 日の全時限を自動NG にする (utils/regularBusy → autoNg、見え方は「(NG:不在)」)
+   */
+  teacherAways?: unknown[];
 }
 
 const EMPTY: HostData = {
@@ -65,6 +70,7 @@ const EMPTY: HostData = {
   adjustments: [],
   daySchedules: [],
   displayCutoff: undefined,
+  teacherAways: [],
 };
 
 export const HostDataContext = createContext<HostData>(EMPTY);

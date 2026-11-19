@@ -18,12 +18,13 @@ import {
   splitTeacherField,
 } from "../utils/biweekly";
 import { parseDateQuery } from "../utils/parseDateQuery";
-import { fmtDateWeekday } from "../utils/dateHelpers";
+import { fmtDate, fmtDateWeekday } from "../utils/dateHelpers";
 import { shiftDate } from "./views/dashboardHelpers";
 import { useToday } from "../hooks/useToday";
 import { teacherMatchesQuery } from "../utils/teacherKana";
 import { filterNotes, fmtNoteDate, sortNotesDesc } from "../utils/handoverNotes";
 import { describeOffsite, formatOffsitePeriod } from "../utils/offsiteLessons";
+import { awayStatus, describeAway } from "../utils/teacherAway";
 
 // ─── Cmd+K で起動するグローバル検索パレット ─────────────────────────
 // 講師名・科目・教室・メモを横断検索し、選択するとそのビューに遷移する。
@@ -41,6 +42,11 @@ export function CommandPalette({
   offsiteLessons = [],
   onOpenOffsite,
   onAddOffsite,
+  // 講師の不在期間 (講師・メモで引ける。終わったものは出さない)。onOpenTeacherAway({id})
+  // でその 1 件、onAddTeacherAway(teacher) は管理者のときだけ (その講師で新規登録)
+  teacherAways = [],
+  onOpenTeacherAway,
+  onAddTeacherAway,
   selectedTeacher,
   onSelectTeacher,
   onSelectView,
@@ -348,6 +354,29 @@ export function CommandPalette({
       }
     }
 
+    // 講師の不在期間 (講師名・メモ)。講師名で引いたときに「1/4〜1/22 不在」が
+    // 並んで分かるように。終わった期間は出さない (画面の「終了」で見る)
+    if (onOpenTeacherAway && !empty) {
+      const today = fmtDate(new Date());
+      const matchedAway = teacherAways.filter(
+        (r) =>
+          awayStatus(r, today) !== "ended" &&
+          ([r.teacher, r.memo, "不在"].filter(Boolean).some((f) => f.toLowerCase().includes(q)) ||
+            teacherFieldHit(r.teacher))
+      );
+      for (const r of matchedAway.slice(0, 5)) {
+        hits.push({
+          type: "away",
+          label: describeAway(r),
+          detail: "講師の不在期間",
+          action: () => {
+            onOpenTeacherAway({ id: r.id });
+            onClose();
+          },
+        });
+      }
+    }
+
     // ビュー検索
     const viewNames = [
       { key: views.MENU, label: "メインメニュー (機能の一覧)" },
@@ -371,6 +400,7 @@ export function CommandPalette({
       // 画面名からは辿れない中身 (確認テストの科目・バス時刻) でも引けるように
       { key: views.FUZOKU_PLAN, label: "附属の授業予定 (確認テスト・バス時刻)" },
       { key: views.OFFSITE, label: "他校舎の授業 (講師の出講予定)" },
+      { key: views.TEACHER_AWAY, label: "講師の不在期間 (研修・病気などで来られない期間)" },
       { key: views.SENIOR_KOSHU, label: "高校・予備校の講習 (担当・講座名・期)" },
       { key: views.REGULAR_BUILDER, label: "通常時間割作成 (次の期の時間割を組む)" },
     ];
@@ -582,6 +612,21 @@ export function CommandPalette({
         },
       });
     }
+    // 不在期間の登録 (講師を選んでいればその講師で始める。管理者だけ)
+    const awayAddLabel = selectedTeacher
+      ? `${selectedTeacher} の不在期間を登録`
+      : "講師の不在期間を登録";
+    if (onAddTeacherAway && matchLabel(awayAddLabel)) {
+      hits.push({
+        type: "view",
+        label: awayAddLabel,
+        detail: "研修・病気などで何日も来られない期間 (講習の自動NG にもなる)",
+        action: () => {
+          onAddTeacherAway(selectedTeacher || "");
+          onClose();
+        },
+      });
+    }
     if (onOpenMultiDayAbsence && matchLabel("複数日の欠勤登録")) {
       hits.push({
         type: "view",
@@ -687,6 +732,9 @@ export function CommandPalette({
     offsiteLessons,
     onOpenOffsite,
     onAddOffsite,
+    teacherAways,
+    onOpenTeacherAway,
+    onAddTeacherAway,
     selectedTeacher,
     onSelectTeacher,
     onSelectView,
@@ -740,8 +788,8 @@ export function CommandPalette({
 
   if (!open) return null;
 
-  const typeIcons = { teacher: "👤", slot: "📝", sub: "🔄", view: "📋", event: "📅", date: "📆", handover: "🗒", offsite: "🏫" };
-  const typeLabels = { teacher: "講師", slot: "コマ", sub: "代行", view: "ビュー", event: "イベント", date: "日付", handover: "引継ぎ", offsite: "他校舎" };
+  const typeIcons = { teacher: "👤", slot: "📝", sub: "🔄", view: "📋", event: "📅", date: "📆", handover: "🗒", offsite: "🏫", away: "🧳" };
+  const typeLabels = { teacher: "講師", slot: "コマ", sub: "代行", view: "ビュー", event: "イベント", date: "日付", handover: "引継ぎ", offsite: "他校舎", away: "不在" };
   const listboxId = "cmdp-results";
   const optionId = (i) => `cmdp-opt-${i}`;
   const activeOptionId =
