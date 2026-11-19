@@ -2532,6 +2532,10 @@ export default function App() {
             open={cmdPaletteOpen}
             onClose={() => setCmdPaletteOpen(false)}
             slots={slots}
+            currentSlots={currentSlots}
+            rosterSlots={rosterSlots}
+            timetables={timetables}
+            onOpenDataManager={() => setShowDataMgr(true)}
             teacherKana={teacherKana}
             subs={subs}
             holidays={holidays}

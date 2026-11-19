@@ -228,3 +228,65 @@ describe("CommandPalette の時間割管理のセクション", () => {
     expect(screen.queryByRole("option", { name: /時刻一括変換/ })).toBeNull();
   });
 });
+
+// メニューにあるものは Cmd+K でも出る (2026-11-19、P3-8)。サイドバーの項目の名前で
+// 探すと、何か 1 件は出ること (ビューはその画面、ダイアログはそのダイアログ)
+import { SIDEBAR_MENU } from "../constants/sidebarMenu";
+
+describe("CommandPalette: メニューにあるものは Cmd+K でも出る (P3-8)", () => {
+  const handlers = {
+    onOpenDayReschedule: vi.fn(),
+    onOpenMultiDayAbsence: vi.fn(),
+    onOpenTestPrep: vi.fn(),
+    onOpenMonthBatch: vi.fn(),
+    onOpenCardForget: vi.fn(),
+    onOpenDataManager: vi.fn(),
+  };
+  for (const item of SIDEBAR_MENU) {
+    it(`「${item.label}」で出る`, () => {
+      renderPalette({ ...handlers, canUseAdminData: true });
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: item.label } });
+      expect(screen.getAllByRole("option").length).toBeGreaterThan(0);
+    });
+  }
+
+  it("「データ管理」でデータ管理のダイアログを開ける", () => {
+    const { onClose } = renderPalette(handlers);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "データ管理" } });
+    fireEvent.click(screen.getByRole("option", { name: /データ管理/ }));
+    expect(handlers.onOpenDataManager).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+});
+
+// 講師のコマ数はサイドバーと同じ (今の時間割・隔週は 0.5)、コマの結果は今の期から (P3-7)
+describe("CommandPalette: 講師のコマ数とコマの結果の期 (P3-7)", () => {
+  const TTS = [
+    { id: 1, name: "2026 1学期", startDate: "2026-04-07", endDate: "2026-08-24", grades: [] },
+    { id: 3, name: "2026 2学期", startDate: "2026-08-25", endDate: "2026-12-21", grades: [] },
+  ];
+  const mk = (id, o = {}) => ({
+    id, day: "水", time: "18:55-19:40", grade: "中3", cls: "", room: "502", subj: "英/数", teacher: "堀上", note: "", ...o,
+  });
+  const old1 = mk(1);
+  const old2 = mk(2, { day: "金" });
+  const cur = mk(10, { timetableId: 3 });
+  const curBi = mk(11, { timetableId: 3, day: "木", note: "隔週(河野)" });
+  const slots = [old1, old2, cur, curBi];
+
+  it("講師の「◯コマ」は今の時間割で数える (全期の合計ではない)", () => {
+    renderPalette({ slots, currentSlots: [cur, curBi], rosterSlots: [cur, curBi], timetables: TTS });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "堀上" } });
+    expect(screen.getByRole("option", { name: /堀上.*1\.5コマ/ })).toBeTruthy();
+  });
+
+  it("コマの結果は今の期を先に出し、ほかの期のコマには時間割の名前を添える", () => {
+    renderPalette({ slots: [old1, cur], currentSlots: [cur], rosterSlots: [cur], timetables: TTS });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "英/数" } });
+    const texts = screen.getAllByRole("option").map((o) => o.textContent);
+    const slotTexts = texts.filter((t) => t.includes("水 18:55-19:40"));
+    expect(slotTexts).toHaveLength(2);
+    expect(slotTexts[0]).not.toContain("2026 1学期");
+    expect(slotTexts[1]).toContain("2026 1学期");
+  });
+});

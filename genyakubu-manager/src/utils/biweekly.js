@@ -182,6 +182,26 @@ export function slotWeight(note) {
   return isBiweekly(note) ? 0.5 : 1;
 }
 
+/**
+ * 講師ごとのコマ数 (隔週は 0.5。複数担当は 1 人ずつ、隔週の相手にも数える)。
+ * サイドバーの講師名の横の数と Cmd+K の講師の「◯コマ」が共有する (片方だけ
+ * 数え方を変えない)。渡すのは今の時間割のコマ (App の currentSlots)。
+ * @param {object[]} slots
+ * @returns {Map<string, number>}
+ */
+export function countSlotsByTeacher(slots) {
+  const m = new Map();
+  for (const s of slots || []) {
+    const w = slotWeight(s.note);
+    for (const t of getSlotTeachers(s)) m.set(t, (m.get(t) || 0) + w);
+    if (isBiweekly(s.note)) {
+      const partner = biweeklyPartner(s.note);
+      if (partner) m.set(partner, (m.get(partner) || 0) + w);
+    }
+  }
+  return m;
+}
+
 // Compute weighted slot count for an array of slots.
 export function weightedSlotCount(slots) {
   let total = 0;

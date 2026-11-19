@@ -11,13 +11,7 @@ import { LS } from "../constants/storageKeys";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { VIEW_CHORD_BY_VIEW } from "../constants/chords";
 import { colors } from "../styles/tokens";
-import {
-  biweeklyPartner,
-  slotWeight,
-  formatCount,
-  getSlotTeachers,
-  isBiweekly,
-} from "../utils/biweekly";
+import { countSlotsByTeacher, formatCount } from "../utils/biweekly";
 import { SyncStatus } from "./SyncStatus";
 import { LoginForm } from "./LoginForm";
 import { filterTeacherGroups } from "../hooks/useTeacherGroups";
@@ -265,22 +259,8 @@ export function Sidebar({
     () => summarizeOpenSubs(subs, today).upcoming.length,
     [subs, today]
   );
-  const slotCountByTeacher = useMemo(() => {
-    const m = new Map();
-    const w = (s) => slotWeight(s.note);
-    for (const s of slots) {
-      // Attribute to each individual teacher (handles "·" separator)
-      for (const t of getSlotTeachers(s)) {
-        m.set(t, (m.get(t) || 0) + w(s));
-      }
-      // Also attribute to biweekly partner mentioned in note
-      if (isBiweekly(s.note)) {
-        const partner = biweeklyPartner(s.note);
-        if (partner) m.set(partner, (m.get(partner) || 0) + w(s));
-      }
-    }
-    return m;
-  }, [slots]);
+  // 講師ごとのコマ数 (Cmd+K の講師の「◯コマ」と同じ数え方。utils/biweekly)
+  const slotCountByTeacher = useMemo(() => countSlotsByTeacher(slots), [slots]);
 
   // 教科名 → カテゴリ色 のマップ (グループヘッダの色付けに使用)
   const subjectColorByName = useMemo(() => {
