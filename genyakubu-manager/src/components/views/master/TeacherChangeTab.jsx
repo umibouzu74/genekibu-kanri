@@ -13,6 +13,7 @@ import {
   listTeacherChanges,
   removeTeacherChange,
   restoreTeacherChanges,
+  splitCandidatesByPeriod,
 } from "../../../utils/teacherChangePlan";
 
 // ─── 担当変更タブ (コースマスター管理、A5 2026-10-31) ─────────────────
@@ -55,8 +56,8 @@ export function TeacherChangeTab({
   const [day, setDay] = useState("");
   const [subj, setSubj] = useState("");
   const [school, setSchool] = useState("");
-  // 外したコマ (既定は候補を全部付ける)
-  const [unchecked, setUnchecked] = useState(() => new Set());
+  // 既定から切り替えたコマ (既定は期間に授業のあるコマだけチェック。P2-3)
+  const [toggled, setToggled] = useState(() => new Set());
 
   const teacherNames = useMemo(() => {
     const set = new Set();
@@ -89,7 +90,24 @@ export function TeacherChangeTab({
       ),
     [slots, oldTeacher, from, timetableId, timetables, grade, day, subj, school]
   );
-  const chosenIds = candidates.filter((s) => !unchecked.has(s.id)).map((s) => s.id);
+  // 期間 (開始日〜◯日まで、無ければその期の終わり) に授業のある時間割のコマだけ
+  // 既定でチェックする。前の期・次の期のコマは畳んでおく (付けても効かないか、
+  // 次の期に持ち越す変更かは人が選ぶ)
+  const { inPeriod, outOfPeriod } = useMemo(
+    () => splitCandidatesByPeriod(candidates, timetables, from, until || null),
+    [candidates, timetables, from, until]
+  );
+  const isChecked = (s, inside) => (inside ? !toggled.has(s.id) : toggled.has(s.id));
+  const chosenIds = [
+    ...inPeriod.filter((s) => isChecked(s, true)),
+    ...outOfPeriod.filter((s) => isChecked(s, false)),
+  ].map((s) => s.id);
+  const toggle = (id) => {
+    const next = new Set(toggled);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setToggled(next);
+  };
   const validUntil = !until || !from || until >= from;
   const canApply =
     isAdmin && oldTeacher.trim() && newTeacher.trim() && from && chosenIds.length > 0 && validUntil &&
@@ -139,7 +157,7 @@ export function TeacherChangeTab({
         },
       }
     );
-    setUnchecked(new Set());
+    setToggled(new Set());
   };
 
   const removeRedundantSubs = () => {
@@ -191,13 +209,13 @@ export function TeacherChangeTab({
           <div>
             <label style={label} htmlFor="tc-old">旧担当</label>
             <input id="tc-old" list="teacher-change-names" value={oldTeacher}
-              onChange={(e) => { setOldTeacher(e.target.value); setUnchecked(new Set()); }}
+              onChange={(e) => { setOldTeacher(e.target.value); setToggled(new Set()); }}
               style={{ ...S.input, width: 120 }} />
           </div>
           <div>
             <label style={label} htmlFor="tc-from">開始日</label>
             <input id="tc-from" type="date" value={from}
-              onChange={(e) => { setFrom(e.target.value); setUnchecked(new Set()); }}
+              onChange={(e) => { setFrom(e.target.value); setToggled(new Set()); }}
               style={{ ...S.input, width: "auto" }} />
           </div>
           <div>
@@ -209,7 +227,8 @@ export function TeacherChangeTab({
           <div>
             <label style={label} htmlFor="tc-until">◯日まで（任意）</label>
             <input id="tc-until" type="date" value={until} min={from || undefined}
-              onChange={(e) => setUntil(e.target.value)} style={{ ...S.input, width: "auto" }} />
+              onChange={(e) => { setUntil(e.target.value); setToggled(new Set()); }}
+              style={{ ...S.input, width: "auto" }} />
           </div>
           <div style={{ flex: 1, minWidth: 140 }}>
             <label style={label} htmlFor="tc-memo">メモ（任意）</label>
@@ -286,30 +305,33 @@ export function TeacherChangeTab({
               {from} の時点で {oldTeacher.trim()} が担当しているコマはありません（条件を確かめてください）。
             </div>
           ) : (
-            <ul aria-label="担当変更の対象のコマ" style={{ listStyle: "none", margin: 0, padding: 0 }}>
-              {candidates.map((s) => (
-                <li key={s.id} style={{ fontSize: 12, padding: "2px 0" }}>
-                  <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                    <input
-                      type="checkbox"
-                      checked={!unchecked.has(s.id)}
-                      onChange={() => {
-                        const next = new Set(unchecked);
-                        if (next.has(s.id)) next.delete(s.id);
-                        else next.add(s.id);
-                        setUnchecked(next);
-                      }}
-                    />
-                    {s.day} {s.time} {s.grade}
-                    {s.cls && s.cls !== "-" ? s.cls : ""} {s.subj}（{s.teacher}
-                    {s.note ? ` / ${s.note}` : ""}）
-                    {timetables?.length > 1 && (
-                      <span style={{ color: "#888", fontSize: 10 }}>{ttName(s.timetableId)}</span>
-                    )}
-                  </label>
-                </li>
-              ))}
-            </ul>
+            <>
+              {inPeriod.length > 0 ? (
+                <ul aria-label="担当変更の対象のコマ" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                  {inPeriod.map((s) => (
+                    <CandidateRow key={s.id} slot={s} checked={isChecked(s, true)}
+                      onToggle={() => toggle(s.id)} ttName={timetables?.length > 1 ? ttName(s.timetableId) : ""} />
+                  ))}
+                </ul>
+              ) : (
+                <div style={{ fontSize: 12, color: "#888" }}>
+                  この期間に授業のある時間割のコマはありません（期間・時間割を確かめてください）。
+                </div>
+              )}
+              {outOfPeriod.length > 0 && (
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ fontSize: 12, color: "#666", cursor: "pointer" }}>
+                    この期間に授業の無いコマ {outOfPeriod.length} 件（前の期・次の期の時間割。既定では付けません）
+                  </summary>
+                  <ul aria-label="この期間に授業の無いコマ" style={{ listStyle: "none", margin: "4px 0 0", padding: 0 }}>
+                    {outOfPeriod.map((s) => (
+                      <CandidateRow key={s.id} slot={s} checked={isChecked(s, false)}
+                        onToggle={() => toggle(s.id)} ttName={timetables?.length > 1 ? ttName(s.timetableId) : ""} />
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </>
           )}
         </div>
 
@@ -388,5 +410,19 @@ export function TeacherChangeTab({
         )}
       </div>
     </div>
+  );
+}
+
+function CandidateRow({ slot: s, checked, onToggle, ttName }) {
+  return (
+    <li style={{ fontSize: 12, padding: "2px 0" }}>
+      <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+        <input type="checkbox" checked={checked} onChange={onToggle} />
+        {s.day} {s.time} {s.grade}
+        {s.cls && s.cls !== "-" ? s.cls : ""} {s.subj}（{s.teacher}
+        {s.note ? ` / ${s.note}` : ""}）
+        {ttName && <span style={{ color: "#888", fontSize: 10 }}>{ttName}</span>}
+      </label>
+    </li>
   );
 }

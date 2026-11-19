@@ -4,9 +4,11 @@ import {
   candidateSlotsForChange,
   describeTeacherChange,
   findRecordsAfterChange,
+  isSlotInChangePeriod,
   listTeacherChanges,
   removeTeacherChange,
   restoreTeacherChanges,
+  splitCandidatesByPeriod,
 } from "./teacherChangePlan";
 import { activeTeachersOnDate } from "./absenceHelpers";
 
@@ -119,5 +121,44 @@ describe("担当変更の登録 (A5)", () => {
     const list = listTeacherChanges(slots);
     expect(list).toHaveLength(1);
     expect(describeTeacherChange(list[0])).toBe("10/27〜 福江（前：小見山）");
+  });
+});
+
+// 担当変更の期間に授業のある時間割のコマ (2026-11-19、P2-3)
+describe("isSlotInChangePeriod / splitCandidatesByPeriod", () => {
+  const TTS = [
+    { id: 1, name: "1学期", startDate: "2026-04-07", endDate: "2026-08-24", grades: [] },
+    { id: 3, name: "2学期", startDate: "2026-08-25", endDate: "2026-12-21", grades: [] },
+    { id: 4, name: "3学期", startDate: "2027-01-08", endDate: null, grades: ["中1", "中2", "高2"] },
+  ];
+  const mkS = (id, timetableId, grade = "高2") => ({
+    id, timetableId, day: "火", time: "19:00-20:20", grade, cls: "", subj: "高松高 文系数学", teacher: "福武", note: "",
+  });
+  const s1 = mkS(1, 1);
+  const s3 = mkS(3, 3);
+  const s4 = mkS(4, 4);
+
+  it("期と期の間の開始日 (1/4〜1/22) は、次に始まる 3学期のコマだけ", () => {
+    const r = splitCandidatesByPeriod([s1, s3, s4], TTS, "2027-01-04", "2027-01-22");
+    expect(r.inPeriod.map((s) => s.id)).toEqual([4]);
+    expect(r.outOfPeriod.map((s) => s.id)).toEqual([1, 3]);
+  });
+
+  it("◯日まで が無ければ、開始日の時点の期の終わりまで (2学期の途中からは 3学期を含めない)", () => {
+    expect(splitCandidatesByPeriod([s1, s3, s4], TTS, "2026-10-27", null).inPeriod.map((s) => s.id)).toEqual([3]);
+    // 期と期の間で期限なし = 3学期 (終了日なし) の間
+    expect(splitCandidatesByPeriod([s1, s3, s4], TTS, "2027-01-04", null).inPeriod.map((s) => s.id)).toEqual([4]);
+  });
+
+  it("期間が期をまたげば両方の期", () => {
+    expect(splitCandidatesByPeriod([s1, s3, s4], TTS, "2026-12-14", "2027-01-22").inPeriod.map((s) => s.id)).toEqual([3, 4]);
+  });
+
+  it("時間割の対象学年に無いコマは期間外 (3学期に中3 は無い)", () => {
+    expect(isSlotInChangePeriod(mkS(9, 4, "中3"), TTS, "2027-01-04", "2027-01-22")).toBe(false);
+  });
+
+  it("時間割が 1 つ以下なら全部期間内", () => {
+    expect(isSlotInChangePeriod(s1, [TTS[0]], "2027-01-04", null)).toBe(true);
   });
 });

@@ -17,6 +17,7 @@ import {
   withTeacherChanges,
 } from "./biweekly";
 import { firstSubjToken } from "./cohorts";
+import { currentTimetableIdsForGrade, isTimetableActiveForDate } from "./timetable";
 import { shiftDate } from "../components/views/dashboardHelpers";
 
 /** その日の担当 (主担当の名前の配列と隔週の相手) */
@@ -47,6 +48,54 @@ export function candidateSlotsForChange(slots, filter) {
     const { main, partner } = teachersOn(s, filter.from);
     return main.includes(old) || partner === old;
   });
+}
+
+/**
+ * 担当変更の期間 (開始日〜◯日まで) に授業のある時間割のコマか (2026-11-19、P2-3)。
+ * 期間の終わりは「◯日まで」、無ければ開始日の時点の時間割の終了日 (期間限定でない
+ * 変更はその期のコマに付ける)。開始日が期と期の間なら、開始日の後で最初に始まる
+ * 時間割を「その時点の時間割」とみなす (timetable.currentTimetableIdsForGrade)。
+ * コマの時間割が期間のどこかで有効なら期間内 (isTimetableActiveForDate)。
+ * 時間割が 1 つ以下なら全部期間内 (切り替わる相手が無い)。
+ * @param {object} slot
+ * @param {object[]} timetables
+ * @param {string} from
+ * @param {string|null} [until]
+ * @returns {boolean}
+ */
+export function isSlotInChangePeriod(slot, timetables, from, until) {
+  if (!slot || !from) return false;
+  if (!Array.isArray(timetables) || timetables.length <= 1) return true;
+  const tt = timetables.find((t) => t.id === (slot.timetableId ?? 1));
+  if (!tt) return false;
+  let end = until && until >= from ? until : null;
+  if (!end) {
+    const anchors = currentTimetableIdsForGrade(timetables, slot.grade, from)
+      .map((id) => timetables.find((t) => t.id === id))
+      .filter(Boolean);
+    // 終了日の無い時間割があれば終わりなし
+    end = anchors.length === 0 || anchors.some((t) => !t.endDate)
+      ? null
+      : anchors.reduce((max, t) => (t.endDate > max ? t.endDate : max), anchors[0].endDate);
+  }
+  // 期間のうち、コマの時間割が始まっている最初の日で有効かを見る
+  const firstDay = tt.startDate && tt.startDate > from ? tt.startDate : from;
+  if (end && firstDay > end) return false;
+  return isTimetableActiveForDate(tt, firstDay, slot.grade);
+}
+
+/**
+ * 担当変更の対象のコマを、期間に授業のあるコマ (既定でチェック) とそれ以外
+ * (前の期・次の期のコマ。既定では外して畳む) に分ける。
+ * @returns {{inPeriod: object[], outOfPeriod: object[]}}
+ */
+export function splitCandidatesByPeriod(candidates, timetables, from, until) {
+  const inPeriod = [];
+  const outOfPeriod = [];
+  for (const s of candidates || []) {
+    (isSlotInChangePeriod(s, timetables, from, until) ? inPeriod : outOfPeriod).push(s);
+  }
+  return { inPeriod, outOfPeriod };
 }
 
 /**
