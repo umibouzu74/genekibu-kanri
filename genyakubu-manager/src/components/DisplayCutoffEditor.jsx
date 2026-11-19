@@ -1,10 +1,20 @@
 import { useMemo, useState } from "react";
 import { S } from "../styles/common";
+import { fmtDate } from "../data";
 import { fmtDateWeekday } from "../utils/dateHelpers";
 import { gradeToDept } from "../utils/scheduleHelpers";
 import {
+  cutoffGroupKey,
+  defaultTimetableIdOn,
+  filterSlotsOfTimetable,
   findGroupForGrade,
   findUngroupedGrades,
+  getTimetableStatusOn,
+  groupsForTimetable,
+  hasTimetableCutoffGroups,
+  isFirstTermTimetable,
+  resolveCutoffGroupTimetables,
+  sharedCutoffGroups,
   summarizeCutoffGroups,
 } from "../utils/timetable";
 import { isOrientationEnabledForGrade } from "../utils/sessionCount";
@@ -25,6 +35,14 @@ import { useConfirm } from "../hooks/useConfirm";
 // 削除 UX: 学年グループの削除は「そのグループの学年が全部フィルタ対象外に
 // なる」= 表示・回数への波及があるので confirm ダイアログ (CLAUDE.md の
 // 削除 UX ルールで cascade あり側)。
+//
+// 時間割ごとの設定 (2026-11-19): 学年グループは時間割 (期) に結び付けて持つ
+// (CutoffGroup.timetableId、utils/timetable.groupsForTimetable)。この画面は
+// 時間割を 1 つ選んで、その時間割のコマに効く学年グループを編集する。
+// 結び付いたグループがまだ無い時間割は共通のグループを表示し、変えたときに
+// その時間割だけのグループとして保存する (ほかの時間割の表示・第N回は変えない)。
+// 時間割が 1 つだけ (かつ結び付いたグループが無い) なら従来どおり共通の
+// グループをそのまま編集する。
 
 const noteStyle = {
   fontSize: 11,
@@ -59,21 +77,68 @@ const groupDept = (group) => {
 };
 
 export function DisplayCutoffEditor({
-  slots,
+  slots: allSlots,
   displayCutoff,
   onSave,
   isAdmin,
   sessionCtx,
+  timetables,
 }) {
   const confirm = useConfirm();
-  const groups = useMemo(() => displayCutoff?.groups || [], [displayCutoff]);
+  const today = fmtDate(new Date());
+  const allGroups = useMemo(() => displayCutoff?.groups || [], [displayCutoff]);
+  const ttList = useMemo(() => (Array.isArray(timetables) ? timetables : []), [timetables]);
+  const anyBound = allGroups.some((g) => g && g.timetableId != null);
+  // 時間割ごとに編集するか。時間割が 2 つ以上 (または結び付いたグループが
+  // 既にある) とき。時間割を渡されない画面・テストは従来どおり
+  const scoped = ttList.length > 1 || (ttList.length > 0 && anyBound);
+  const [pickedTimetableId, setPickedTimetableId] = useState(null);
+  const timetableId = useMemo(() => {
+    if (!scoped) return null;
+    if (pickedTimetableId != null && ttList.some((t) => t.id === pickedTimetableId)) {
+      return pickedTimetableId;
+    }
+    return defaultTimetableIdOn(allSlots || [], ttList, today) ?? ttList[0].id;
+  }, [scoped, pickedTimetableId, ttList, allSlots, today]);
+  const timetable = timetableId != null ? ttList.find((t) => t.id === timetableId) || null : null;
+  // オリエンの既定 (未設定のグループ) は年度の最初の期だけオン (2026-11-19)
+  const firstTerm = timetable ? isFirstTermTimetable(timetable, ttList) : true;
+  const groups = useMemo(
+    () => (timetableId == null ? allGroups : groupsForTimetable(allGroups, timetableId)),
+    [allGroups, timetableId]
+  );
+  const usesShared = timetableId != null && !hasTimetableCutoffGroups(allGroups, timetableId);
+  const slots = useMemo(
+    () => (timetableId == null ? allSlots : filterSlotsOfTimetable(allSlots || [], timetableId)),
+    [allSlots, timetableId]
+  );
+  // 共通の開始日より前に終わった期か (前の期)。表示期間は時間割の期間で
+  // 補われる (resolveCutoffGroupTimetables) ので、当時の終了日を入れ直す案内を出す
+  const endedBeforeShared = useMemo(() => {
+    if (!timetable?.endDate) return null;
+    const starts = sharedCutoffGroups(allGroups)
+      .map((g) => g.startDate)
+      .filter((d) => d && timetable.endDate < d)
+      .sort();
+    return starts[0] || null;
+  }, [timetable, allGroups]);
+  // 「共通の設定に戻す」を出すか: 結び付いたグループを消しても読み込みで
+  // 補い直されない (= 前の期ではない) 時間割だけ
+  const canRevertToShared = useMemo(() => {
+    if (timetableId == null || usesShared || sharedCutoffGroups(allGroups).length === 0) {
+      return false;
+    }
+    const without = { ...(displayCutoff || {}), groups: allGroups.filter((g) => g.timetableId !== timetableId) };
+    const reread = resolveCutoffGroupTimetables(without, ttList, allSlots);
+    return !hasTimetableCutoffGroups(reread?.groups, timetableId);
+  }, [timetableId, usesShared, allGroups, displayCutoff, ttList, allSlots]);
   const [newGradeByIdx, setNewGradeByIdx] = useState({});
   const [newGroupLabel, setNewGroupLabel] = useState("");
   const [bulk, setBulk] = useState({ target: "all", startDate: "", date: "" });
 
   const summary = useMemo(
-    () => summarizeCutoffGroups(slots, displayCutoff),
-    [slots, displayCutoff]
+    () => summarizeCutoffGroups(slots, { groups }),
+    [slots, groups]
   );
 
   const ungrouped = useMemo(
@@ -108,21 +173,47 @@ export function DisplayCutoffEditor({
     if (!sessionCtx) return out;
     const slotById = new Map((slots || []).map((s) => [s.id, s]));
     for (const g of groups) {
-      const info = summary.get(g.label);
+      const info = summary.get(cutoffGroupKey(g));
       if (!g.date || !info || info.slotCount === 0) continue;
       // 開始日 > 終了日 の行は期間として成立していないので逆算しない
       // (警告の隣に最終授業日が出ると矛盾して見える)
       if (g.startDate && g.startDate > g.date) continue;
       const groupSlots = info.slotIds.map((id) => slotById.get(id)).filter(Boolean);
       out.set(
-        g.label,
+        cutoffGroupKey(g),
         findLastSessionOnOrBefore(groupSlots, g.date, sessionCtx, { withSessionNo: false })
       );
     }
     return out;
   }, [groups, summary, slots, sessionCtx]);
 
-  const saveGroups = (next) => onSave({ ...displayCutoff, groups: next });
+  // 選んだ時間割の学年グループを書く。ほかの時間割のグループ・共通の
+  // グループはそのまま。共通のグループを表示していたときも、この時間割だけの
+  // グループとして書く (ほかの時間割のコマが従う設定を変えない)
+  const saveGroups = (next) => {
+    if (timetableId == null) {
+      onSave({ ...displayCutoff, groups: next });
+      return;
+    }
+    const others = allGroups.filter((g) => g.timetableId !== timetableId);
+    const own = next.map((g) => ({ ...g, timetableId }));
+    onSave({ ...displayCutoff, groups: [...others, ...own] });
+  };
+
+  const revertToShared = async () => {
+    if (!isAdmin || !canRevertToShared) return;
+    const ok = await confirm({
+      title: "共通の設定に戻す",
+      message:
+        `「${timetable?.name || "この時間割"}」だけの表示期間設定を消して、共通の設定に戻します。\n` +
+        "・この時間割のコマの表示期間・第N回の起点・オリエンが共通の設定に従うようになります\n" +
+        "\nよろしいですか？",
+      okLabel: "戻す",
+      tone: "danger",
+    });
+    if (!ok) return;
+    onSave({ ...displayCutoff, groups: allGroups.filter((g) => g.timetableId !== timetableId) });
+  };
 
   const patchGroup = (idx, patch) => {
     if (!isAdmin) return;
@@ -167,14 +258,22 @@ export function DisplayCutoffEditor({
   const removeGroup = async (idx) => {
     if (!isAdmin) return;
     const group = groups[idx];
-    const info = summary.get(group.label);
+    const info = summary.get(cutoffGroupKey(group));
+    // 時間割だけのグループを全部消すと、共通のグループに戻る
+    const lastOwnGroup =
+      timetableId != null &&
+      !usesShared &&
+      groups.length === 1 &&
+      sharedCutoffGroups(allGroups).length > 0;
     const ok = await confirm({
       title: "学年グループを削除",
       message:
         `「${group.label}」(${(group.grades || []).join(", ") || "対象学年なし"}) を削除します。\n` +
-        (info && info.slotCount > 0
-          ? `・この学年の ${info.slotCount} コマは表示期間・終講日のフィルタが効かなくなり、授業回数（第N回）も出なくなります\n`
-          : "・対象のコマはありません\n") +
+        (lastOwnGroup
+          ? "・この時間割の設定が無くなるので、この時間割のコマは共通の設定に従うようになります\n"
+          : info && info.slotCount > 0
+            ? `・この学年の ${info.slotCount} コマは表示期間・終講日のフィルタが効かなくなり、授業回数（第N回）も出なくなります\n`
+            : "・対象のコマはありません\n") +
         "\nよろしいですか？",
       okLabel: "削除する",
       tone: "danger",
@@ -226,8 +325,58 @@ export function DisplayCutoffEditor({
           <b>開始日は「第N回」のカウント起点でもあります</b>
           （期の途中で動かすと回数が数え直しになります）。
           「オリエン」＝ 開始日以降の初回授業日の1限をオリエンテーション扱いにして
-          授業回数に数えません。2学期以降などオリエンが入らない期はオフにします。
+          授業回数に数えません。対象は本科のコマだけです（プレップなど学年をまたぐコマ・
+          附属・コマの編集で「オリエンの対象外」にしたコマは除く）。
+          設定していないグループは、年度の最初の期（1学期）の中学部だけオンになります。
         </div>
+        {timetableId != null && (
+          <div style={{ marginTop: 6 }}>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700 }}>
+              時間割
+              <select
+                aria-label="表示期間を設定する時間割"
+                value={String(timetableId)}
+                onChange={(e) => setPickedTimetableId(Number(e.target.value))}
+                style={{ ...S.input, width: "auto", fontSize: 12, padding: "3px 6px" }}
+              >
+                {ttList.map((tt) => (
+                  <option key={tt.id} value={String(tt.id)}>
+                    {tt.name}
+                    {getTimetableStatusOn(tt, today) === "active" ? "（今日有効）" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div style={{ fontSize: 11, color: "#555", marginTop: 4, lineHeight: 1.5 }}>
+              {usesShared ? (
+                <>
+                  この時間割にはまだ専用の設定がありません。<b>共通の設定</b>を表示しています。
+                  変更すると、この時間割だけの設定として保存します（ほかの時間割は変わりません）。
+                </>
+              ) : (
+                <>この時間割だけの設定です（ほかの時間割のコマには効きません）。</>
+              )}
+              {canRevertToShared && isAdmin && (
+                <button
+                  type="button"
+                  onClick={revertToShared}
+                  style={{ ...S.btn(false), fontSize: 10, padding: "2px 6px", marginLeft: 6 }}
+                >
+                  共通の設定に戻す
+                </button>
+              )}
+            </div>
+            {endedBeforeShared && (
+              <div style={{ ...warnStyle, lineHeight: 1.5 }}>
+                ⓘ 共通の開始日（{fmtDateWeekday(endedBeforeShared)}）より前に終わった期です。
+                当時の設定が残っていないときは、時間割の期間（
+                {timetable?.startDate ? fmtDateWeekday(timetable.startDate) : "最初"}〜
+                {fmtDateWeekday(timetable.endDate)}）で表示・集計します。
+                当時の終了日（夏休みの前など）を入れておくと、過去の月の予定・集計が合います。
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {isAdmin && (
@@ -290,17 +439,23 @@ export function DisplayCutoffEditor({
 
       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
         {groups.map((group, idx) => {
-          const info = summary.get(group.label) || { slotCount: 0, days: [] };
-          // 未設定 (従来データ) は中学部のみ有効の既定値を解決して表示する。
+          const info = summary.get(cutoffGroupKey(group)) || { slotCount: 0, days: [] };
+          // 開始日が時間割の開始日より前 (期切替で写した開始日など)。表示は
+          // 時間割の開始日から
+          const startsBeforeTimetable =
+            !!timetable?.startDate && !!group.startDate && group.startDate < timetable.startDate;
+          // 未設定は既定 (年度の最初の期の中学部だけオン) を解決して表示する。
           const orientationOn =
             typeof group.orientationFirstDay === "boolean"
               ? group.orientationFirstDay
-              : isOrientationEnabledForGrade((group.grades || [])[0], {
-                  groups: [group],
-                });
+              : isOrientationEnabledForGrade(
+                  (group.grades || [])[0],
+                  { groups: [group] },
+                  { firstTerm }
+                );
           const invertedRange =
             group.startDate && group.date && group.startDate > group.date;
-          const last = lastSessions.get(group.label);
+          const last = lastSessions.get(cutoffGroupKey(group));
           return (
             <div key={`${group.label}-${idx}`}>
               <div
@@ -341,7 +496,7 @@ export function DisplayCutoffEditor({
                   </button>
                 )}
                 <label
-                  title="開始日以降の初回授業日の1限をオリエンテーション扱いにし、授業回数に数えません（2学期以降などオリエンが無い期はオフ）"
+                  title="開始日以降の初回授業日の1限（本科のコマ）をオリエンテーション扱いにし、授業回数に数えません（設定しなければ年度の最初の期の中学部だけオン）"
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -455,6 +610,11 @@ export function DisplayCutoffEditor({
                 <span>{info.slotCount} コマ</span>
                 {info.days.length > 0 && <span>授業曜日 {info.days.join("")}</span>}
                 {group.startDate && <span>開講 {fmtDateWeekday(group.startDate)}</span>}
+                {startsBeforeTimetable && (
+                  <span>
+                    （時間割の開始日 {fmtDateWeekday(timetable.startDate)} より前。表示は時間割の開始日から）
+                  </span>
+                )}
                 {group.date && <span>終了 {fmtDateWeekday(group.date)}</span>}
                 {last && last.date !== group.date && (
                   <span style={{ color: "#2a6a3a", fontWeight: 600 }}>

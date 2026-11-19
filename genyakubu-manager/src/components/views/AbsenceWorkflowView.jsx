@@ -39,6 +39,8 @@ import {
 } from "../../utils/daySchedules";
 import { extraLessonsOnDate } from "../../utils/extraLessons";
 import { offsiteLessonsOnDate } from "../../utils/offsiteLessons";
+import { awaysOnDate, describeAway } from "../../utils/teacherAway";
+import { TEACHER_AWAY_COLOR } from "../../constants/colors";
 import { ExtraLessonBanner } from "../ExtraLessonBanner";
 import { OffsiteLessonBanner } from "../OffsiteLessonBanner";
 import { cutoffBannerText } from "../../constants/cutoffMessages";
@@ -98,6 +100,9 @@ export function AbsenceWorkflowView({
   // 他校舎の授業 (この日に他校舎へ出ている講師)。バナーと、代行候補の
   // 「他校舎」・講師の重なりに使う。onOpenOffsite(id) でその 1 件を開く
   offsiteLessons = [],
+  // 講師の不在期間 (utils/teacherAway)。この日に不在の講師を上に出し、代行候補に印を付ける
+  teacherAways = [],
+  onOpenTeacherAway,
   onOpenOffsite,
   // 複数日の欠勤登録ダイアログ (App が持つ) と玉突き代行 (授業管理のタブ) へ
   onOpenMultiDayAbsence,
@@ -215,6 +220,7 @@ export function AbsenceWorkflowView({
     () => offsiteLessonsOnDate(offsiteLessons, date, { holidays }),
     [offsiteLessons, date, holidays]
   );
+  const awaysToday = useMemo(() => awaysOnDate(teacherAways, date), [teacherAways, date]);
 
   // 欠勤する先生のプルダウンは「この日に担当がある人」を先頭にまとめる。
   // 全員 (バイト含む) を平坦に並べると長くて探せない。隔週は担当週 (A/B) を
@@ -1253,6 +1259,51 @@ export function AbsenceWorkflowView({
       <ExtraLessonBanner lessons={extraLessonsToday} />
       {/* 他校舎の授業: この時間は塾に居ない講師 (代行候補にも「他校舎」で出る) */}
       <OffsiteLessonBanner lessons={offsiteToday} teacherKana={teacherKana} onOpen={onOpenOffsite} />
+      {awaysToday.length > 0 && (
+        <div
+          className="no-print"
+          role="group"
+          aria-label="この日に不在の講師"
+          style={{
+            background: TEACHER_AWAY_COLOR.bannerBg,
+            border: `1px solid ${TEACHER_AWAY_COLOR.bannerBorder}`,
+            borderRadius: 8,
+            padding: "6px 12px",
+            margin: "6px 0",
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 6,
+            alignItems: "center",
+            fontSize: 12,
+          }}
+        >
+          <span style={{ fontWeight: 800, color: TEACHER_AWAY_COLOR.deep }}>🧳 この日に不在:</span>
+          {awaysToday.map((r) =>
+            onOpenTeacherAway ? (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => onOpenTeacherAway({ id: r.id })}
+                style={{
+                  border: `1px solid ${TEACHER_AWAY_COLOR.bannerBorder}`,
+                  background: "#fff",
+                  color: TEACHER_AWAY_COLOR.deep,
+                  borderRadius: 12,
+                  padding: "2px 10px",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                {describeAway(r)}
+              </button>
+            ) : (
+              <span key={r.id} style={{ color: TEACHER_AWAY_COLOR.deep }}>
+                {describeAway(r)}
+              </span>
+            )
+          )}
+        </div>
+      )}
 
       {/* Timetable grid */}
       <AbsenceTimetable
@@ -1281,6 +1332,7 @@ export function AbsenceWorkflowView({
         examPeriodsToday={examPeriodsToday}
         sessionOverrides={sessionOverrides}
         offsiteToday={offsiteToday}
+        awaysToday={awaysToday}
         incomingCards={incomingCards}
         absentTeachers={selectedTeachers}
         onSetIncomingCombine={isAdmin ? handleSetIncomingCombine : undefined}

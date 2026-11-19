@@ -26,6 +26,7 @@
 import { computeSessionNumber, isSlotHeldOnDate } from "../sessionCount";
 import {
   findGroupForGrade,
+  findGroupForSlot,
   getSlotCutoffRange,
   isSlotBeyondCutoff,
   isTimetableActiveForDate,
@@ -87,7 +88,7 @@ export function systemSlotStatus(slot, date, sys) {
   }
   if (isSlotBeyondCutoff(date, slot, sys.displayCutoff)) {
     // isSlotBeyondCutoff と同じ順: 開始日 → コース別終講日 → 学年グループの終了日
-    const group = findGroupForGrade(slot.grade, sys.displayCutoff?.groups);
+    const group = findGroupForSlot(slot, sys.displayCutoff?.groups);
     const cohort = findCohortCutoff(slot, sys.displayCutoff?.cohorts);
     if (group?.startDate && date < group.startDate) {
       return { held: false, kind: "before-start", label: `開講前 (表示期間設定の開始日 ${md(group.startDate)})` };

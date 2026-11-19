@@ -159,6 +159,8 @@ export default function TabBar() {
   };
 
   return (
+    // タブ名は折り返さず (幅 1214px で「中 / ３」と 1 文字ずつ縦に割れていた。P3-11)、
+    // 入りきらなければタブの列を横にスクロールする
     <div role="tablist" aria-label="学年タブ" onKeyDown={handleTabKeyDown} className="flex items-end gap-1 px-2 no-print overflow-x-auto">
       {project.tabs.map((tab, tabIdx) => {
         const errorCount = tabErrorCounts[tab.id] || 0;
@@ -200,7 +202,7 @@ export default function TabBar() {
               const fromIdx = Number(raw);
               if (Number.isInteger(fromIdx) && fromIdx !== tabIdx) reorderTabs(fromIdx, tabIdx);
             }}
-            className={`px-4 py-2 rounded-t-lg cursor-pointer flex items-center gap-2 select-none transition-all ${selected ? "bg-builder-surface text-builder-blue font-bold shadow-[0_-2px_5px_rgba(0,0,0,0.05)] pt-3" : "bg-builder-border text-builder-ink-muted hover:bg-builder-ink-ghost mt-1"}`}
+            className={`shrink-0 whitespace-nowrap px-4 py-2 rounded-t-lg cursor-pointer flex items-center gap-2 select-none transition-all ${selected ? "bg-builder-surface text-builder-blue font-bold shadow-[0_-2px_5px_rgba(0,0,0,0.05)] pt-3" : "bg-builder-border text-builder-ink-muted hover:bg-builder-ink-ghost mt-1"}`}
           >
             {frame ? (
               <span className="flex flex-col leading-tight">
@@ -244,7 +246,7 @@ export default function TabBar() {
       })}
       <button
         onClick={handleAddClick}
-        className="px-3 py-2 text-builder-ink-muted hover:text-builder-blue font-bold text-sm"
+        className="shrink-0 whitespace-nowrap px-3 py-2 text-builder-ink-muted hover:text-builder-blue font-bold text-sm"
         title="新しい学年タブを追加"
       >+ タブ追加</button>
       <button
@@ -256,7 +258,7 @@ export default function TabBar() {
         }}
         aria-haspopup="menu"
         aria-expanded={!!menu}
-        className="px-2 py-2 text-builder-ink-muted hover:text-builder-blue text-sm"
+        className="shrink-0 whitespace-nowrap px-2 py-2 text-builder-ink-muted hover:text-builder-blue text-sm"
         title="タブの操作 (他のタブから割当を複製・名前の変更・削除)。タブの右クリックでも開きます"
       >⋯ タブの操作</button>
       {menu && (() => {

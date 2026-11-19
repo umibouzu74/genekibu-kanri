@@ -92,6 +92,16 @@ export const OFFSITE_LESSON_COLOR = {
   chipBg: "#dde5ec",
 };
 
+// 講師の不在期間 (utils/teacherAway) のバナー / 目印。予定を動かさない目印なので、
+// 休講 (灰) ・代行 (赤系)・他校舎 (青灰) と見分けのつく茶系
+export const TEACHER_AWAY_COLOR = {
+  color: "#8a4b2a",
+  deep: "#6b3a20",
+  bg: "#f7ece4",
+  bannerBg: "#fbf4ef",
+  bannerBorder: "#dcb9a3",
+};
+
 export function gradeColor(g) {
   if (g.includes("附中")) return { b: "#e8d5b7", f: "#6b4c2a" };
   if (g.includes("中1")) return { b: "#d4e8d4", f: "#2a5a2a" };

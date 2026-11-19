@@ -30,6 +30,9 @@ export interface Slot {
   // sessionStartNumber: その期の最初の回を第N回から数える (2 学期は⑨から)
   separateWeekdayCount?: boolean;
   sessionStartNumber?: number;
+  // 開講日 1 限のオリエンの対象外 (内申対策など、本科と同じ学年でも授業の前に
+  // 簡単に済ませるコマ。sessionCount.isOrientationTargetSlot)
+  noOrientation?: boolean;
   // 担当の切り替え (utils/biweekly の slotOnDate、A5)。その日の担当 = from が
   // その日以前で一番新しい切り替えの teacher、無ければ teacher。from の昇順
   teacherChanges?: TeacherChange[];
@@ -436,6 +439,18 @@ export interface CardForget {
   recordedAt?: string; // 最後に記録した日時 (ISO)
 }
 
+// ─── Teacher away (講師の不在期間、2026-11-19) ─────────────────────
+// 講師が何日も続けて来られない期間 (utils/teacherAway.js)。講師 1 人 × 期間で 1 件。
+// 授業は動かさない (代行・担当の切り替えは登録画面から人が選んで作る)。講習時間割
+// 作成の自動NG・講師の月間 / 週間・ダッシュボード・代行候補の目印に使う。
+export interface TeacherAway {
+  id: number;
+  teacher: string; // 講師 1 名
+  startDate: string; // "YYYY-MM-DD"
+  endDate: string; // "YYYY-MM-DD" (1 日だけなら startDate と同じ)
+  memo?: string;
+}
+
 // ─── 高校部・予備校の講習 (utils/seniorKoshu、2026-10-27) ────────────
 // 期 (日の並び) × 時限 (時刻) × 担当 (講師 1 人 × 学年 × 講座名)。講師の月間に
 // 出し、講習時間割作成が取り込んで自動NG にする。
@@ -549,6 +564,13 @@ export interface CutoffGroup {
   // 未設定 (undefined / null) は従来既定 = 中学部のみ有効。
   // 2 学期以降のようにオリエンが入らない期は false にする。
   orientationFirstDay?: boolean | null;
+  // このグループが効く時間割 (2026-11-19)。付いていればその時間割のコマにだけ
+  // 効く。時間割に 1 つでも結び付いたグループがあれば、その時間割のコマは
+  // 結び付いたグループだけで見る。無いグループは結び付いたグループの無い
+  // 時間割に効く共通の設定 (utils/timetable.groupsForTimetable)。共通の開始日
+  // より前に終わった時間割には読み込みのたびに補う
+  // (utils/timetable.resolveCutoffGroupTimetables)
+  timetableId?: number;
 }
 
 // ─── Cohort cutoff (コース別 終講日) ─────────────────────────────
@@ -611,6 +633,7 @@ export interface ExportBundle {
   yoteihyoMapping?: YoteihyoMappingEntry[];
   yoteihyoConfirmed?: YoteihyoConfirmation[];
   cardForgets?: CardForget[];
+  teacherAways?: TeacherAway[];
 }
 
 export interface ValidationResult<T> {

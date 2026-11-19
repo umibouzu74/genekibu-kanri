@@ -356,6 +356,7 @@ function CountAndDatesSection({ f, up }) {
   const used =
     f.irregular === true ||
     f.separateWeekdayCount === true ||
+    f.noOrientation === true ||
     (Number(f.sessionStartNumber) || 0) > 1;
   const [open, setOpen] = useState(used);
   const dates = Array.isArray(f.onlyDates) ? [...f.onlyDates].sort() : [];
@@ -393,6 +394,7 @@ function CountAndDatesSection({ f, up }) {
             {[
               f.irregular === true && `不定期 (${dates.length} 日)`,
               f.separateWeekdayCount === true && "曜日ごとに数える",
+              f.noOrientation === true && "オリエンの対象外",
               (Number(f.sessionStartNumber) || 0) > 1 && `第${f.sessionStartNumber}回から`,
             ]
               .filter(Boolean)
@@ -458,6 +460,20 @@ function CountAndDatesSection({ f, up }) {
               この曜日のコマだけで回数を数える
               <span style={{ display: "block", fontSize: 10, color: "#888" }}>
                 月 (本校) と土 (亀井町) のように、会場違いで同じ内容のコマをそれぞれの番号で数えるとき
+              </span>
+            </span>
+          </label>
+          <label style={checkRow}>
+            <input
+              type="checkbox"
+              checked={f.noOrientation === true}
+              onChange={(e) => up("noOrientation", e.target.checked)}
+            />
+            <span>
+              開講日の 1 限もオリエンにしない (オリエンの対象外)
+              <span style={{ display: "block", fontSize: 10, color: "#888" }}>
+                内申対策のように、本科と同じ学年でもオリエンは授業の前に簡単に済ませるコマ
+                (プレップなど学年をまたぐコマと附属は、付けなくても対象外)
               </span>
             </span>
           </label>

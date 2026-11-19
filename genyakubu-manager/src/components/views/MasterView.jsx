@@ -69,6 +69,15 @@ export function MasterView({
   sessionOverrides = [],
   subs = [],
   saveSubs,
+  // 担当変更タブの授業日の一覧・新担当の重なり (P2-4) に使う
+  daySchedules = [],
+  specialEvents = [],
+  extraLessons = [],
+  offsiteLessons = [],
+  koshuLessons = [],
+  // 担当変更タブに入れておく値 ({oldTeacher, from, until, memo, token}。講師の不在期間から)
+  teacherChangePrefill = null,
+  onConsumeTeacherChangePrefill,
   tab: tabProp,
   onTabChange,
 }) {
@@ -265,6 +274,19 @@ export function MasterView({
           teacherKana={teacherKana}
           partTimeStaff={partTimeStaff}
           defaultTimetableId={pinnedTimetableId}
+          classSets={classSets}
+          displayCutoff={displayCutoff}
+          holidays={holidays}
+          examPeriods={examPeriods}
+          specialEvents={specialEvents}
+          biweeklyAnchors={biweeklyAnchors}
+          sessionOverrides={sessionOverrides}
+          daySchedules={daySchedules}
+          extraLessons={extraLessons}
+          offsiteLessons={offsiteLessons}
+          koshuLessons={koshuLessons}
+          prefill={teacherChangePrefill}
+          onConsumePrefill={onConsumeTeacherChangePrefill}
         />
       </div>
     );

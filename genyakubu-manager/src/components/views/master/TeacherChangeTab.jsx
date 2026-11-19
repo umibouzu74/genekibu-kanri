@@ -1,18 +1,24 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DAYS, sortSlots as sortS } from "../../../data";
 import { S } from "../../../styles/common";
 import { useToasts } from "../../../hooks/useToasts";
 import { slotTeacherNamesEver } from "../../../utils/biweekly";
+import { useSessionCtx } from "../../../hooks/useSessionCtx";
+import { fmtMDWeekday } from "../../../utils/dateHelpers";
+import { formatSessionNumber } from "../../../utils/sessionCount";
 import { firstSubjToken } from "../../../utils/cohorts";
 import { sortTeacherNames } from "../../../utils/teacherKana";
 import {
   applyTeacherChange,
   candidateSlotsForChange,
   describeTeacherChange,
+  findNewTeacherConflicts,
   findRecordsAfterChange,
+  listChangeLessonDates,
   listTeacherChanges,
   removeTeacherChange,
   restoreTeacherChanges,
+  splitCandidatesByPeriod,
 } from "../../../utils/teacherChangePlan";
 
 // ─── 担当変更タブ (コースマスター管理、A5 2026-10-31) ─────────────────
@@ -43,8 +49,37 @@ export function TeacherChangeTab({
   teacherKana = {},
   partTimeStaff = [],
   defaultTimetableId = null,
+  classSets = [],
+  displayCutoff = null,
+  holidays = [],
+  examPeriods = [],
+  specialEvents = [],
+  biweeklyAnchors = [],
+  sessionOverrides = [],
+  daySchedules = [],
+  extraLessons = [],
+  offsiteLessons = [],
+  koshuLessons = [],
+  // ほかの画面から入れておく値 ({oldTeacher, from, until, memo, token})。講師の
+  // 不在期間の「担当変更（期間限定）にする」から。受け取ったら onConsumePrefill で消す
+  prefill = null,
+  onConsumePrefill,
 }) {
   const toasts = useToasts();
+  // 授業日の一覧 (実施判定・第N回) に使う。ダッシュボードと同じ ctx
+  const { sessionCtx } = useSessionCtx({
+    classSets,
+    slots,
+    displayCutoff,
+    timetables,
+    holidays,
+    examPeriods,
+    specialEvents,
+    biweeklyAnchors,
+    sessionOverrides,
+    daySchedules,
+    adjustments,
+  });
   const [oldTeacher, setOldTeacher] = useState("");
   const [newTeacher, setNewTeacher] = useState("");
   const [from, setFrom] = useState("");
@@ -55,8 +90,24 @@ export function TeacherChangeTab({
   const [day, setDay] = useState("");
   const [subj, setSubj] = useState("");
   const [school, setSchool] = useState("");
-  // 外したコマ (既定は候補を全部付ける)
-  const [unchecked, setUnchecked] = useState(() => new Set());
+  // 既定から切り替えたコマ (既定は期間に授業のあるコマだけチェック。P2-3)
+  const [toggled, setToggled] = useState(() => new Set());
+  useEffect(() => {
+    if (!prefill?.token) return;
+    setOldTeacher(prefill.oldTeacher || "");
+    setNewTeacher("");
+    setFrom(prefill.from || "");
+    setUntil(prefill.until || "");
+    setMemo(prefill.memo || "");
+    setGrade("");
+    setDay("");
+    setSubj("");
+    setSchool("");
+    setToggled(new Set());
+    onConsumePrefill?.();
+    // token が変わったときだけ入れ直す
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill?.token]);
 
   const teacherNames = useMemo(() => {
     const set = new Set();
@@ -89,7 +140,24 @@ export function TeacherChangeTab({
       ),
     [slots, oldTeacher, from, timetableId, timetables, grade, day, subj, school]
   );
-  const chosenIds = candidates.filter((s) => !unchecked.has(s.id)).map((s) => s.id);
+  // 期間 (開始日〜◯日まで、無ければその期の終わり) に授業のある時間割のコマだけ
+  // 既定でチェックする。前の期・次の期のコマは畳んでおく (付けても効かないか、
+  // 次の期に持ち越す変更かは人が選ぶ)
+  const { inPeriod, outOfPeriod } = useMemo(
+    () => splitCandidatesByPeriod(candidates, timetables, from, until || null),
+    [candidates, timetables, from, until]
+  );
+  const isChecked = (s, inside) => (inside ? !toggled.has(s.id) : toggled.has(s.id));
+  const chosenIds = [
+    ...inPeriod.filter((s) => isChecked(s, true)),
+    ...outOfPeriod.filter((s) => isChecked(s, false)),
+  ].map((s) => s.id);
+  const toggle = (id) => {
+    const next = new Set(toggled);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setToggled(next);
+  };
   const validUntil = !until || !from || until >= from;
   const canApply =
     isAdmin && oldTeacher.trim() && newTeacher.trim() && from && chosenIds.length > 0 && validUntil &&
@@ -112,6 +180,36 @@ export function TeacherChangeTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [subs, adjustments, chosenIds.join(","), oldTeacher, newTeacher, from, until]
   );
+
+  // 実際に担当が変わる授業日と、実施されない日 (P2-4)
+  const chosenKey = chosenIds.join(",");
+  const lessonPlan = useMemo(() => {
+    if (!from || !oldTeacher.trim() || chosenIds.length === 0 || !validUntil) return null;
+    const ids = new Set(chosenIds);
+    return listChangeLessonDates({
+      slots: (slots || []).filter((s) => ids.has(s.id)),
+      from,
+      until: until || null,
+      ctx: sessionCtx,
+    });
+    // chosenIds は毎回新しい配列なので join した値で比べる
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slots, chosenKey, from, until, oldTeacher, validUntil, sessionCtx]);
+  // 新担当がその時間に塞がっているもの (警告。登録は止めない)
+  const newTeacherConflicts = useMemo(() => {
+    if (!lessonPlan || !newTeacher.trim()) return [];
+    return findNewTeacherConflicts({
+      lessons: lessonPlan.lessons,
+      newTeacher,
+      slots,
+      adjustments,
+      extraLessons,
+      subs,
+      offsiteLessons,
+      koshuLessons,
+      ctx: sessionCtx,
+    });
+  }, [lessonPlan, newTeacher, slots, adjustments, extraLessons, subs, offsiteLessons, koshuLessons, sessionCtx]);
 
   const registered = useMemo(() => listTeacherChanges(slots), [slots]);
   const ttName = (id) => (timetables || []).find((t) => t.id === (id ?? 1))?.name || "";
@@ -139,7 +237,7 @@ export function TeacherChangeTab({
         },
       }
     );
-    setUnchecked(new Set());
+    setToggled(new Set());
   };
 
   const removeRedundantSubs = () => {
@@ -191,13 +289,13 @@ export function TeacherChangeTab({
           <div>
             <label style={label} htmlFor="tc-old">旧担当</label>
             <input id="tc-old" list="teacher-change-names" value={oldTeacher}
-              onChange={(e) => { setOldTeacher(e.target.value); setUnchecked(new Set()); }}
+              onChange={(e) => { setOldTeacher(e.target.value); setToggled(new Set()); }}
               style={{ ...S.input, width: 120 }} />
           </div>
           <div>
             <label style={label} htmlFor="tc-from">開始日</label>
             <input id="tc-from" type="date" value={from}
-              onChange={(e) => { setFrom(e.target.value); setUnchecked(new Set()); }}
+              onChange={(e) => { setFrom(e.target.value); setToggled(new Set()); }}
               style={{ ...S.input, width: "auto" }} />
           </div>
           <div>
@@ -209,7 +307,8 @@ export function TeacherChangeTab({
           <div>
             <label style={label} htmlFor="tc-until">◯日まで（任意）</label>
             <input id="tc-until" type="date" value={until} min={from || undefined}
-              onChange={(e) => setUntil(e.target.value)} style={{ ...S.input, width: "auto" }} />
+              onChange={(e) => { setUntil(e.target.value); setToggled(new Set()); }}
+              style={{ ...S.input, width: "auto" }} />
           </div>
           <div style={{ flex: 1, minWidth: 140 }}>
             <label style={label} htmlFor="tc-memo">メモ（任意）</label>
@@ -286,32 +385,39 @@ export function TeacherChangeTab({
               {from} の時点で {oldTeacher.trim()} が担当しているコマはありません（条件を確かめてください）。
             </div>
           ) : (
-            <ul aria-label="担当変更の対象のコマ" style={{ listStyle: "none", margin: 0, padding: 0 }}>
-              {candidates.map((s) => (
-                <li key={s.id} style={{ fontSize: 12, padding: "2px 0" }}>
-                  <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                    <input
-                      type="checkbox"
-                      checked={!unchecked.has(s.id)}
-                      onChange={() => {
-                        const next = new Set(unchecked);
-                        if (next.has(s.id)) next.delete(s.id);
-                        else next.add(s.id);
-                        setUnchecked(next);
-                      }}
-                    />
-                    {s.day} {s.time} {s.grade}
-                    {s.cls && s.cls !== "-" ? s.cls : ""} {s.subj}（{s.teacher}
-                    {s.note ? ` / ${s.note}` : ""}）
-                    {timetables?.length > 1 && (
-                      <span style={{ color: "#888", fontSize: 10 }}>{ttName(s.timetableId)}</span>
-                    )}
-                  </label>
-                </li>
-              ))}
-            </ul>
+            <>
+              {inPeriod.length > 0 ? (
+                <ul aria-label="担当変更の対象のコマ" style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                  {inPeriod.map((s) => (
+                    <CandidateRow key={s.id} slot={s} checked={isChecked(s, true)}
+                      onToggle={() => toggle(s.id)} ttName={timetables?.length > 1 ? ttName(s.timetableId) : ""} />
+                  ))}
+                </ul>
+              ) : (
+                <div style={{ fontSize: 12, color: "#888" }}>
+                  この期間に授業のある時間割のコマはありません（期間・時間割を確かめてください）。
+                </div>
+              )}
+              {outOfPeriod.length > 0 && (
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ fontSize: 12, color: "#666", cursor: "pointer" }}>
+                    この期間に授業の無いコマ {outOfPeriod.length} 件（前の期・次の期の時間割。既定では付けません）
+                  </summary>
+                  <ul aria-label="この期間に授業の無いコマ" style={{ listStyle: "none", margin: "4px 0 0", padding: 0 }}>
+                    {outOfPeriod.map((s) => (
+                      <CandidateRow key={s.id} slot={s} checked={isChecked(s, false)}
+                        onToggle={() => toggle(s.id)} ttName={timetables?.length > 1 ? ttName(s.timetableId) : ""} />
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </>
           )}
         </div>
+
+        {lessonPlan && (
+          <LessonDatesBox plan={lessonPlan} conflicts={newTeacherConflicts} newTeacher={newTeacher.trim()} />
+        )}
 
         {(records.redundantSubs.length > 0 ||
           records.otherSubs.length > 0 ||
@@ -390,3 +496,73 @@ export function TeacherChangeTab({
     </div>
   );
 }
+
+function CandidateRow({ slot: s, checked, onToggle, ttName }) {
+  return (
+    <li style={{ fontSize: 12, padding: "2px 0" }}>
+      <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+        <input type="checkbox" checked={checked} onChange={onToggle} />
+        {s.day} {s.time} {s.grade}
+        {s.cls && s.cls !== "-" ? s.cls : ""} {s.subj}（{s.teacher}
+        {s.note ? ` / ${s.note}` : ""}）
+        {ttName && <span style={{ color: "#888", fontSize: 10 }}>{ttName}</span>}
+      </label>
+    </li>
+  );
+}
+
+function lessonLine(slot) {
+  return `${slot.time} ${slot.grade}${slot.cls && slot.cls !== "-" ? slot.cls : ""} ${slot.subj}`;
+}
+
+// 担当が変わる授業日の一覧と、実施されない日・新担当の重なり (P2-4)
+function LessonDatesBox({ plan, conflicts, newTeacher }) {
+  const { lessons, skipped, openEnded } = plan;
+  return (
+    <div style={{ marginTop: 10, border: "1px solid #dde3ee", borderRadius: 6, padding: 8, fontSize: 12 }}>
+      <div style={{ fontWeight: 700, marginBottom: 4 }}>
+        {openEnded
+          ? `担当が変わる授業（最初の ${lessons.length} 回。以降も毎週）`
+          : `担当が変わる授業 計 ${lessons.length} 回`}
+      </div>
+      {lessons.length === 0 ? (
+        <div style={{ color: "#888" }}>この期間に実施される授業はありません。</div>
+      ) : (
+        <ul aria-label="担当が変わる授業" style={{ listStyle: "none", margin: 0, padding: 0, lineHeight: 1.7 }}>
+          {lessons.map(({ date, slot, sessionNo }) => (
+            <li key={`${slot.id}-${date}`}>
+              {fmtMDWeekday(date)} {lessonLine(slot)} {formatSessionNumber(sessionNo)}
+            </li>
+          ))}
+        </ul>
+      )}
+      {skipped.length > 0 && (
+        <div style={{ marginTop: 6, color: "#666" }}>
+          <div style={{ fontWeight: 700 }}>実施されない日（担当は変わっても授業がありません）</div>
+          <ul aria-label="実施されない日" style={{ listStyle: "none", margin: 0, padding: 0, lineHeight: 1.7 }}>
+            {skipped.map(({ date, slot, reason }) => (
+              <li key={`${slot.id}-${date}`}>
+                {fmtMDWeekday(date)} {lessonLine(slot)} — {reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {conflicts.length > 0 && (
+        <div role="alert" style={{ marginTop: 6, background: "#fff8e6", border: "1px solid #ecd9a0", borderRadius: 6, padding: 6, lineHeight: 1.7 }}>
+          <div style={{ fontWeight: 700 }}>
+            ⚠ {newTeacher} はこの時間に別の予定があります（登録はできます）
+          </div>
+          <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+            {conflicts.map((c, i) => (
+              <li key={`${c.date}-${c.slot.id}-${i}`}>
+                {fmtMDWeekday(c.date)} {c.slot.time}: {c.label}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+

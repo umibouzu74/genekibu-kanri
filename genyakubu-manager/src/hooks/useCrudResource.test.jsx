@@ -233,6 +233,28 @@ describe("useCrudResource", () => {
       );
     });
 
+    it("choices: 選ぶまで削除できず、選んだ値が cascade に渡る", async () => {
+      const { saveSpy, apiRef } = renderHarness([{ id: 1 }, { id: 2 }]);
+      const cascadeSpy = vi.fn();
+      let promise;
+      act(() => {
+        promise = apiRef.current.confirmedRemove(1, {
+          cascade: cascadeSpy,
+          choices: [
+            { value: "a", label: "A にする" },
+            { value: "b", label: "B にする" },
+          ],
+        });
+      });
+      const ok = await screen.findByRole("button", { name: "削除" });
+      expect(ok).toBeDisabled();
+      fireEvent.click(screen.getByRole("radio", { name: /B にする/ }));
+      fireEvent.click(ok);
+      expect(await promise).toBe(true);
+      expect(cascadeSpy).toHaveBeenCalledWith(1, "b");
+      expect(saveSpy).toHaveBeenCalledWith([{ id: 2 }]);
+    });
+
     it("cascade 未指定でも削除は走る", async () => {
       const { saveSpy, apiRef } = renderHarness([{ id: 1 }]);
       let promise;

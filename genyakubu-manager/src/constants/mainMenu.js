@@ -164,6 +164,10 @@ export const MAIN_MENU = Object.freeze([
       staffTab(STAFF_TAB.AFFILIATION, "講師を現役部 常勤 / 現役部 非常勤 / 予備校部に分ける (年度ごと)"),
       navItem(VIEWS.LEAVE, "現役部 常勤の有給・半休を月の表で入れる / 年度の日数を見る"),
       navItem(
+        VIEWS.TEACHER_AWAY,
+        "研修・病気などで何日も来られない期間を登録し、期間中の授業を担当変更・欠勤登録へ (講習の自動NG にもなる)"
+      ),
+      navItem(
         "month-batch",
         "バイト・講師の月間予定を何人分もまとめて印刷 / 1 人 1 枚の画像にして LINE などで送る"
       ),

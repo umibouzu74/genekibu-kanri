@@ -50,6 +50,24 @@ describe("buildAbsenceRangePlan", () => {
     expect(plan.days.find((d) => d.date === "2026-09-19").targets[0].teacher).toBe("堀上");
   });
 
+  it("前の期・次の期の同じコマ (時間割の期間外) は対象外に出さない (P2-5)", () => {
+    const tts = [
+      { id: 1, name: "1学期", startDate: "2026-04-07", endDate: "2026-08-24", grades: [] },
+      { id: 3, name: "2学期", startDate: "2026-08-25", endDate: null, grades: [] },
+    ];
+    const slots = [mk(1, "月", "堀上"), mk(11, "月", "堀上", { timetableId: 3 })];
+    const plan = buildAbsenceRangePlan({
+      slots,
+      fromDate: "2026-09-14",
+      toDate: "2026-09-14",
+      teachers: ["堀上"],
+      ctx: { ...ctx, timetables: tts },
+    });
+    const day = plan.days[0];
+    expect(day.targets.map((t) => t.slotId)).toEqual([11]);
+    expect(day.skipped).toEqual([]);
+  });
+
   it("休講の日と登録済みの組は理由つきで外す", () => {
     const plan = buildAbsenceRangePlan({
       slots: SLOTS,

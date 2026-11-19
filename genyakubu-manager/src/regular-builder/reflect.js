@@ -13,7 +13,13 @@ import { isWellFormedTimeRange } from "../utils/timeBulkEdit";
 import { resolveAllEntries, effectiveRoom, REGULAR_DAYS } from "./model";
 import { buildConflictView, computeConflicts } from "./conflicts";
 import { fmtDate, parseLocalDate, timeStartToMin } from "../utils/dateHelpers";
-import { gradeMatchesTimetable } from "../utils/timetable";
+import {
+  gradeMatchesTimetable,
+  groupsForTimetable,
+  hasTimetableCutoffGroups,
+  isFirstTermTimetable,
+  sharedCutoffGroups,
+} from "../utils/timetable";
 import { isOrientationEnabledForGrade } from "../utils/sessionCount";
 import { isLegacySet } from "../utils/classSets";
 import {
@@ -271,7 +277,9 @@ export function buildSwitchPlan({
   // 切り替えても新しい期のコマがダッシュボード等に出ない。時間割の有効期間
   // とは別のフィルタなので、期切替のたびに伸ばす必要がある
   if (startDate) {
-    const endedGroups = (displayCutoff?.groups || []).filter(
+    // 新しい時間割には結び付いた学年グループがまだ無いので、新しい期のコマは
+    // 共通のグループに従う (時間割に結び付いたグループは前の期のコマにだけ効く)
+    const endedGroups = sharedCutoffGroups(displayCutoff?.groups).filter(
       (g) => g.date && g.date < startDate
     );
     if (endedGroups.length > 0) {
@@ -376,6 +384,10 @@ export function buildSwitchPlan({
  *   - clearOrientation: 全グループの「初回1限はオリエン」を外す
  *     (2 学期以降はオリエンが入らない運用のため。既定は触らない)
  *
+ * timetableId (新しい期の時間割) を渡すと、直した学年グループをその時間割に
+ * 結び付けて足す (前の期のコマが従う共通のグループ・前の期のグループは
+ * 変えない)。渡さないときは共通のグループをその場で直す (従来の動き)。
+ *
  * followDates を false にすると日付 (終了日・コース別終講日) は触らず、
  * clearOrientation だけを適用する。ダイアログのチェックボックスが
  * 独立しているため、対象の件数 (groupLabels / cohortCount) は
@@ -383,7 +395,9 @@ export function buildSwitchPlan({
  *
  * @param {{displayCutoff: import("../types").DisplayCutoff|null|undefined,
  *          startDate: string, endDate?: string|null,
- *          followDates?: boolean, clearOrientation?: boolean}} params
+ *          followDates?: boolean, clearOrientation?: boolean,
+ *          timetableId?: number|null, timetables?: object[]|null,
+ *          grades?: string[]|null}} params
  * @returns {{next: import("../types").DisplayCutoff,
  *            groupLabels: string[], cohortCount: number,
  *            orientationLabels: string[], changed: boolean}}
@@ -394,6 +408,9 @@ export function buildCutoffFollowUp({
   endDate,
   followDates = true,
   clearOrientation = false,
+  timetableId = null,
+  timetables = null,
+  grades = null,
 }) {
   const groups = displayCutoff?.groups || [];
   const cohorts = displayCutoff?.cohorts || [];
@@ -406,19 +423,28 @@ export function buildCutoffFollowUp({
   };
   if (!startDate) return empty;
 
-  const groupLabels = groups
+  // 直す対象は、新しい期のコマに効く学年グループ。新しい時間割にはまだ
+  // 結び付いたグループが無いので、ふつうは共通のグループ (= 何もしなければ
+  // 新しい期のコマが従う設定)
+  const template = groupsForTimetable(groups, timetableId);
+  const groupLabels = template
     .filter((g) => g.date && g.date < startDate)
     .map((g) => g.label);
   // 時間割の付いた終講日 (A1) は前の期のまま残す (新しい期のコマには効かない)
   const staleCohorts = cohorts.filter(
     (c) => c.date && c.date < startDate && c.timetableId == null
   );
-  // 「オリエンを外す」の対象は、いま有効になっているグループだけ
-  // (未設定 = 中学部のみ有効の既定にも追従する)。
+  // 「オリエンを外す」の対象は、新しい期でいま有効になっているグループだけ
+  // (未設定 = 年度の最初の期の中学部だけ有効の既定にも追従する。timetables を
+  // 渡せば新しい期が年度の最初の期かを見る。渡さなければ最初の期とみなす)。
+  const firstTerm = isFirstTermTimetable(
+    { id: timetableId ?? undefined, startDate, grades: grades || [] },
+    timetables || []
+  );
   const orientationLabels = clearOrientation
-    ? groups
+    ? template
         .filter((g) =>
-          isOrientationEnabledForGrade((g.grades || [])[0], { groups: [g] })
+          isOrientationEnabledForGrade((g.grades || [])[0], { groups: [g] }, { firstTerm })
         )
         .map((g) => g.label)
     : [];
@@ -429,12 +455,27 @@ export function buildCutoffFollowUp({
     return { ...empty, groupLabels, cohortCount: staleCohorts.length };
   }
 
-  const nextGroups = groups.map((g) => {
+  const patched = (g) => {
     const patch = {};
     if (followDates && g.date && g.date < startDate) patch.date = endDate || null;
     if (orientationLabels.includes(g.label)) patch.orientationFirstDay = false;
     return Object.keys(patch).length > 0 ? { ...g, ...patch } : g;
-  });
+  };
+  // 新しい時間割が分かっているときは、その時間割だけの学年グループとして
+  // 書く (前の期のコマが従う設定は変えない。前の期のオリエン・終了日を
+  // 新しい期に合わせて書き換えると、前の期の第N回・表示が変わる)。
+  // 開始日は写したまま (期切替で新しい期の初日をオリエンにしない、の従来の
+  // 効き方のまま。表示は時間割の開始日から)
+  let nextGroups;
+  if (timetableId != null && !hasTimetableCutoffGroups(groups, timetableId)) {
+    const changedTemplate = template.some((g) => patched(g) !== g);
+    nextGroups = changedTemplate
+      ? [...groups, ...template.map((g) => ({ ...patched(g), timetableId }))]
+      : groups;
+  } else {
+    const targets = new Set(template);
+    nextGroups = groups.map((g) => (targets.has(g) ? patched(g) : g));
+  }
 
   return {
     next: {

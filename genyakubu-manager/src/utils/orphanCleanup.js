@@ -285,3 +285,35 @@ export function describeOrphanDetection(detection) {
     .map((r) => `${r.short} ${r.count} 件${r.action === "削除" ? "" : "更新"}`)
     .join(" / ");
 }
+
+/**
+ * コマごとの参照の数 (代行・時間割調整 (振替先・合同の相手も)・回数補正・
+ * 旧式の授業セット・休講日の例外)。コマを消すと孤立データの掃除で消える /
+ * 外れるものと同じ種類を数える。同じ内容のコマの整理で「参照されている側を
+ * 既定で残す」のに使う (utils/duplicateSlots.defaultKeepSlotId)。
+ * @returns {Map<string, number>} key は String(slotId)
+ */
+export function countSlotReferences({ subs, adjustments, sessionOverrides, classSets, holidays }) {
+  const counts = new Map();
+  const add = (id) => {
+    if (id == null) return;
+    const k = slotIdKey(id);
+    counts.set(k, (counts.get(k) || 0) + 1);
+  };
+  for (const r of subs || []) if (r) add(r.slotId);
+  for (const o of sessionOverrides || []) if (o) add(o.slotId);
+  for (const a of adjustments || []) {
+    if (!a) continue;
+    add(a.slotId);
+    if (a.targetSlotId != null) add(a.targetSlotId);
+    if (Array.isArray(a.combineSlotIds)) a.combineSlotIds.forEach(add);
+  }
+  for (const set of classSets || []) {
+    if (!set || (Array.isArray(set.units) && set.units.length > 0)) continue;
+    if (Array.isArray(set.slotIds)) set.slotIds.forEach(add);
+  }
+  for (const h of holidays || []) {
+    if (h && Array.isArray(h.excludeSlotIds)) h.excludeSlotIds.forEach(add);
+  }
+  return counts;
+}

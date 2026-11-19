@@ -257,12 +257,12 @@ describe("buildFuzokuMonth: 休み", () => {
     expect(cell(week(m, "2026-10-21"), 0, "附中3")).toMatchObject({ status: "off", reason: "未確定" });
   });
 
-  it("開講日 1 限のオリエンは休みにしない (来ている扱い)", () => {
+  it("附属のコマは開講日 1 限もオリエンにしない (オリエンは本科だけ、2026-11-19)", () => {
     const displayCutoff = {
       groups: [{ label: "中1・2", grades: ["附中1", "附中2"], startDate: "2026-10-07", date: null }],
     };
     const w = week(build({ displayCutoff }), "2026-10-07");
-    expect(cell(w, 0, "附中1").status).toBe("orientation");
+    expect(cell(w, 0, "附中1").status).toBe("held");
     expect(cell(w, 1, "附中1").status).toBe("held");
     expect(w.gradeOff).toEqual({});
   });

@@ -22,17 +22,22 @@ import type { Entity, ExternalSession, Teacher } from '../types';
  * 本体の判定から解いたもの)。講習の時限と時刻が重なる / 接すると自動NG になる。
  */
 export interface RegularBusyItem {
-  /** 実効時刻 "19:55-20:55" (コマ移動・特別時程・振替先の時刻を反映した後) */
+  /** 実効時刻 "19:55-20:55" (コマ移動・特別時程・振替先の時刻を反映した後)。不在は "" */
   time: string;
-  /** 「附中1 数学」(学年 + クラス + 科目) */
+  /** 「附中1 数学」(学年 + クラス + 科目)。不在は「1/4〜1/22 (研修)」(期間とメモ) */
   label: string;
   /** 代行で入るコマ (元の担当ではない) */
   sub?: boolean;
+  /**
+   * 本体の「講師の不在期間」(utils/teacherAway、P2-6)。時刻に関係なくその日の
+   * **全時限**が NG。通常授業と同じく本体のデータから毎回導出する (保存しない)
+   */
+  absence?: boolean;
 }
 
 /**
- * 講師名 → 講習の日付ラベル → その日に教える通常授業。**保存しない** (本体の時間割・
- * 代行・振替・休講から毎回導出する)。Web Worker (自動作成) にそのまま送れるよう
+ * 講師名 → 講習の日付ラベル → その日に教える通常授業 (と、その日に掛かる不在期間)。
+ * **保存しない** (本体の時間割・代行・振替・休講・不在期間から毎回導出する)。Web Worker (自動作成) にそのまま送れるよう
  * Map ではなく素のオブジェクト。
  */
 export type RegularBusy = Record<string, Record<string, RegularBusyItem[]>>;
@@ -51,20 +56,23 @@ export interface AutoNgEntry {
   regular?: RegularBusyItem[];
 }
 
-// 自動NG の由来の短い表示 ("他学年" / "通常" / "調査" / "他学年・通常・調査")。
+// 自動NG の由来の短い表示 ("他学年" / "不在" / "通常" / "調査" / "他学年・通常・調査")。
 // プルダウンの「(NG:…)」・NG マトリクスの tooltip で使う。
 export function autoNgSourceLabel(entry: AutoNgEntry | null | undefined): string {
   if (!entry) return '';
   const parts: string[] = [];
   if (entry.sessions.length > 0) parts.push('他学年');
-  if (entry.regular?.length) parts.push('通常');
+  if (entry.regular?.some(r => r.absence)) parts.push('不在');
+  if (entry.regular?.some(r => !r.absence)) parts.push('通常');
   if (entry.availability) parts.push('調査');
   return parts.join('・');
 }
 
 // 通常授業 1 コマの説明 (「通常授業 附中1 数学 19:55-20:55」、代行なら「(代行)」)。
 // ⚠ の内訳・NG の表の tooltip が同じ文を使う
+// 不在期間は「不在 1/4〜1/22 (研修)」
 export function describeRegularBusy(item: RegularBusyItem): string {
+  if (item.absence) return ['不在', item.label].filter(Boolean).join(' ');
   return ['通常授業', item.label, item.time, item.sub ? '(代行)' : ''].filter(Boolean).join(' ');
 }
 
@@ -110,26 +118,33 @@ export function computeAutoNgEntries(
 
 // 1 講師について、本体の通常授業 (その日に実際に教えるコマ) × 時限 の重なりを
 // entries に足す。**重なる / 端が接する**時限が NG (timeRangesOverlapOrTouch)。
-// 時刻の読めないコマ・時限は NG を作らない。
+// 時刻の読めないコマ・時限は NG を作らない。不在期間 (item.absence) はその日の
+// 全時限 (時刻の無い時限も) が NG。
 function mergeRegularBusy(
   entries: AutoNgEntries,
   byDate: Record<string, RegularBusyItem[]> | undefined,
   periods: Entity[] | null | undefined,
 ): void {
-  if (!byDate || !Array.isArray(periods)) return;
-  const periodRanges = periods.map(p => ({ period: p, range: getPeriodTimeRange(p) })).filter(x => x.range);
-  if (periodRanges.length === 0) return;
+  if (!byDate || !Array.isArray(periods) || periods.length === 0) return;
+  const periodRanges = periods.map(p => ({ period: p, range: getPeriodTimeRange(p) }));
+  const push = (dateLabel: string, period: Entity, item: RegularBusyItem) => {
+    const key = makeNgKey(dateLabel, period.label);
+    const existing = entries.get(key);
+    if (!existing) entries.set(key, { sessions: [], regular: [item] });
+    else if (existing.regular) existing.regular.push(item);
+    else existing.regular = [item];
+  };
   for (const dateLabel of Object.keys(byDate)) {
     for (const item of byDate[dateLabel] || []) {
+      if (item?.absence) {
+        for (const { period } of periodRanges) push(dateLabel, period, item);
+        continue;
+      }
       const range = parseTimeRange(item?.time);
       if (!range) continue;
       for (const { period, range: pRange } of periodRanges) {
-        if (!timeRangesOverlapOrTouch(range, pRange)) continue;
-        const key = makeNgKey(dateLabel, period.label);
-        const existing = entries.get(key);
-        if (!existing) entries.set(key, { sessions: [], regular: [item] });
-        else if (existing.regular) existing.regular.push(item);
-        else existing.regular = [item];
+        if (!pRange || !timeRangesOverlapOrTouch(range, pRange)) continue;
+        push(dateLabel, period, item);
       }
     }
   }
@@ -143,7 +158,8 @@ function mergeRegularBusy(
 // 扱う経路をここ 1 か所に保つ (呼び出し側で調査を見忘れる事故を防ぐ)。
 // placeholder の「未定」は調査の対象外 (画面で回答を直せない) なので、改名や
 // 読込で回答が付いていても NG にしない。
-// 本体の通常授業との重なり (regularBusy、2026-11-13) も同じくここで合流させる。
+// 本体の通常授業との重なり (regularBusy、2026-11-13) と講師の不在期間 (同じ
+// regularBusy に absence の項目として載る、2026-11-19) も同じくここで合流させる。
 // **呼び出し側ごとに通常授業を見に行かない** — regularBusy は utils/regularBusy が
 // 本体の判定から解いたものを、作業領域 (ProjectProvider → analysis.regularBusy) が
 // 1 回だけ作って渡す。省略 (単体のテスト・本体のデータ無し) なら従来どおり。

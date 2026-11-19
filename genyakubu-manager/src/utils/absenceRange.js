@@ -11,7 +11,7 @@
 // に委ねる。**ここで独自の実施判定を書き起こさない。**外したコマは理由つきで
 // 返す (黙って減らさない)。
 import { dateToDay, eachDateStrInRange, isValidDateStr } from "./dateHelpers";
-import { collectDayRescheduleCandidates } from "./dayReschedule";
+import { collectDayRescheduleCandidates, OUT_OF_TIMETABLE_REASON } from "./dayReschedule";
 import { collectAbsenceTargets } from "./absenceHelpers";
 import { buildIncomingCards } from "./adjustmentDisplay";
 import { isSlotForTeacher } from "./biweekly";
@@ -90,9 +90,13 @@ export function buildAbsenceRangePlan({
       existingAdjustments: adjustments,
     });
     // 実施されないコマのうち、選んだ先生に関わるものだけ理由を残す
-    // (講師欄の分解と隔週パートナーの判定は biweekly.isSlotForTeacher に委ねる)
-    const notHeldMine = notHeld.filter(({ slot }) =>
-      teachers.some((t) => isSlotForTeacher(slot, t))
+    // (講師欄の分解と隔週パートナーの判定は biweekly.isSlotForTeacher に委ねる)。
+    // 時間割の期間外 (前の期・次の期の同じコマ) は出さない — その日のコマでは
+    // ないので「黙って減らさない」の対象ではなく、並べると本当に見たい対象外
+    // (休講・テスト期間・対応済み) が埋もれる (2026-11-19、P2-5)
+    const notHeldMine = notHeld.filter(
+      ({ slot, reason }) =>
+        reason !== OUT_OF_TIMETABLE_REASON && teachers.some((t) => isSlotForTeacher(slot, t))
     );
     days.push({
       date,

@@ -16,7 +16,7 @@
 
 import { slotOnDate, slotsOnDate } from "./biweekly";
 import { dateToDay, eachDateStrInRange } from "./dateHelpers";
-import { filterSlotsForDate, findGroupForGrade, isSlotBeyondCutoff } from "./timetable";
+import { filterSlotsForDate, findGroupForSlot, isSlotBeyondCutoff } from "./timetable";
 import { getSlotCountStartDate, isSlotHeldOnDate } from "./sessionCount";
 import { slotCancelReason } from "./slotCancel";
 import {
@@ -133,7 +133,7 @@ export function buildFuzokuMonth({
   };
 
   const cutoffReason = (s, d) => {
-    const group = findGroupForGrade(s.grade, displayCutoff?.groups);
+    const group = findGroupForSlot(s, displayCutoff?.groups);
     return cutoffShortText(group?.startDate && d < group.startDate ? "before" : "after");
   };
 

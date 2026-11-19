@@ -142,3 +142,40 @@ describe("buildCutoffTimeline", () => {
     expect(t.end > "2026-06-01").toBe(true);
   });
 });
+
+describe("buildCutoffTimeline: 時間割ごとの学年グループ (2026-11-19)", () => {
+  const TTS = [
+    { id: 1, name: "1学期", startDate: "2026-04-07", endDate: "2026-08-24", grades: [] },
+    { id: 3, name: "2学期", startDate: "2026-08-25", endDate: "2026-12-21", grades: [] },
+  ];
+  const slots = [mk(1, "中1", "火", 1), mk(2, "中1", "火", 3)];
+  const dc = {
+    groups: [
+      { label: "中1・2", grades: ["中1", "中2"], startDate: "2026-08-25", date: null },
+      { label: "中1・2", grades: ["中1", "中2"], startDate: "2026-04-07", date: "2026-07-17", timetableId: 1 },
+      // どの時間割のコマも従っていない共通のグループ
+      { label: "高3", grades: ["高3"], startDate: "2026-08-25", date: null },
+    ],
+    cohorts: [
+      { id: "M|中1|火", label: "中1 火", grade: "中1", date: "2026-07-14", timetableId: 1 },
+      { id: "M|中1|火", label: "中1 火", grade: "中1", date: "2026-12-15", timetableId: 3 },
+    ],
+  };
+  const groupRows = () =>
+    buildCutoffTimeline({ timetables: TTS, slots, displayCutoff: dc, todayStr: "2026-11-19" }).rows;
+
+  it("同じ名前のグループを期ごとに 1 行ずつ並べ、時間割の名前を添える", () => {
+    const rows = groupRows().filter((r) => r.kind === "group");
+    expect(rows.map((r) => [r.key, r.sub])).toEqual([
+      ["group-中1・2", "共通・1 コマ"],
+      ["group-中1・2@1", "1学期・1 コマ"],
+    ]);
+  });
+
+  it("コース別終講日は、その時間割に効くグループの下に並ぶ", () => {
+    const rows = groupRows();
+    const idx = (key) => rows.findIndex((r) => r.key === key);
+    expect(idx("cohort-3-M|中1|火")).toBe(idx("group-中1・2") + 1);
+    expect(idx("cohort-1-M|中1|火")).toBe(idx("group-中1・2@1") + 1);
+  });
+});

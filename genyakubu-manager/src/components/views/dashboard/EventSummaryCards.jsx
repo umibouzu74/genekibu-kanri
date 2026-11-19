@@ -4,6 +4,8 @@ import { formatDateRange, overlapsRange } from "../../../utils/dateHelpers";
 import { specialEventTypeMeta } from "../../../constants/specialEvents";
 import { fmtMDWeekday } from "../../../utils/dateHelpers";
 import { leaveKindMeta } from "../../../utils/staffLeave";
+import { describeAway } from "../../../utils/teacherAway";
+import { TEACHER_AWAY_COLOR } from "../../../constants/colors";
 
 // ─── 直近 7 日のイベントサマリ ───────────────────────────────────────
 // 休講・テスト期間・特別イベントを直近 7 日内のものに絞って件数 +
@@ -18,6 +20,10 @@ import { leaveKindMeta } from "../../../utils/staffLeave";
 // 開いた有給・半休の画面へ、「＋ 入れる」で人と日を選んで入れる欄へ
 // (onOpenLeave({name, date}) / onOpenLeave({}))。カード全体はボタンにしない
 // (中にボタンを並べるため)。
+//
+// awaySoon (講師の不在期間のうち今日〜6 日後に掛かるもの、utils/teacherAway) は
+// 「今後7日の不在」。誰でも見られるデータなので閲覧者にも出す。1 行を押すと
+// 不在期間の画面のその 1 件へ (onOpenTeacherAway({id}))。
 export function EventSummaryCards({
   todayStr,
   holidays = [],
@@ -26,6 +32,8 @@ export function EventSummaryCards({
   onJumpToEventCalendar,
   leaveSoon = [],
   onOpenLeave,
+  awaySoon = [],
+  onOpenTeacherAway,
 }) {
   const summary = useMemo(() => {
     if (!todayStr) return null;
@@ -55,7 +63,8 @@ export function EventSummaryCards({
     upcomingHolidays.length +
     upcomingExams.length +
     upcomingSpecial.length +
-    leaveItems.length;
+    leaveItems.length +
+    (awaySoon || []).length;
   if (total === 0) return null;
 
   const Card = ({
@@ -183,6 +192,9 @@ export function EventSummaryCards({
         />
       )}
       {leaveItems.length > 0 && <LeaveSoonCard items={leaveItems} onOpenLeave={onOpenLeave} />}
+      {awaySoon.length > 0 && (
+        <AwaySoonCard items={awaySoon} todayStr={todayStr} onOpenTeacherAway={onOpenTeacherAway} />
+      )}
     </div>
   );
 }
@@ -276,6 +288,81 @@ function LeaveSoonCard({ items, onOpenLeave }) {
               className="inline-activate"
               onClick={() => onOpenLeave(null)}
               title="有給・半休の画面を開く"
+              style={{ ...rowBtn, fontSize: 9, color: "#888" }}
+            >
+              他 {items.length - 3} 件 →
+            </button>
+          ) : (
+            <div style={{ fontSize: 9, color: "#888" }}>他 {items.length - 3} 件</div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+// 「今後7日の不在」(講師の不在期間)。1 行ずつ押せる (不在期間の画面のその 1 件へ)
+function AwaySoonCard({ items, todayStr, onOpenTeacherAway }) {
+  const color = TEACHER_AWAY_COLOR.deep;
+  const rowBtn = {
+    display: "block",
+    width: "100%",
+    textAlign: "left",
+    border: "none",
+    background: "none",
+    padding: 0,
+    margin: 0,
+    fontSize: 10,
+    lineHeight: 1.3,
+    color: "#444",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+    cursor: onOpenTeacherAway ? "pointer" : "default",
+  };
+  return (
+    <div
+      style={{
+        background: TEACHER_AWAY_COLOR.bannerBg,
+        borderRadius: 10,
+        padding: "10px 14px",
+        border: `1px solid ${TEACHER_AWAY_COLOR.bannerBorder}`,
+        minWidth: 150,
+        maxWidth: 360,
+        flex: "1 1 150px",
+      }}
+    >
+      <div style={{ fontSize: 11, fontWeight: 700, color, marginBottom: 4 }}>🧳 今後7日の不在</div>
+      <div style={{ fontSize: 26, fontWeight: 800, color, lineHeight: 1 }}>
+        {items.length}
+        <span style={{ fontSize: 12, fontWeight: 600, marginLeft: 4 }}>件</span>
+      </div>
+      <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 2 }}>
+        {items.slice(0, 3).map((r) => {
+          const text = `${describeAway(r)}${r.startDate <= todayStr ? "" : " (これから)"}`;
+          return onOpenTeacherAway ? (
+            <button
+              key={r.id}
+              type="button"
+              className="inline-activate"
+              onClick={() => onOpenTeacherAway({ id: r.id })}
+              title={`${text} を不在期間の画面で見る`}
+              style={rowBtn}
+            >
+              {text}
+            </button>
+          ) : (
+            <div key={r.id} style={rowBtn}>
+              {text}
+            </div>
+          );
+        })}
+        {items.length > 3 &&
+          (onOpenTeacherAway ? (
+            <button
+              type="button"
+              className="inline-activate"
+              onClick={() => onOpenTeacherAway(null)}
+              title="不在期間の画面を開く"
               style={{ ...rowBtn, fontSize: 9, color: "#888" }}
             >
               他 {items.length - 3} 件 →

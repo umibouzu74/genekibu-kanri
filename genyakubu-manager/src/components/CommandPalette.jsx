@@ -7,17 +7,24 @@ import { STAFF_TABS } from "../constants/staffTabs";
 import { MINUTES_TAB } from "../constants/minutesTabs";
 import { TIMETABLE_SECTIONS } from "../constants/timetableSections";
 import { KOSHU_SEASONS } from "../timetable-builder/utils/seasons";
+import { SIDEBAR_MENU } from "../constants/sidebarMenu";
 import { formatDateRange } from "../utils/dateHelpers";
 import { describeExtraLesson } from "../utils/extraLessons";
 import { useFocusTrap } from "../hooks/useFocusTrap";
-import { isSlotForTeacher, getSlotTeachers, splitTeacherField } from "../utils/biweekly";
+import {
+  countSlotsByTeacher,
+  formatCount,
+  getSlotTeachers,
+  splitTeacherField,
+} from "../utils/biweekly";
 import { parseDateQuery } from "../utils/parseDateQuery";
-import { fmtDateWeekday } from "../utils/dateHelpers";
+import { fmtDate, fmtDateWeekday } from "../utils/dateHelpers";
 import { shiftDate } from "./views/dashboardHelpers";
 import { useToday } from "../hooks/useToday";
 import { teacherMatchesQuery } from "../utils/teacherKana";
 import { filterNotes, fmtNoteDate, sortNotesDesc } from "../utils/handoverNotes";
 import { describeOffsite, formatOffsitePeriod } from "../utils/offsiteLessons";
+import { awayStatus, describeAway } from "../utils/teacherAway";
 
 // ─── Cmd+K で起動するグローバル検索パレット ─────────────────────────
 // 講師名・科目・教室・メモを横断検索し、選択するとそのビューに遷移する。
@@ -35,6 +42,11 @@ export function CommandPalette({
   offsiteLessons = [],
   onOpenOffsite,
   onAddOffsite,
+  // 講師の不在期間 (講師・メモで引ける。終わったものは出さない)。onOpenTeacherAway({id})
+  // でその 1 件、onAddTeacherAway(teacher) は管理者のときだけ (その講師で新規登録)
+  teacherAways = [],
+  onOpenTeacherAway,
+  onAddTeacherAway,
   selectedTeacher,
   onSelectTeacher,
   onSelectView,
@@ -56,6 +68,8 @@ export function CommandPalette({
   onOpenMonthBatch,
   // バイトのカード忘れを記録する (管理者のときだけ渡す)
   onOpenCardForget,
+  // データ管理 (バックアップ・読み込み・孤立データの掃除) を開く
+  onOpenDataManager,
   // 日付ジャンプ: onSelectDate(dateStr) でその日のダッシュボード、
   // onJumpToAbsenceFlow(dateStr) でその日の欠勤組み換え (管理者のときだけ渡す)
   onSelectDate,
@@ -72,6 +86,12 @@ export function CommandPalette({
   onOpenLeaveEntry,
   // 講師検索をよみでも当てる (「ほり」で 堀上)
   teacherKana,
+  // 今の時間割のコマ (App の currentSlots。講師の「◯コマ」をサイドバーと同じ
+  // 数え方にし、コマの結果を今の期から並べる) と、今 + これから始まる時間割の
+  // コマ (rosterSlots)。ほかの期のコマには時間割の名前を添える (P3-7)
+  currentSlots = null,
+  rosterSlots = null,
+  timetables = [],
 }) {
   const todayStr = useToday();
   const inputRef = useRef(null);
@@ -90,6 +110,23 @@ export function CommandPalette({
   }, [open]);
 
   useFocusTrap(dialogRef, { onClose, enabled: open });
+
+  // 講師ごとのコマ数 (サイドバーと同じ: 今の時間割・隔週は 0.5)
+  const teacherCounts = useMemo(
+    () => countSlotsByTeacher(currentSlots || slots),
+    [currentSlots, slots]
+  );
+  // コマの並び (今の時間割 → これから始まる時間割 → それ以外) と時間割の名前
+  const slotRank = useMemo(() => {
+    const current = new Set((currentSlots || []).map((s) => s.id));
+    const roster = new Set((rosterSlots || []).map((s) => s.id));
+    return (s) => (current.has(s.id) ? 0 : roster.has(s.id) ? 1 : 2);
+  }, [currentSlots, rosterSlots]);
+  const timetableName = useMemo(() => {
+    const byId = new Map((timetables || []).map((t) => [t.id, t.name]));
+    return (s) => byId.get(s.timetableId ?? 1) || "";
+  }, [timetables]);
+  const multiTimetable = Array.isArray(timetables) && timetables.length > 1;
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -151,27 +188,32 @@ export function CommandPalette({
       }
     }
     for (const t of teacherSet) {
-      const cnt = slots.filter((s) => isSlotForTeacher(s, t)).length;
+      const cnt = teacherCounts.get(t) || 0;
       hits.push({
         type: "teacher",
         label: t,
-        detail: `${cnt}コマ`,
+        detail: cnt > 0 ? `${formatCount(cnt)}コマ` : "今の時間割にコマなし",
         action: () => onSelectTeacher(t),
       });
     }
 
     // コマ検索 (科目・教室・備考)。複数講師のコマ ("香川·福江") は講師ごとに
     // 1 件ずつ出す (結合文字列をそのまま講師名として選ばないため)
+    // 今の時間割 (と次の期) のコマを先に出す。ほかの期のコマには期の名前を添える
     const matchedSlots = empty
       ? []
-      : slots.filter(
-          (s) =>
-            !teacherSet.has(s.teacher) && // 講師ヒットは除く
-            (s.subj?.toLowerCase().includes(q) ||
-              s.room?.toLowerCase().includes(q) ||
-              s.note?.toLowerCase().includes(q) ||
-              s.grade?.toLowerCase().includes(q))
-        );
+      : slots
+          .filter(
+            (s) =>
+              !teacherSet.has(s.teacher) && // 講師ヒットは除く
+              (s.subj?.toLowerCase().includes(q) ||
+                s.room?.toLowerCase().includes(q) ||
+                s.note?.toLowerCase().includes(q) ||
+                s.grade?.toLowerCase().includes(q))
+          )
+          .map((s, i) => ({ s, i, rank: slotRank(s) }))
+          .sort((a, b) => a.rank - b.rank || a.i - b.i)
+          .map((x) => x.s);
     let slotHits = 0;
     for (const s of matchedSlots) {
       if (slotHits >= 10) break;
@@ -179,10 +221,13 @@ export function CommandPalette({
       for (const t of teachers.length > 0 ? teachers : [s.teacher]) {
         if (slotHits >= 10) break;
         slotHits++;
+        const term = multiTimetable && slotRank(s) > 0 ? timetableName(s) : "";
         hits.push({
           type: "slot",
           label: `${s.day} ${s.time} ${s.grade} ${s.subj}`,
-          detail: `${teachers.length > 1 ? `${t} (${s.teacher})` : s.teacher} / ${s.room || ""}`,
+          detail:
+            `${teachers.length > 1 ? `${t} (${s.teacher})` : s.teacher} / ${s.room || ""}` +
+            (term ? ` / ${term}` : ""),
           grade: s.grade,
           action: () => {
             onSelectTeacher(t);
@@ -309,6 +354,29 @@ export function CommandPalette({
       }
     }
 
+    // 講師の不在期間 (講師名・メモ)。講師名で引いたときに「1/4〜1/22 不在」が
+    // 並んで分かるように。終わった期間は出さない (画面の「終了」で見る)
+    if (onOpenTeacherAway && !empty) {
+      const today = fmtDate(new Date());
+      const matchedAway = teacherAways.filter(
+        (r) =>
+          awayStatus(r, today) !== "ended" &&
+          ([r.teacher, r.memo, "不在"].filter(Boolean).some((f) => f.toLowerCase().includes(q)) ||
+            teacherFieldHit(r.teacher))
+      );
+      for (const r of matchedAway.slice(0, 5)) {
+        hits.push({
+          type: "away",
+          label: describeAway(r),
+          detail: "講師の不在期間",
+          action: () => {
+            onOpenTeacherAway({ id: r.id });
+            onClose();
+          },
+        });
+      }
+    }
+
     // ビュー検索
     const viewNames = [
       { key: views.MENU, label: "メインメニュー (機能の一覧)" },
@@ -332,12 +400,27 @@ export function CommandPalette({
       // 画面名からは辿れない中身 (確認テストの科目・バス時刻) でも引けるように
       { key: views.FUZOKU_PLAN, label: "附属の授業予定 (確認テスト・バス時刻)" },
       { key: views.OFFSITE, label: "他校舎の授業 (講師の出講予定)" },
+      { key: views.TEACHER_AWAY, label: "講師の不在期間 (研修・病気などで来られない期間)" },
       { key: views.SENIOR_KOSHU, label: "高校・予備校の講習 (担当・講座名・期)" },
       { key: views.REGULAR_BUILDER, label: "通常時間割作成 (次の期の時間割を組む)" },
     ];
     if (canUseAdminData) {
       viewNames.push({ key: views.HANDOVER, label: "引継ぎメモ (申し送り・毎年のこと)" });
       viewNames.push({ key: views.LEAVE, label: "有給・半休 (休暇・半休・代休)" });
+    }
+    // サイドバーの画面のうち上に無いもの (足し忘れ) も、メニューの名前で出す。
+    // メニューにあるものは Cmd+K でも出る (CommandPalette.test.jsx が SIDEBAR_MENU と
+    // 突き合わせる。P3-8)。管理者専用は onJumpToAbsenceFlow (管理者のときだけ
+    // 渡る) を目印に、管理者だけのデータは canUseAdminData で絞る (サイドバーと同じ)。
+    // 空のときの固定一覧は上の顔ぶれのまま (増やすと他の操作が押し出される)
+    if (!empty) {
+      const listed = new Set(viewNames.map((v) => v.key));
+      for (const item of SIDEBAR_MENU) {
+        if (item.action || listed.has(item.key)) continue;
+        if (item.adminOnly && !onJumpToAbsenceFlow) continue;
+        if (item.adminData && !canUseAdminData) continue;
+        viewNames.push({ key: item.key, label: item.label });
+      }
     }
     // 週間 / 月間は講師選択中にだけ意味があるビューなので、講師が
     // 選択されているときだけ候補に出す。空のビューに飛ばさないため。
@@ -529,6 +612,21 @@ export function CommandPalette({
         },
       });
     }
+    // 不在期間の登録 (講師を選んでいればその講師で始める。管理者だけ)
+    const awayAddLabel = selectedTeacher
+      ? `${selectedTeacher} の不在期間を登録`
+      : "講師の不在期間を登録";
+    if (onAddTeacherAway && matchLabel(awayAddLabel)) {
+      hits.push({
+        type: "view",
+        label: awayAddLabel,
+        detail: "研修・病気などで何日も来られない期間 (講習の自動NG にもなる)",
+        action: () => {
+          onAddTeacherAway(selectedTeacher || "");
+          onClose();
+        },
+      });
+    }
     if (onOpenMultiDayAbsence && matchLabel("複数日の欠勤登録")) {
       hits.push({
         type: "view",
@@ -558,7 +656,9 @@ export function CommandPalette({
     // 「まとめて印刷」「画像」「月間予定」のどれで探しても出す
     if (
       onOpenMonthBatch &&
-      (matchLabel("月間予定のまとめて印刷・画像") || matchLabel("画像にする"))
+      (matchLabel("月間予定のまとめて印刷・画像") ||
+        matchLabel("月間予定の印刷・画像") ||
+        matchLabel("画像にする"))
     ) {
       hits.push({
         type: "view",
@@ -570,10 +670,30 @@ export function CommandPalette({
         },
       });
     }
+    // データ管理 (サイドバーの「💾 データ管理」と同じダイアログ)。「バックアップ」
+    // 「読み込み」「孤立」でも引ける。空のときの固定一覧には並べない
+    if (
+      onOpenDataManager &&
+      !empty &&
+      (matchLabel("データ管理 (バックアップ・読み込み・孤立データの掃除)") || matchLabel("エクスポート") || matchLabel("インポート"))
+    ) {
+      hits.push({
+        type: "view",
+        label: "データ管理",
+        detail: "バックアップの書き出し・読み込み・孤立データの掃除",
+        action: () => {
+          onOpenDataManager();
+          onClose();
+        },
+      });
+    }
     // 「カード忘れ」「打刻」「タイムカード」のどれで探しても出す
     if (
       onOpenCardForget &&
-      (matchLabel("カード忘れを記録 (出退勤のカード)") || matchLabel("打刻") || matchLabel("タイムカード"))
+      (matchLabel("カード忘れを記録 (出退勤のカード)") ||
+        matchLabel("カード忘れの記録") ||
+        matchLabel("打刻") ||
+        matchLabel("タイムカード"))
     ) {
       hits.push({
         type: "view",
@@ -612,6 +732,9 @@ export function CommandPalette({
     offsiteLessons,
     onOpenOffsite,
     onAddOffsite,
+    teacherAways,
+    onOpenTeacherAway,
+    onAddTeacherAway,
     selectedTeacher,
     onSelectTeacher,
     onSelectView,
@@ -627,6 +750,7 @@ export function CommandPalette({
     onOpenTestPrep,
     onOpenMonthBatch,
     onOpenCardForget,
+    onOpenDataManager,
     onClose,
     views,
     canUseAdminData,
@@ -635,6 +759,10 @@ export function CommandPalette({
     onOpenHandoverAdd,
     onOpenLeaveEntry,
     teacherKana,
+    teacherCounts,
+    slotRank,
+    timetableName,
+    multiTimetable,
   ]);
 
   useEffect(() => {
@@ -660,8 +788,8 @@ export function CommandPalette({
 
   if (!open) return null;
 
-  const typeIcons = { teacher: "👤", slot: "📝", sub: "🔄", view: "📋", event: "📅", date: "📆", handover: "🗒", offsite: "🏫" };
-  const typeLabels = { teacher: "講師", slot: "コマ", sub: "代行", view: "ビュー", event: "イベント", date: "日付", handover: "引継ぎ", offsite: "他校舎" };
+  const typeIcons = { teacher: "👤", slot: "📝", sub: "🔄", view: "📋", event: "📅", date: "📆", handover: "🗒", offsite: "🏫", away: "🧳" };
+  const typeLabels = { teacher: "講師", slot: "コマ", sub: "代行", view: "ビュー", event: "イベント", date: "日付", handover: "引継ぎ", offsite: "他校舎", away: "不在" };
   const listboxId = "cmdp-results";
   const optionId = (i) => `cmdp-opt-${i}`;
   const activeOptionId =

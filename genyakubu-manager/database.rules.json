@@ -46,6 +46,7 @@
       "genyakubu-yoteihyo-confirmed": { ".validate": "newData.hasChildren()" },
       "genyakubu-part-time-attendance-settings": { ".validate": "newData.hasChildren()" },
       "genyakubu-card-forgets": { ".validate": "newData.hasChildren()" },
+      "genyakubu-teacher-aways": { ".validate": "newData.hasChildren()" },
       "genyakubu-regular-builder-project": { ".validate": "newData.hasChildren()" },
 
       "builder": {

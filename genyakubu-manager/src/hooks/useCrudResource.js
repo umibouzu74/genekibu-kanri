@@ -171,11 +171,15 @@ export function useCrudResource({ list, save, idKey = "id" }) {
         okLabel = "削除",
         successMsg,
         cascade,
+        choices,
+        defaultChoice,
       } = {}
     ) => {
-      const ok = await confirm({ title, message, okLabel, tone: "danger" });
+      // choices を渡すと確認ダイアログで選んだ値を cascade の第 2 引数に渡す
+      // (時間割の削除の「コマも一緒に削除 / デフォルト時間割へ移す」)
+      const ok = await confirm({ title, message, okLabel, tone: "danger", choices, defaultChoice });
       if (!ok) return false;
-      if (cascade) await cascade(id);
+      if (cascade) await (choices ? cascade(id, ok) : cascade(id));
       save(list.filter((x) => x[idKey] !== id));
       if (successMsg) toasts.success(successMsg);
       return true;

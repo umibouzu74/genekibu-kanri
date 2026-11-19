@@ -18,7 +18,7 @@
 //     遅い方の 12/17 が案になる (水金のコマは 12/17 (木) に無いので同じこと)
 
 import { deriveCohortsFromSlots } from "../cohorts";
-import { findGroupForGrade } from "../timetable";
+import { findGroupForGrade, groupsForTimetable } from "../timetable";
 import { mappingStatus, subjectDays, subjectKey } from "./courseMapping";
 import { daysBetween } from "./highSchoolSheet";
 
@@ -115,7 +115,10 @@ export function proposeCohortCutoffs({ merged, mapping, slots, displayCutoff }) 
       label: cohort.label,
       grade: cohort.grade,
       current,
-      groupDate: findGroupForGrade(cohort.grade, displayCutoff?.groups)?.date || null,
+      // 学年グループはその時間割に効くもの (時間割の付いていない終講日は共通)
+      groupDate:
+        findGroupForGrade(cohort.grade, groupsForTimetable(displayCutoff?.groups, cohort.timetableId))
+          ?.date || null,
       proposed,
       courses: courses.map(({ key, last }) => ({ key, last })).sort((a, b) => a.key.localeCompare(b.key)),
       mayContinue:

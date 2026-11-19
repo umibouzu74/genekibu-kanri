@@ -133,6 +133,9 @@ export const SIDEBAR_MENU = [
   { key: VIEWS.STAFF, icon: "👥", label: "講師管理", sections: STAFF_TABS, category: C.STAFF },
   // 現役部 常勤の有給・半休。人事の記録なので閲覧者には読めない (adminData)
   { key: VIEWS.LEAVE, icon: "🌴", label: "有給・半休", adminData: true, category: C.STAFF },
+  // 講師が何日も続けて来られない期間 (研修・病気など)。期間中の授業を担当変更 /
+  // 欠勤登録へ進め、講習時間割作成の自動NG・講師の月間の目印になる。閲覧者も見る
+  { key: VIEWS.TEACHER_AWAY, icon: "🧳", label: "講師の不在期間", category: C.STAFF },
   // 講師の月間予定を何人分もまとめて印刷 / 画像にする (バイトに LINE で送る)。
   // 開き方は App の openMonthBatch (今の画面の状態を巻き添えにしない)。印刷・
   // 画像は書き込みではないので閲覧者にも出す

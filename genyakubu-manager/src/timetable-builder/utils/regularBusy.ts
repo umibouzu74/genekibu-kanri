@@ -22,10 +22,15 @@
 //     全日程で一律 (冬期講習本体の 12/25〜1/7 は通常授業が無いので自然に 0 件)
 //   - 講習の講師マスタに居ない名前の通常授業は入れない (名前は完全一致)
 //   - NG への合流は autoNg.computeAutoNgByTeacher の 1 か所。ここは解くだけ
+//   - 本体の「講師の不在期間」(utils/teacherAway、2026-11-19) も同じ RegularBusy に
+//     absence の項目として載せる (その日の全時限が NG)。通常授業と同じく本体のデータ
+//     から毎回導出し、全経路 (自動作成・Excel・違反チェック) に同じ形で届けるため。
+//     講習の日付ラベルを実日付に解いてから期間に入るかを見る
 //
 // 本体のモジュールを import するので、Web Worker (自動作成) からは import しない。
 // 型と空の値は autoNg 側 (worker でも読む)。
 import { computeTeachingMinutes } from '../../utils/teachingMinutes';
+import { formatAwayPeriod } from '../../utils/teacherAway';
 import { makeEventHelpers } from '../../components/views/dashboardHelpers';
 import { EMPTY_REGULAR_BUSY } from './autoNg';
 import type { RegularBusy, RegularBusyItem } from './autoNg';
@@ -45,6 +50,15 @@ export interface RegularBusyHost {
   adjustments?: unknown[];
   daySchedules?: unknown[];
   displayCutoff?: unknown;
+  /** 本体の講師の不在期間 (utils/teacherAway の TeacherAway[]) */
+  teacherAways?: unknown[];
+}
+
+interface AwayRecord {
+  teacher?: unknown;
+  startDate?: unknown;
+  endDate?: unknown;
+  memo?: unknown;
 }
 
 const todayYmd = (): string => {
@@ -76,7 +90,8 @@ interface MinutesEntry {
 }
 
 /**
- * 講師 → 講習の日付ラベル → その日に教える通常授業。本体のコマが無い (単体で描く)・
+ * 講師 → 講習の日付ラベル → その日に教える通常授業 (+ 掛かる不在期間)。本体のコマも
+ * 不在期間も無い (単体で描く)・
  * 講習の日が解けない・重なる授業が無いときは EMPTY_REGULAR_BUSY (同じ参照)。
  */
 export function buildRegularBusy(
@@ -85,7 +100,8 @@ export function buildRegularBusy(
   fallbackYmd: string = todayYmd(),
 ): RegularBusy {
   const slots = host?.regularSlots || [];
-  if (!project || slots.length === 0) return EMPTY_REGULAR_BUSY;
+  const aways = (host?.teacherAways || []) as AwayRecord[];
+  if (!project || (slots.length === 0 && aways.length === 0)) return EMPTY_REGULAR_BUSY;
   const names = new Set((project.teachers || []).filter(isSurveyTeacher).map(t => t.name));
   if (names.size === 0) return EMPTY_REGULAR_BUSY;
 
@@ -100,6 +116,27 @@ export function buildRegularBusy(
   }
   if (labelsByYmd.size === 0) return EMPTY_REGULAR_BUSY;
   const ymds = [...labelsByYmd.keys()].sort();
+  const out: RegularBusy = {};
+
+  // 講師の不在期間: 期間に入る講習の日の全時限 (autoNg が時限を広げる)
+  for (const a of aways) {
+    const teacher = typeof a?.teacher === 'string' ? a.teacher : '';
+    const start = typeof a?.startDate === 'string' ? a.startDate : '';
+    const end = typeof a?.endDate === 'string' && a.endDate ? a.endDate : start;
+    if (!teacher || !names.has(teacher) || !start) continue;
+    const memo = typeof a?.memo === 'string' && a.memo.trim() ? ` (${a.memo.trim()})` : '';
+    const item: RegularBusyItem = {
+      time: '',
+      label: `${formatAwayPeriod({ startDate: start, endDate: end })}${memo}`,
+      absence: true,
+    };
+    for (const ymd of ymds) {
+      if (ymd < start || ymd > end) continue;
+      const byDate = (out[teacher] ||= {});
+      for (const label of labelsByYmd.get(ymd) || []) (byDate[label] ||= []).push(item);
+    }
+  }
+  if (slots.length === 0) return Object.keys(out).length > 0 ? out : EMPTY_REGULAR_BUSY;
 
   const holidays = host?.holidays || [];
   const examPeriods = host?.examPeriods || [];
@@ -123,7 +160,6 @@ export function buildRegularBusy(
     examPeriods,
   }) as { rows: Map<string, { entries: MinutesEntry[] }> };
 
-  const out: RegularBusy = {};
   for (const [teacher, row] of rows) {
     if (!names.has(teacher)) continue;
     for (const e of row.entries || []) {

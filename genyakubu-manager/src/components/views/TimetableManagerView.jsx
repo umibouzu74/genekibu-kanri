@@ -21,6 +21,8 @@ import {
   gradesOfTimetable,
   planTimetableDuplicate,
 } from "../../utils/timetableDuplicate";
+import { findDuplicateSlotGroups } from "../../utils/duplicateSlots";
+import { DuplicateSlotsDialog } from "../DuplicateSlotsDialog";
 import { buildCutoffFollowUp } from "../../regular-builder/reflect";
 import { DisplayCutoffEditor } from "../DisplayCutoffEditor";
 import { useSessionCtx } from "../../hooks/useSessionCtx";
@@ -77,6 +79,9 @@ export function TimetableManagerView({
   sessionOverrides = [],
   daySchedules = [],
   adjustments = [],
+  // 同じ内容のコマの整理 (P1-2): コマごとの参照の数と、消す前の下見
+  slotReferenceCounts = null,
+  detectSlotRemoval,
   isAdmin,
   // 外 (サイドバー / メインメニュー / Cmd+K) からのセクションへの要求
   // ({key: TIMETABLE_SECTION, token})。受け取ったら onConsumeSectionRequest で
@@ -165,9 +170,15 @@ export function TimetableManagerView({
   const dupCutoffPreview = useMemo(
     () =>
       dupForm?.startDate
-        ? buildCutoffFollowUp({ displayCutoff, startDate: dupForm.startDate, clearOrientation: true })
+        ? buildCutoffFollowUp({
+            displayCutoff,
+            startDate: dupForm.startDate,
+            clearOrientation: true,
+            timetables,
+            grades: dupForm.grades,
+          })
         : null,
-    [dupForm, displayCutoff]
+    [dupForm, displayCutoff, timetables]
   );
 
   // ─── 目次 / セクションへのスクロール ───────────────────────────
@@ -292,22 +303,37 @@ export function TimetableManagerView({
     ttCrud.applyDuplicate(dupPlan, dupForm.sourceName);
     // 表示期間設定も新しい期に合わせる (チェックしたときだけ)
     if (dupForm.startDate && (dupForm.followCutoff || dupForm.clearOrientation)) {
+      // 複製した時間割だけの学年グループとして書く (複製元の期の設定は変えない)
       const patch = buildCutoffFollowUp({
         displayCutoff,
         startDate: dupForm.startDate,
         endDate: dupForm.endDate || null,
         followDates: dupForm.followCutoff,
         clearOrientation: dupForm.clearOrientation,
+        timetableId: dupPlan.timetable?.id ?? null,
+        timetables,
+        grades: dupForm.grades,
       });
       if (patch.changed) onSaveDisplayCutoff(patch.next);
     }
     cancelDuplicate();
-  }, [dupForm, dupChecks, dupAckKey, dupPlan, ttCrud, cancelDuplicate, displayCutoff, onSaveDisplayCutoff]);
+  }, [dupForm, dupChecks, dupAckKey, dupPlan, ttCrud, cancelDuplicate, displayCutoff, onSaveDisplayCutoff, timetables]);
 
   const outsideGrades = useMemo(
     () => findSlotsOutsideTimetableGrades(slots, timetables),
     [slots, timetables]
   );
+  // 同じ時間割の中の同じ内容のコマ (時間割の削除でデフォルトへ移って二重に
+  // なったもの、など)。時間割ごとに件数を出し、整理のダイアログを開く
+  const duplicateGroupsByTT = useMemo(() => {
+    const out = new Map();
+    for (const g of findDuplicateSlotGroups(slots)) {
+      if (!out.has(g.timetableId)) out.set(g.timetableId, []);
+      out.get(g.timetableId).push(g);
+    }
+    return out;
+  }, [slots]);
+  const [duplicateDialogId, setDuplicateDialogId] = useState(null);
 
   const slotCountByTT = {};
   for (const s of slots) {
@@ -435,6 +461,19 @@ export function TimetableManagerView({
                       （どの画面にも出ません。「編集」で対象学年に加えてください）
                     </div>
                   )}
+                  {duplicateGroupsByTT.get(tt.id) && (
+                    <div style={{ fontSize: 11, color: "#9a6b00", marginTop: 2 }}>
+                      ⚠ 同じ内容のコマ {duplicateGroupsByTT.get(tt.id).length} 組
+                      （同じコマが二重に入っています。担当変更・検索に同じ行が並びます）
+                      <button
+                        type="button"
+                        onClick={() => setDuplicateDialogId(tt.id)}
+                        style={{ ...S.btn(false), fontSize: 10, padding: "1px 6px", marginLeft: 6 }}
+                      >
+                        {isAdmin ? "整理する" : "一覧を見る"}
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <span
                   style={{
@@ -481,6 +520,19 @@ export function TimetableManagerView({
           </div>
         ))}
       </div>
+
+      {duplicateDialogId != null && duplicateGroupsByTT.get(duplicateDialogId) && (
+        <DuplicateSlotsDialog
+          timetable={timetables.find((t) => t.id === duplicateDialogId) || { id: duplicateDialogId, name: "" }}
+          groups={duplicateGroupsByTT.get(duplicateDialogId)}
+          refCounts={slotReferenceCounts}
+          allSlots={slots}
+          detectSlotRemoval={detectSlotRemoval}
+          onRemoveSlots={ttCrud.removeSlots}
+          isAdmin={isAdmin}
+          onClose={() => setDuplicateDialogId(null)}
+        />
+      )}
 
       {/* 複製ダイアログ */}
       {dupForm && (
@@ -607,6 +659,7 @@ export function TimetableManagerView({
       <div id={timetableSectionAnchorId(TIMETABLE_SECTION.DISPLAY_CUTOFF)} style={anchorStyle}>
         <DisplayCutoffEditor
           slots={slots}
+          timetables={timetables}
           displayCutoff={displayCutoff}
           onSave={onSaveDisplayCutoff}
           isAdmin={isAdmin}
@@ -978,7 +1031,8 @@ function DuplicateOptions({ form, setForm, sourceGrades, plan, cutoffPreview, sl
                 <span style={{ display: "block", fontSize: 10, color: "#888" }}>
                   {cutoffPreview.groupLabels.length > 0 &&
                     `${cutoffPreview.groupLabels.join("・")} の終了日を${form.endDate ? ` ${form.endDate} に` : "「なし」に"}変更`}
-                  （このままだと新しい期のコマが画面に出ません）
+                  （このままだと新しい期のコマが画面に出ません。複製した時間割だけの設定として保存し、
+                  複製元の期の設定はそのまま）
                 </span>
               </span>
             </label>

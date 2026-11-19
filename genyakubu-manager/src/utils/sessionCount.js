@@ -36,7 +36,12 @@ import { getSlotWeekType, isBiweekly } from "./biweekly";
 import { slotGroupKey } from "./parallelSlots";
 import { buildSlotCohortIndex } from "./cohorts";
 import { buildClassSetIndex, buildClassSetOwnerIndex, isDayCountSet } from "./classSets";
-import { isTimetableActiveForDate, findGroupForGrade } from "./timetable";
+import {
+  findGroupForGrade,
+  findGroupForSlot,
+  isFirstTermTimetable,
+  isTimetableActiveForDate,
+} from "./timetable";
 import { isSlotScheduledOnDate } from "./slotDates";
 
 // "YYYY-MM-DD" → Date (ローカル)
@@ -67,15 +72,82 @@ export function getGradeStartDate(grade, displayCutoff) {
 // 学年グループ (表示期間設定) の「開講日 1 限をオリエン扱いにする」設定を引く。
 // displayCutoff.groups[].orientationFirstDay:
 //   - true / false  → その設定に従う (画面から明示的に切り替えた状態)
-//   - 未設定 (undefined/null) → 従来どおり中学部のみ有効の既定値
-// 2 学期以降のようにオリエンが入らない期は、表示期間設定でオフにする。
-export function isOrientationEnabledForGrade(grade, displayCutoff) {
+//   - 未設定 (undefined/null) → 年度の最初の期 (1学期) の中学部だけ有効
+//     (2026-11-19。それまでは期を問わず中学部で有効だった。オリエンは 1学期の
+//     話なので、2学期・3学期は既定でオフ)。opts.firstTerm に「その期が年度の
+//     最初の期か」(timetable.isFirstTermTimetable) を渡す。渡さなければ最初の期。
+// 2 学期以降に明示的にオンにしたいときは、表示期間設定でオンにする。
+export function isOrientationEnabledForGrade(grade, displayCutoff, opts = {}) {
   if (!grade) return false;
-  const group = findGroupForGrade(grade, displayCutoff?.groups);
+  return orientationEnabledFor(
+    findGroupForGrade(grade, displayCutoff?.groups),
+    grade,
+    opts.firstTerm !== false
+  );
+}
+
+function orientationEnabledFor(group, grade, firstTerm) {
   if (group && typeof group.orientationFirstDay === "boolean") {
     return group.orientationFirstDay;
   }
-  return gradeToDept(grade) === "中学部";
+  return firstTerm && gradeToDept(grade) === "中学部";
+}
+
+/**
+ * オリエンの対象になる本科のコマか (2026-11-19)。学年グループの学年そのもの
+ * (中1 / 中2 / 中3 …) のコマだけ。学年をまたぐコマ (土曜プレップ「中1-3」) と
+ * 附属 (学年「附中…」) は対象外 — プレップ・附属は授業の前に簡単に済ませるので
+ * 回数から外さない。コマの編集で「オリエンの対象外」にしたコマ
+ * (Slot.noOrientation、内申対策など) も外す。
+ * @param {object} slot
+ * @param {object | null} group コマに効く学年グループ (timetable.findGroupForSlot)
+ * @returns {boolean}
+ */
+export function isOrientationTargetSlot(slot, group) {
+  if (!slot || !slot.grade || !group) return false;
+  if (slot.noOrientation === true) return false;
+  if (String(slot.grade).startsWith("附中")) return false;
+  return (group.grades || []).includes(slot.grade);
+}
+
+// コマの学年グループ (コマの時間割に効くもの、timetable.findGroupForSlot)。
+// 回数の起点とオリエンはこちらで引く。学年だけで引くと、前の期のコマに
+// 今の期の開始日・オリエンの設定が当たる (2026-11-19 の P1-1)
+function slotGroupOf(slot, displayCutoff) {
+  if (!displayCutoff || !Array.isArray(displayCutoff.groups)) return null;
+  return findGroupForSlot(slot, displayCutoff.groups);
+}
+
+/**
+ * コマの学年グループの開始日 (コマの時間割に効くグループ)。未設定 / グループ
+ * なしは null。
+ * @param {object} slot
+ * @param {object} displayCutoff
+ * @returns {string | null}
+ */
+export function getSlotGroupStartDate(slot, displayCutoff) {
+  return slotGroupOf(slot, displayCutoff)?.startDate || null;
+}
+
+/**
+ * コマの開講日 1 限をオリエン扱いにするか。本科のコマ (isOrientationTargetSlot)
+ * で、コマの時間割に効く学年グループの設定がオン (未設定は、コマの時間割が
+ * 年度の最初の期のときだけ中学部でオン)。timetables を渡さなければ最初の期とみなす。
+ * @param {object} slot
+ * @param {object} displayCutoff
+ * @param {object[]} [timetables]
+ * @returns {boolean}
+ */
+export function isOrientationEnabledForSlot(slot, displayCutoff, timetables) {
+  if (!slot || !slot.grade) return false;
+  const group = slotGroupOf(slot, displayCutoff);
+  if (!isOrientationTargetSlot(slot, group)) return false;
+  let firstTerm = true;
+  if (Array.isArray(timetables) && timetables.length > 0) {
+    const tt = timetables.find((t) => t.id === (slot.timetableId ?? 1));
+    if (tt) firstTerm = isFirstTermTimetable(tt, timetables);
+  }
+  return orientationEnabledFor(group, slot.grade, firstTerm);
 }
 
 // slot の所属時間割がその日に有効か。ctx.timetables 未指定 (単一時間割
@@ -92,7 +164,7 @@ function isSlotTimetableActive(slot, dateStr, ctx) {
 // 所属時間割の startDate の遅い方。後期など期を切り替えた時間割では
 // 時間割の開始日が起点になり、「第N回」は期ごとに 1 から数え直しになる。
 export function getSlotCountStartDate(slot, ctx) {
-  const gradeStart = getGradeStartDate(slot.grade, ctx.displayCutoff);
+  const gradeStart = getSlotGroupStartDate(slot, ctx.displayCutoff);
   let ttStart = null;
   if (Array.isArray(ctx.timetables)) {
     const tt = ctx.timetables.find((t) => t.id === (slot.timetableId ?? 1));
@@ -260,23 +332,26 @@ function findPoolFirstDate(pool, startDate, ctx) {
 //     ので 4/9 (木) が初開講日。その日の同セット内最早時刻が 1 限。
 function isOrientationSlot(slot, dateStr, ctx) {
   if (!ctx.orientationOnFirstDay) return false;
-  if (!isOrientationEnabledForGrade(slot.grade, ctx.displayCutoff)) return false;
-  const startDate = getGradeStartDate(slot.grade, ctx.displayCutoff);
+  if (!isOrientationEnabledForSlot(slot, ctx.displayCutoff, ctx.timetables)) return false;
+  const startDate = getSlotGroupStartDate(slot, ctx.displayCutoff);
   if (!startDate) return false;
 
   // pool: 「1 限目」判定の対象スロット群。
   //   - セット登録済み (size>1) → セット内 slots
   //   - 未登録 → 同学年の全 slots (cohort 推定不能のため学年単位で代替)
+  // どちらも本科のコマだけ (オリエンの対象外のコマ (内申対策など) が開講日の
+  // 1 限を取って、本科のオリエンが消えないように)
   const setSlotIds = resolveSetSlotIds(
     slot, ctx.classSets, ctx._cohortIndex, ctx._classSetIndex
   );
   // isSlotHeldOnDate 経由 (withIndexes を通らない呼び出し) にも耐える
   const slotById = ctx._slotById || buildSlotById(ctx.allSlots);
   const setSlots = setSlotIds.map((id) => slotById.get(id)).filter(Boolean);
-  const pool =
+  const pool = (
     setSlots.length > 1
       ? setSlots
-      : (ctx.allSlots || []).filter((s) => s.grade === slot.grade);
+      : (ctx.allSlots || []).filter((s) => s.grade === slot.grade)
+  ).filter((s) => isOrientationTargetSlot(s, slotGroupOf(s, ctx.displayCutoff)));
 
   const firstDate = findPoolFirstDate(pool, startDate, ctx);
   if (!firstDate || dateStr !== firstDate) return false;

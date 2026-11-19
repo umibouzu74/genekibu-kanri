@@ -249,3 +249,102 @@ describe("DisplayCutoffEditor", () => {
     expect(screen.getByText("2 コマ")).toBeInTheDocument();
   });
 });
+
+// 時間割ごとの設定 (2026-11-19 の P1-1)。前の期の月が「開講前」にならないように、
+// 学年グループは時間割に結び付けて持つ
+describe("DisplayCutoffEditor: 時間割ごとの表示期間", () => {
+  const TT1 = { id: 1, name: "2026 1学期", startDate: "2026-04-07", endDate: "2026-08-24", grades: [] };
+  const TT3 = { id: 3, name: "2026 2学期", startDate: "2026-08-25", endDate: "2026-12-21", grades: [] };
+  const TIMETABLES = [TT1, TT3];
+  const TT_SLOTS = [mk(1, "中1", "火"), mk(2, "中1", "火", { timetableId: 3 })];
+  const SHARED = {
+    label: "中1・2",
+    grades: ["中1", "中2"],
+    startDate: "2026-08-25",
+    date: null,
+  };
+
+  function renderScoped(displayCutoff) {
+    const onSave = vi.fn();
+    render(
+      <ConfirmProvider>
+        <DisplayCutoffEditor
+          slots={TT_SLOTS}
+          timetables={TIMETABLES}
+          displayCutoff={displayCutoff}
+          onSave={onSave}
+          isAdmin
+          sessionCtx={null}
+        />
+      </ConfirmProvider>
+    );
+    const pick = (id) =>
+      fireEvent.change(screen.getByLabelText("表示期間を設定する時間割"), {
+        target: { value: String(id) },
+      });
+    return { onSave, pick };
+  }
+
+  it("共通の設定を使っている時間割で変えると、その時間割だけの設定として保存する", () => {
+    const { onSave, pick } = renderScoped({ groups: [SHARED], cohorts: [] });
+    pick(3);
+    expect(screen.getByText(/この時間割にはまだ専用の設定がありません/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("中1・2 の終了日"), {
+      target: { value: "2026-12-19" },
+    });
+    const saved = onSave.mock.calls[0][0];
+    // 共通のグループ (ほかの時間割が従う) はそのまま
+    expect(saved.groups[0]).toEqual(SHARED);
+    expect(saved.groups[1]).toEqual({ ...SHARED, date: "2026-12-19", timetableId: 3 });
+  });
+
+  it("時間割だけの設定はその時間割を選んだときだけ並び、ほかの時間割の設定は残す", () => {
+    const own1 = { ...SHARED, startDate: "2026-04-07", date: "2026-08-24", timetableId: 1 };
+    const own3 = { ...SHARED, date: "2026-12-19", timetableId: 3 };
+    const { onSave, pick } = renderScoped({ groups: [SHARED, own1, own3], cohorts: [] });
+    pick(1);
+    expect(screen.getByLabelText("中1・2 の開始日")).toHaveValue("2026-04-07");
+    pick(3);
+    expect(screen.getByLabelText("中1・2 の終了日")).toHaveValue("2026-12-19");
+    expect(screen.getByText(/この時間割だけの設定です/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("中1・2 の終了日"), {
+      target: { value: "2026-12-21" },
+    });
+    const saved = onSave.mock.calls[0][0];
+    expect(saved.groups).toEqual([SHARED, own1, { ...own3, date: "2026-12-21" }]);
+  });
+
+  it("共通の開始日より前に終わった期は、その旨と入れ直しの案内を出す (共通に戻すは出さない)", () => {
+    const own1 = { ...SHARED, startDate: "2026-04-07", date: "2026-08-24", timetableId: 1 };
+    const { pick } = renderScoped({ groups: [SHARED, own1], cohorts: [] });
+    pick(1);
+    expect(screen.getByText(/共通の開始日（.*）より前に終わった期です/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "共通の設定に戻す" })).not.toBeInTheDocument();
+  });
+
+  it("「共通の設定に戻す」は確認してから、その時間割だけの設定を消す", async () => {
+    const own3 = { ...SHARED, date: "2026-12-19", timetableId: 3 };
+    const { onSave, pick } = renderScoped({ groups: [SHARED, own3], cohorts: [] });
+    pick(3);
+    fireEvent.click(screen.getByRole("button", { name: "共通の設定に戻す" }));
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByText("戻す"));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0].groups).toEqual([SHARED]);
+  });
+
+  it("オリエンの既定は年度の最初の期だけオン (未設定のグループ)", () => {
+    const { pick } = renderScoped({ groups: [SHARED], cohorts: [] });
+    const box = () => screen.getByRole("checkbox", { name: /初回1限はオリエン/ });
+    pick(1);
+    expect(box()).toBeChecked();
+    pick(3);
+    expect(box()).not.toBeChecked();
+  });
+
+  it("開始日が時間割の開始日より前なら、表示は時間割の開始日からと添える", () => {
+    const { pick } = renderScoped({ groups: [{ ...SHARED, startDate: "2026-04-07" }], cohorts: [] });
+    pick(3);
+    expect(screen.getByText(/時間割の開始日 .* より前。表示は時間割の開始日から/)).toBeInTheDocument();
+  });
+});

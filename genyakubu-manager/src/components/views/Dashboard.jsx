@@ -12,6 +12,7 @@ import { useSessionCtx } from "../../hooks/useSessionCtx";
 import { useToday } from "../../hooks/useToday";
 import { PrintButton } from "../PrintButton";
 import { upcomingLeave } from "../../utils/staffLeave";
+import { awaysInRange } from "../../utils/teacherAway";
 
 // 印刷系統: PrintButton (window.print() 直接呼び) を使う。
 // ヘッダ/凡例の動的注入は不要、App.jsx 末尾のグローバル @media print +
@@ -104,6 +105,9 @@ export function Dashboard({
   // 有給・半休 (管理者だけが読める。読めないときは null)。今後 7 日の休暇を出す
   staffLeave = null,
   onOpenLeave,
+  // 講師の不在期間 (utils/teacherAway)。「今後7日の不在」に出す (誰でも見られる)
+  teacherAways = [],
+  onOpenTeacherAway,
 }) {
   // 「今日」は useToday (タブを開いたまま日付を跨いでも翌 0 時に更新される)
   const todayStr = useToday();
@@ -149,6 +153,11 @@ export function Dashboard({
   const leaveSoon = useMemo(
     () => (staffLeave ? upcomingLeave(staffLeave, todayStr, 7) : []),
     [staffLeave, todayStr]
+  );
+  // 講師の不在期間のうち今日〜6 日後に掛かるもの (誰でも見られる)
+  const awaySoon = useMemo(
+    () => (teacherAways.length > 0 ? awaysInRange(teacherAways, todayStr, shiftDate(todayStr, 6)) : []),
+    [teacherAways, todayStr]
   );
 
   // Session count 用の共通 ctx + ホリデーヘルパをまとめて取得。
@@ -250,6 +259,8 @@ export function Dashboard({
         onJumpToEventCalendar={onJumpToEventCalendar}
         leaveSoon={leaveSoon}
         onOpenLeave={onOpenLeave}
+        awaySoon={awaySoon}
+        onOpenTeacherAway={onOpenTeacherAway}
       />
 
       {isSundayInTimetable ? (

@@ -55,6 +55,7 @@ export function normalizeSlotCountFields(f) {
     delete out.onlyDates;
   }
   if (out.separateWeekdayCount !== true) delete out.separateWeekdayCount;
+  if (out.noOrientation !== true) delete out.noOrientation;
   const n = Number(out.sessionStartNumber);
   if (Number.isInteger(n) && n > 1) out.sessionStartNumber = n;
   else delete out.sessionStartNumber;

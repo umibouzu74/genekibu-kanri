@@ -35,4 +35,6 @@ export const VIEWS = Object.freeze({
   LEAVE: "leave",
   // 高校部・予備校の講習 (期 × 時限 × 担当。講師の月間に出し、講習時間割作成が取り込む)
   SENIOR_KOSHU: "senior-koshu",
+  // 講師の不在期間 (研修・病気などで何日も来られない期間。講習の自動NG・月間の目印)
+  TEACHER_AWAY: "teacher-away",
 });

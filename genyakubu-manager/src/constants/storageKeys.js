@@ -98,6 +98,9 @@ export const LS = {
   // 記録し、経理 (閲覧者) がバイト出勤表・講師の月間で見るので appData に置く。
   // 給与の記録なのでデータの初期化では消さない (utils/cardForgets)
   cardForgets: "genyakubu-card-forgets",
+  // 講師の不在期間 (講師 × 開始日 × 終了日。講習時間割作成の自動NG・講師の月間の
+  // 目印)。代行を探す人・講習を組む人が見るので appData に置く (utils/teacherAway)
+  teacherAways: "genyakubu-teacher-aways",
   // サイドバーで人が開いたカテゴリ (constants/menuCategories の key の配列)。
   // 明示的な開け閉めの保存で、利用統計ではない (A18 とは別物)
   sidebarOpenCategories: "genyakubu-sidebar-open-categories",

@@ -5,6 +5,7 @@ import { colors } from "../../../styles/tokens";
 import { sortTeacherNames } from "../../../utils/teacherKana";
 import { describeBusy, teacherBusyAt, teacherOffsiteMaybeAt } from "../../../utils/teacherConflicts";
 import { formatOffsiteTime } from "../../../utils/offsiteLessons";
+import { describeAway, formatAwayPeriod } from "../../../utils/teacherAway";
 import { pickSubjectId } from "../../../utils/subjectMatch";
 import { SUB_STATE, subState, subStateMeta } from "../../../utils/substituteState";
 import {
@@ -59,6 +60,9 @@ export function SubstitutePickerPopover({
   // collectTeacherAssignments。下書きの代行を含む)。候補ごとに「授業中 /
   // 代行中」を出すため。無ければ表示しないだけ (選べなくはしない)
   assignments = [],
+  // この日に不在期間 (utils/teacherAway) に入っている記録。候補に「🧳 不在」を出す
+  // (選べなくはしない。不在期間は目印で、実際に来られるかは人が判断する)
+  awaysToday = [],
   onAssign, // (元講師, 代行者名, status)
   onClear, // (元講師)
   onClose,
@@ -102,6 +106,7 @@ export function SubstitutePickerPopover({
   // 他校舎の授業で終了時刻が未定の予定 (重なるかもしれない)。重なりとしては
   // 数えず、注意書きだけ出す
   const maybeOffsiteOf = (name) => teacherOffsiteMaybeAt(assignments, name, slotTime);
+  const awayOf = (name) => awaysToday.find((r) => r.teacher === name) || null;
 
   // Primary 候補: そのコマの教科を担当できるバイト講師。
   //   subjId が解決できた場合   → subjectIds に該当 id を持つ講師
@@ -404,6 +409,7 @@ export function SubstitutePickerPopover({
             const busy = busyOf(name);
             const busyAsSub = busy.some((a) => a.role === "sub");
             const maybeOffsite = busy.length === 0 ? maybeOffsiteOf(name) : [];
+            const away = awayOf(name);
             const bg = isFocused
               ? "#dcebff"
               : isCurrent
@@ -444,6 +450,14 @@ export function SubstitutePickerPopover({
                 >
                   {isPrimary && (
                     <span style={{ color: "#2a6a9e", fontSize: 10 }}>担当可</span>
+                  )}
+                  {away && (
+                    <span
+                      title={describeAway(away)}
+                      style={{ color: "#8a4b2a", fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}
+                    >
+                      🧳 不在 {formatAwayPeriod(away)}
+                    </span>
                   )}
                   {busy.length > 0 && (
                     <span

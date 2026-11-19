@@ -14,6 +14,7 @@ import {
   KOSHU_EXTERNAL_COLOR,
   KOSHU_LESSON_COLOR,
   OFFSITE_LESSON_COLOR,
+  TEACHER_AWAY_COLOR,
 } from "../../constants/colors";
 import { fmtMD, timeStartToMin } from "../../utils/dateHelpers";
 import { indexExtraLessonsByDate } from "../../utils/extraLessons";
@@ -27,6 +28,7 @@ import {
 } from "../../utils/offsiteLessons";
 import { leaveKindMeta } from "../../utils/staffLeave";
 import { describeCardForget } from "../../utils/cardForgets";
+import { awayForTeacherOn, awaysInRange, describeAway } from "../../utils/teacherAway";
 import { isFullDayHoliday, isGranularHoliday } from "../../utils/scheduleHelpers";
 import { resolveSlotDaySchedule } from "../../utils/daySchedules";
 import { isCancelAdjustment } from "../../utils/slotCancel";
@@ -171,6 +173,39 @@ function CardForgetDayChip({ record, onOpen }) {
   );
 }
 
+// 講師の月間の日付の横に出す「不在」(講師の不在期間、utils/teacherAway)。画面だけ
+// (紙面・画像には載せない — 月間はバイトへ画像で送るので、講師の事情を広げない)
+function AwayDayChip({ record, onOpen }) {
+  const text = describeAway(record);
+  const style = {
+    fontSize: 9,
+    fontWeight: 800,
+    padding: "0 4px",
+    borderRadius: 3,
+    background: TEACHER_AWAY_COLOR.bg,
+    color: TEACHER_AWAY_COLOR.deep,
+    border: `1px solid ${TEACHER_AWAY_COLOR.bannerBorder}`,
+    lineHeight: 1.4,
+    whiteSpace: "nowrap",
+  };
+  return onOpen ? (
+    <button
+      type="button"
+      className="no-print"
+      onClick={onOpen}
+      title={`${text}\nクリックで不在期間の画面を開きます`}
+      aria-label={text}
+      style={{ ...style, cursor: "pointer" }}
+    >
+      🧳不在
+    </button>
+  ) : (
+    <span className="no-print" title={text} style={style}>
+      🧳不在
+    </span>
+  );
+}
+
 export function MonthView({
   teacher,
   slots,
@@ -213,6 +248,10 @@ export function MonthView({
   // 出す。予定の無い日はサイドバーの「カード忘れの記録」から)
   cardForgets = [],
   onEditCardForget,
+  // 講師の不在期間 (utils/teacherAway)。日付の横の「🧳不在」と月の上の一覧に出す
+  // (画面だけ)。onOpenTeacherAway({id}) で不在期間の画面のその 1 件を開く
+  teacherAways = [],
+  onOpenTeacherAway,
   classSets,
   biweeklyAnchors,
   sessionOverrides,
@@ -296,6 +335,12 @@ export function MonthView({
     }
     return m;
   }, [cardForgets, teacher]);
+  // この月に掛かるこの講師の不在期間
+  const monthAways = useMemo(() => {
+    const mm = String(month).padStart(2, "0");
+    const last = String(new Date(year, month, 0).getDate()).padStart(2, "0");
+    return awaysInRange(teacherAways, `${year}-${mm}-01`, `${year}-${mm}-${last}`, teacher);
+  }, [teacherAways, teacher, year, month]);
   // この講師の他校舎の授業 (終了していないもの)。カレンダー上の一覧行に出す
   const todayStr = useToday();
   const teacherOffsite = useMemo(
@@ -1504,6 +1549,16 @@ export function MonthView({
               onOpen={onEditCardForget ? () => onEditCardForget(ds) : undefined}
             />
           )}
+          {monthAways.length > 0 && awayForTeacherOn(monthAways, teacher, ds) && (
+            <AwayDayChip
+              record={awayForTeacherOn(monthAways, teacher, ds)}
+              onOpen={
+                onOpenTeacherAway
+                  ? () => onOpenTeacherAway({ id: awayForTeacherOn(monthAways, teacher, ds).id })
+                  : undefined
+              }
+            />
+          )}
           {dayOff.off && (
             <span
               title={`この日の ${sl.length} コマはすべて他の担当に移っています`}
@@ -1691,6 +1746,35 @@ export function MonthView({
               ＋ 他校舎の授業を登録
             </button>
           )}
+        </div>
+      )}
+      {monthAways.length > 0 && (
+        <div
+          className="no-print"
+          role="group"
+          aria-label={`${teacher} の不在期間`}
+          style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", fontSize: 12 }}
+        >
+          <span style={{ fontWeight: 800, color: TEACHER_AWAY_COLOR.deep }}>🧳 不在:</span>
+          {monthAways.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={onOpenTeacherAway ? () => onOpenTeacherAway({ id: r.id }) : undefined}
+              disabled={!onOpenTeacherAway}
+              style={{
+                border: `1px solid ${TEACHER_AWAY_COLOR.bannerBorder}`,
+                background: TEACHER_AWAY_COLOR.bannerBg,
+                color: TEACHER_AWAY_COLOR.deep,
+                borderRadius: 12,
+                padding: "2px 10px",
+                fontSize: 12,
+                cursor: onOpenTeacherAway ? "pointer" : "default",
+              }}
+            >
+              {describeAway(r, { withTeacher: false })}
+            </button>
+          ))}
         </div>
       )}
       {(onChangeVisibility || onSelectDate || jumpToAbsenceFlow) && (

@@ -41,8 +41,10 @@ import { useExamPrepSchedulesCrud } from "./hooks/useExamPrepSchedulesCrud";
 import { useDataIO } from "./hooks/useDataIO";
 import {
   defaultTimetableIdOn,
+  describeCurrentTimetables,
   filterSlotsCurrentOn,
   filterSlotsCurrentOrUpcoming,
+  resolveCutoffGroupTimetables,
 } from "./utils/timetable";
 import { useToday } from "./hooks/useToday";
 import { slotWeight, formatCount, isSlotForTeacher, slotTeacherNamesEver, slotsOnDate } from "./utils/biweekly";
@@ -57,7 +59,7 @@ import { colors, font, S } from "./styles/common";
 import { LS, SS } from "./constants/storageKeys";
 import { LAYOUT } from "./constants/layout";
 import { EVENT_KIND, eventSectionAnchorId } from "./constants/eventKinds";
-import { DEFAULT_MASTER_TAB } from "./constants/masterTabs";
+import { DEFAULT_MASTER_TAB, MASTER_TAB } from "./constants/masterTabs";
 import { DEFAULT_STAFF_TAB, STAFF_TAB } from "./constants/staffTabs";
 import { normalizeMinutesTab } from "./constants/minutesTabs";
 import { defaultKoshuSeason, isKoshuSeason } from "./timetable-builder/utils/seasons";
@@ -82,6 +84,8 @@ import {
 import {
   applyOrphanCleanup,
   cascadeOrphansForSlots,
+  countSlotReferences,
+  detectOrphans,
   describeOrphanDetection,
   listOrphanDetection,
 } from "./utils/orphanCleanup";
@@ -185,6 +189,9 @@ const HandoverView = lazy(() =>
 const OffsiteLessonView = lazy(() =>
   import("./components/views/OffsiteLessonView").then((m) => ({ default: m.OffsiteLessonView }))
 );
+const TeacherAwayView = lazy(() =>
+  import("./components/views/TeacherAwayView").then((m) => ({ default: m.TeacherAwayView }))
+);
 const SeniorKoshuView = lazy(() =>
   import("./components/views/SeniorKoshuView").then((m) => ({ default: m.SeniorKoshuView }))
 );
@@ -259,6 +266,7 @@ const VIEW_TITLES = {
   [VIEWS.SENIOR_KOSHU]: "高校・予備校の講習",
   [VIEWS.YOTEIHYO]: "予定表チェック",
   [VIEWS.LEAVE]: "有給・半休",
+  [VIEWS.TEACHER_AWAY]: "講師の不在期間",
 };
 
 export default function App() {
@@ -335,15 +343,25 @@ export default function App() {
     saveYoteihyoConfirmed,
     cardForgets,
     saveCardForgets,
+    teacherAways,
+    saveTeacherAways,
     eventVisibility,
     saveEventVisibility,
   } = appData;
 
   // コース別終講日のうち時間割の付いていない旧データに、終講日の時点の時間割を
   // 補ったもの (A1。保存はしない)。どの画面もこちらを見る。コース別終講日の画面で
-  // 保存すると補った値ごと書かれる (utils/cohorts.resolveCohortTimetables)
+  // 保存すると補った値ごと書かれる (utils/cohorts.resolveCohortTimetables)。
+  // 学年グループも同じく、共通の開始日より前に終わった時間割 (前の期) に
+  // その期の設定を補う (utils/timetable.resolveCutoffGroupTimetables。
+  // 前の期の月が「開講前」にならないように。保存はしない)
   const displayCutoff = useMemo(
-    () => resolveCohortTimetables(storedDisplayCutoff, timetables, slots),
+    () =>
+      resolveCutoffGroupTimetables(
+        resolveCohortTimetables(storedDisplayCutoff, timetables, slots),
+        timetables,
+        slots
+      ),
     [storedDisplayCutoff, timetables, slots]
   );
 
@@ -511,6 +529,9 @@ export default function App() {
   // 他校舎の授業の画面への要求 ({id} = その 1 件を開く / {teacher} = その講師で
   // 新規登録を始める。token は同じ要求の繰り返しも効かせるため)
   const [offsiteFocus, setOffsiteFocus] = useState(null);
+  // 講師の不在期間の画面へ渡す要求 ({id} / {teacher}) と、担当変更タブに入れておく値
+  const [teacherAwayFocus, setTeacherAwayFocus] = useState(null);
+  const [teacherChangePrefill, setTeacherChangePrefill] = useState(null);
   // 複数日の欠勤登録ダイアログ。null = 閉じている / { teachers?, date? } = 開く
   const [multiDayAbsence, setMultiDayAbsence] = useState(null);
   // 講師の月間から 1 日の有給・半休を入れるダイアログ。null = 閉じている / { name, date }
@@ -676,9 +697,57 @@ export default function App() {
     saveHolidays,
   });
   const subsCrud = useSubsCrud({ subs, saveSubs });
+  // cascade と同じ対象 (代行・調整・回数補正・旧式の授業セット) を、反映後の
+  // slots に対して掃除する。ReflectDialog が saveSlots の直後に呼ぶ。
+  // 残すと孤立データになり、そのバックアップのインポートで警告が出続ける
+  // (2026-09-04)。反映ダイアログの確認文で「一緒に削除される」と断っている
+  const handleSlotsReflected = useCallback(
+    (nextSlots) => {
+      const r = cascadeOrphansForSlots({
+        slots: nextSlots,
+        subs,
+        adjustments,
+        sessionOverrides,
+        classSets,
+        holidays,
+      });
+      if (r.changed.subs) saveSubs(r.nextSubs);
+      if (r.changed.adjustments) saveAdjustments(r.nextAdjustments);
+      if (r.changed.sessionOverrides) saveSessionOverrides(r.nextOverrides);
+      if (r.changed.classSets) saveClassSets(r.nextClassSets);
+      if (r.changed.holidays) saveHolidays(r.nextHolidays);
+      return r.detection;
+    },
+    [
+      subs,
+      adjustments,
+      sessionOverrides,
+      classSets,
+      holidays,
+      saveSubs,
+      saveAdjustments,
+      saveSessionOverrides,
+      saveClassSets,
+      saveHolidays,
+    ]
+  );
+
+  // コマを消す前の下見 (消すと孤立する代行・調整などの件数)。時間割の削除・
+  // 同じ内容のコマの整理の確認ダイアログが使う (handleSlotsReflected と同じ対象)
+  const detectSlotRemoval = useCallback(
+    (nextSlots) =>
+      detectOrphans({ slots: nextSlots, subs, adjustments, sessionOverrides, classSets, holidays }),
+    [subs, adjustments, sessionOverrides, classSets, holidays]
+  );
+  // コマごとの参照の数 (同じ内容のコマの整理で、参照されている側を既定で残す)
+  const slotReferenceCounts = useMemo(
+    () => countSlotReferences({ subs, adjustments, sessionOverrides, classSets, holidays }),
+    [subs, adjustments, sessionOverrides, classSets, holidays]
+  );
   const ttCrud = useTimetablesCrud({
     timetables, saveTimetables, slots, saveSlots,
-    classSets, saveClassSets,
+    classSets, saveClassSets, saveDisplayCutoff,
+    detectSlotRemoval, onSlotsRemoved: handleSlotsReflected,
   });
   const adjCrud = useAdjustmentsCrud({ adjustments, saveAdjustments });
 
@@ -948,6 +1017,27 @@ export default function App() {
     [selectView]
   );
 
+  // 講師の不在期間の画面を開く。{id} でその 1 件、{teacher} でその講師の新規登録
+  // (講師の月間・週間・ダッシュボードの目印・Cmd+K から)
+  const openTeacherAway = useCallback(
+    (req) => {
+      selectView(VIEWS.TEACHER_AWAY, () =>
+        setTeacherAwayFocus(req ? { ...req, token: Date.now() } : null)
+      );
+    },
+    [selectView]
+  );
+  // 担当変更タブ (コースマスター管理) を値を入れた状態で開く (講師の不在期間から)
+  const openTeacherChange = useCallback(
+    (req) => {
+      selectView(VIEWS.MASTER, () => {
+        setMasterTab(MASTER_TAB.TEACHER_CHANGE);
+        setTeacherChangePrefill(req ? { ...req, token: Date.now() } : null);
+      });
+    },
+    [selectView]
+  );
+
   // メインメニューに出す項目 (閲覧者には管理者専用の項目を出さない)
   const mainMenu = useMemo(
     () => visibleMainMenu({ isAdmin, canUseAdminData: handoverEnabled }),
@@ -1043,41 +1133,6 @@ export default function App() {
   );
 
   // 通常時間割作成の「置き換え」反映で消えたコマの後始末。コマ削除の
-  // cascade と同じ対象 (代行・調整・回数補正・旧式の授業セット) を、反映後の
-  // slots に対して掃除する。ReflectDialog が saveSlots の直後に呼ぶ。
-  // 残すと孤立データになり、そのバックアップのインポートで警告が出続ける
-  // (2026-09-04)。反映ダイアログの確認文で「一緒に削除される」と断っている
-  const handleSlotsReflected = useCallback(
-    (nextSlots) => {
-      const r = cascadeOrphansForSlots({
-        slots: nextSlots,
-        subs,
-        adjustments,
-        sessionOverrides,
-        classSets,
-        holidays,
-      });
-      if (r.changed.subs) saveSubs(r.nextSubs);
-      if (r.changed.adjustments) saveAdjustments(r.nextAdjustments);
-      if (r.changed.sessionOverrides) saveSessionOverrides(r.nextOverrides);
-      if (r.changed.classSets) saveClassSets(r.nextClassSets);
-      if (r.changed.holidays) saveHolidays(r.nextHolidays);
-      return r.detection;
-    },
-    [
-      subs,
-      adjustments,
-      sessionOverrides,
-      classSets,
-      holidays,
-      saveSubs,
-      saveAdjustments,
-      saveSessionOverrides,
-      saveClassSets,
-      saveHolidays,
-    ]
-  );
-
   // ─── g-prefix chord navigation ──────────────────────────────────
   // `g` を押した直後の 1.2 秒以内に 2 キー目を押すと、対応するビューへ遷移する。
   // 入力要素・モーダル表示中は無効化して、文字入力やダイアログ操作を妨げない。
@@ -1178,6 +1233,29 @@ export default function App() {
     return { total, byDay };
   }, [currentSlots, selected]);
   const selSlotCount = selDayCounts.total;
+  // 曜日チップ・週計は今の時間割 (今日) の数。表示中の週・月が今日と別の期の
+  // ときだけ、どの期の数字かを添える (2026-11-19、P3-9。1/4 の週を開いても
+  // 2学期の数のままで、3学期の週の数と取り違えた)
+  const [weekViewMonday, setWeekViewMonday] = useState(null);
+  const chipTermNote = useMemo(() => {
+    if (!selected || !Array.isArray(timetables) || timetables.length <= 1) return null;
+    const viewed =
+      view === VIEWS.WEEK
+        ? weekViewMonday
+        : view === VIEWS.MONTH
+          ? `${vy}-${String(vm).padStart(2, "0")}-01`
+          : null;
+    if (!viewed) return null;
+    const termsOn = (d) => describeCurrentTimetables(slots, timetables, d).timetables.map((x) => x.timetable);
+    const key = (list) => list.map((t) => t.id).sort().join(",");
+    const now = termsOn(todayStr);
+    const shown = termsOn(viewed);
+    if (now.length === 0 || shown.length === 0 || key(now) === key(shown)) return null;
+    return {
+      now: now.map((t) => t.name).join("・"),
+      shown: shown.map((t) => t.name).join("・"),
+    };
+  }, [selected, timetables, view, weekViewMonday, vy, vm, slots, todayStr]);
 
   // ─── Print ──────────────────────────────────────────────────────
   // popup window を開いて #main-content の innerHTML をコピーし、
@@ -1550,6 +1628,12 @@ export default function App() {
               <div style={{ fontSize: 11, fontWeight: 800 }}>週計</div>
               <div style={{ fontSize: 18, fontWeight: 800 }}>{formatCount(selSlotCount)}</div>
             </div>
+            {chipTermNote && (
+              <div style={{ alignSelf: "center", fontSize: 11, color: "#9a6b00", lineHeight: 1.5 }}>
+                ↑ {chipTermNote.now} の週計です
+                <span style={{ color: "#888" }}>（表示中の{view === VIEWS.WEEK ? "週" : "月"}は {chipTermNote.shown}）</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -1614,6 +1698,8 @@ export default function App() {
               onEditExtraLesson={openExtraLessonEditor}
               staffLeave={handoverEnabled ? staffLeave : null}
               onOpenLeave={openLeave}
+              teacherAways={teacherAways}
+              onOpenTeacherAway={openTeacherAway}
             />
           )}
           {/* ダッシュボードの下のメニュー (メインメニューの小さい版)。紙面には
@@ -1709,6 +1795,13 @@ export default function App() {
               sessionOverrides={sessionOverrides}
               subs={subs}
               saveSubs={saveSubs}
+              daySchedules={daySchedules}
+              specialEvents={specialEvents}
+              extraLessons={extraLessons}
+              offsiteLessons={offsiteLessons}
+              koshuLessons={koshuLessons}
+              teacherChangePrefill={teacherChangePrefill}
+              onConsumeTeacherChangePrefill={() => setTeacherChangePrefill(null)}
               tab={masterTab}
               onTabChange={setMasterTab}
             />
@@ -1729,6 +1822,8 @@ export default function App() {
               sessionOverrides={sessionOverrides}
               daySchedules={daySchedules}
               adjustments={adjustments}
+              slotReferenceCounts={slotReferenceCounts}
+              detectSlotRemoval={detectSlotRemoval}
               isAdmin={isAdmin}
               sectionRequest={timetableSectionRequest}
               onConsumeSectionRequest={() => setTimetableSectionRequest(null)}
@@ -1939,6 +2034,22 @@ export default function App() {
               onSelectTeacher={selectTeacher}
             />
           )}
+          {view === VIEWS.TEACHER_AWAY && !selected && (
+            <TeacherAwayView
+              teacherAways={teacherAways}
+              onSave={saveTeacherAways}
+              isAdmin={isAdmin}
+              teacherNames={allTeacherNames}
+              teacherKana={teacherKana}
+              // 期間中の授業は授業時間の集計と同じ材料で拾う (カード忘れと共有)
+              lessonData={cardForgetLessonData}
+              focusRequest={teacherAwayFocus}
+              onConsumeFocus={() => setTeacherAwayFocus(null)}
+              onSelectTeacher={selectTeacher}
+              onOpenTeacherChange={isAdmin ? openTeacherChange : undefined}
+              onOpenAbsence={isAdmin ? (init) => setMultiDayAbsence(init) : undefined}
+            />
+          )}
           {view === VIEWS.SENIOR_KOSHU && !selected && (
             <SeniorKoshuView
               data={seniorKoshu}
@@ -2058,6 +2169,8 @@ export default function App() {
               adjustments={adjustments}
               daySchedules={daySchedules}
               displayCutoff={displayCutoff}
+              // 講師の不在期間 (期間の講習の日の全時限を自動NG にする)
+              teacherAways={teacherAways}
             />
           )}
           {view === VIEWS.REGULAR_BUILDER && !selected && (
@@ -2163,6 +2276,8 @@ export default function App() {
               extraLessons={extraLessons}
               offsiteLessons={offsiteLessons}
               onOpenOffsite={(id) => openOffsite({ id })}
+              teacherAways={teacherAways}
+              onOpenTeacherAway={openTeacherAway}
               onOpenMultiDayAbsence={(init) => setMultiDayAbsence(init || {})}
               onOpenChainSubstitution={(date) => {
                 selectView(VIEWS.SUBS, () => setSubsInitFilter({ tab: "chain", date }));
@@ -2209,6 +2324,7 @@ export default function App() {
           )}
           {selected && view === VIEWS.WEEK && (
             <WeekView
+              onWeekChange={setWeekViewMonday}
               teacher={selected}
               slots={slots}
               subs={subs}
@@ -2229,6 +2345,8 @@ export default function App() {
               onEditExtraLesson={openExtraLessonEditor}
               offsiteLessons={offsiteLessons}
               onOpenOffsite={openOffsite}
+              teacherAways={teacherAways}
+              onOpenTeacherAway={openTeacherAway}
               displayCutoff={displayCutoff}
               timetables={timetables}
               visibility={eventVisibility}
@@ -2275,6 +2393,8 @@ export default function App() {
                   ? (date) => openCardForget({ name: selected, date })
                   : undefined
               }
+              teacherAways={teacherAways}
+              onOpenTeacherAway={openTeacherAway}
               classSets={classSets}
               biweeklyAnchors={biweeklyAnchors}
               sessionOverrides={sessionOverrides}
@@ -2501,6 +2621,10 @@ export default function App() {
             open={cmdPaletteOpen}
             onClose={() => setCmdPaletteOpen(false)}
             slots={slots}
+            currentSlots={currentSlots}
+            rosterSlots={rosterSlots}
+            timetables={timetables}
+            onOpenDataManager={() => setShowDataMgr(true)}
             teacherKana={teacherKana}
             subs={subs}
             holidays={holidays}
@@ -2516,6 +2640,19 @@ export default function App() {
               isAdmin
                 ? (teacher) => {
                     openOffsite({ teacher });
+                    setCmdPaletteOpen(false);
+                  }
+                : undefined
+            }
+            teacherAways={teacherAways}
+            onOpenTeacherAway={(req) => {
+              openTeacherAway(req);
+              setCmdPaletteOpen(false);
+            }}
+            onAddTeacherAway={
+              isAdmin
+                ? (teacher) => {
+                    openTeacherAway({ teacher });
                     setCmdPaletteOpen(false);
                   }
                 : undefined
