@@ -23,6 +23,7 @@ import {
   buildDayOccupancy,
   collectDayRescheduleCandidates,
   findOccupancyConflicts,
+  OUT_OF_TIMETABLE_REASON,
 } from "./dayReschedule";
 import { computeSessionNumber } from "./sessionCount";
 import { timesOverlap } from "./teacherConflicts";
@@ -269,7 +270,7 @@ export function listChangeLessonDates({ slots, from, until = null, ctx, limit = 
       if (r.candidates.length > 0) {
         held += 1;
         lessons.push({ date, slot, sessionNo: computeSessionNumber(slot, date, ctx) });
-      } else if (r.skipped.length > 0 && r.skipped[0].reason !== "時間割の期間外") {
+      } else if (r.skipped.length > 0 && r.skipped[0].reason !== OUT_OF_TIMETABLE_REASON) {
         skipped.push({ date, slot, reason: r.skipped[0].reason });
       }
     }

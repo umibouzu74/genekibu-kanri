@@ -103,6 +103,9 @@ export function resolveDayRescheduleSelection(plan, overrides) {
     .map((s) => s.id);
 }
 
+/** コマの時間割がその日に有効でない (前の期・次の期のコマ) ときの理由の文言 */
+export const OUT_OF_TIMETABLE_REASON = "時間割の期間外";
+
 // 対象日にそのコマが実施されない理由を 1 つだけ返す (表示用)。
 // 判定の順序は「期間 → 休講 → その他」。isSlotHeldOnDate が false を返した
 // ときの説明なので、ここで新しいルールを足さないこと。
@@ -112,7 +115,7 @@ export function skipReason(slot, dateStr, ctx) {
   if (Array.isArray(tts) && tts.length > 0) {
     const tt = tts.find((t) => t.id === (slot.timetableId ?? 1));
     if (!isTimetableActiveForDate(tt, dateStr, slot.grade)) {
-      return "時間割の期間外";
+      return OUT_OF_TIMETABLE_REASON;
     }
   }
   if (!isSlotScheduledOnDate(slot, dateStr)) return IRREGULAR_OFF_LABEL;
