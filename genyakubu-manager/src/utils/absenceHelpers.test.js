@@ -3,6 +3,8 @@ import {
   absentTeachersForSlot,
   canCombineSlots,
   collectAbsenceTargets,
+  combineSubjectsOnDate,
+  describeCombineSlot,
   findCombineCandidates,
   getAbsenceDaySlots,
   getAbsentSlotIds,
@@ -112,6 +114,79 @@ describe("findCombineCandidates", () => {
       (s) => s.id
     );
     expect(ids).toEqual([2]);
+  });
+});
+
+// ─── 隔週コマの合同はその日の担当週の科目で比べる (2026-11-25) ─────────
+// "英/数" (隔週(福武)) は A 週 = 英、B 週 = 数。素の科目名を科目マスタに
+// 当てると別名「英」で毎週 英語 になり、B 週に英語のコマが候補に並んでいた。
+describe("隔週コマの合同候補", () => {
+  // 12/2 (水) を A 週のアンカーにすると 12/9 (水) は B 週
+  const anchors = [{ date: "2026-12-02", weekType: "A" }];
+  const ctxA = { date: "2026-12-02", biweeklyAnchors: anchors };
+  const ctxB = { date: "2026-12-09", biweeklyAnchors: anchors };
+  const biweekly = mk(1, {
+    day: "水",
+    cls: "A",
+    subj: "英/数",
+    teacher: "堀上",
+    note: "隔週(福武)",
+  });
+  const eng = mk(2, { day: "水", cls: "B", subj: "英語", teacher: "堀上" });
+  const math = mk(3, { day: "水", cls: "B", subj: "数学", teacher: "福武" });
+
+  it("その日の科目: A 週は前、B 週は後ろ、週が決まらなければ両方", () => {
+    expect(combineSubjectsOnDate(biweekly, ctxA)).toEqual(["英"]);
+    expect(combineSubjectsOnDate(biweekly, ctxB)).toEqual(["数"]);
+    expect(combineSubjectsOnDate(biweekly, { date: "2026-12-09" })).toEqual(["英", "数"]);
+    // 日付が無ければ素の科目名 (従来どおり)
+    expect(combineSubjectsOnDate(biweekly)).toEqual(["英/数"]);
+    // 隔週でないコマ・"/" の無い隔週コマは素の科目名
+    expect(combineSubjectsOnDate(eng, ctxB)).toEqual(["英語"]);
+    expect(
+      combineSubjectsOnDate(mk(4, { subj: "英語", note: "隔週(河野)" }), ctxB)
+    ).toEqual(["英語"]);
+  });
+
+  it("B 週は数学のコマが候補になり、英語のコマは候補にならない", () => {
+    expect(canCombineSlots(biweekly, math, SUBJECTS, ctxB)).toBe(true);
+    expect(canCombineSlots(biweekly, eng, SUBJECTS, ctxB)).toBe(false);
+    // 相手側が隔週でも同じ (逆向き)
+    expect(canCombineSlots(math, biweekly, SUBJECTS, ctxB)).toBe(true);
+    expect(canCombineSlots(eng, biweekly, SUBJECTS, ctxB)).toBe(false);
+    expect(
+      findCombineCandidates(biweekly, [biweekly, eng, math], SUBJECTS, new Set(), ctxB).map(
+        (s) => s.id
+      )
+    ).toEqual([3]);
+  });
+
+  it("A 週は英語のコマが候補", () => {
+    expect(canCombineSlots(biweekly, eng, SUBJECTS, ctxA)).toBe(true);
+    expect(canCombineSlots(biweekly, math, SUBJECTS, ctxA)).toBe(false);
+  });
+
+  it("前後が逆の隔週 (数/英) も担当週で解く (A 週 = 数)", () => {
+    const rev = mk(5, { day: "水", subj: "数/英", teacher: "福武", note: "隔週(堀上)" });
+    expect(canCombineSlots(rev, math, SUBJECTS, ctxA)).toBe(true);
+    expect(canCombineSlots(rev, eng, SUBJECTS, ctxA)).toBe(false);
+  });
+
+  it("隔週どうしは同じ週の科目が合えば候補", () => {
+    const other = mk(6, { day: "水", cls: "S", subj: "英/数", teacher: "河野", note: "隔週(井上)" });
+    expect(canCombineSlots(biweekly, other, SUBJECTS, ctxB)).toBe(true);
+  });
+
+  it("週が決まらなければどちらの科目のコマも候補に残す", () => {
+    const ctx = { date: "2026-12-09" };
+    expect(canCombineSlots(biweekly, eng, SUBJECTS, ctx)).toBe(true);
+    expect(canCombineSlots(biweekly, math, SUBJECTS, ctx)).toBe(true);
+  });
+
+  it("名前もその日の科目で出す", () => {
+    expect(describeCombineSlot(biweekly, ctxB)).toBe("中3A 数");
+    expect(describeCombineSlot(biweekly, ctxA)).toBe("中3A 英");
+    expect(describeCombineSlot(eng, ctxB)).toBe("中3B 英語");
   });
 });
 

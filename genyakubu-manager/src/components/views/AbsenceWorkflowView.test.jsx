@@ -245,6 +245,74 @@ describe("AbsenceWorkflowView のコマ休講", () => {
 
 // プレップのように 1 コマを 3 人で担当するコマ。ここが「1 コマ 1 件」だと
 // 2 人目の欠勤が登録できず、画面上も全員休みに見えていた (2026-08-21)。
+// 隔週コマ (英/数、隔週(福武)) の合同は、その日の担当週の科目で相手を選ぶ。
+// 12/9 (水) の B 週に、A 週の英語のコマが候補に並んでいた (2026-11-25)。
+// 合同モードは Esc・「合同をやめる」・候補以外のコマで抜けられる。
+describe("AbsenceWorkflowView の隔週コマの合同", () => {
+  const WED = "2026-12-09";
+  // 12/2 を A 週にすると 12/9 は B 週
+  const anchors = [{ date: "2026-12-02", weekType: "A" }];
+  const subjects = [
+    { id: 1, name: "英語", categoryId: 1, aliases: ["英"] },
+    { id: 4, name: "数学", categoryId: 2, aliases: ["数"] },
+  ];
+  const wed = { day: "水", grade: "中3", note: "", timetableId: 2 };
+  const slots = [
+    { ...wed, id: 1, time: "18:55-19:40", cls: "A", room: "502", subj: "英/数", teacher: "堀上", note: "隔週(福武)" },
+    { ...wed, id: 2, time: "18:00-18:45", cls: "B", room: "503", subj: "英語", teacher: "堀上" },
+    { ...wed, id: 3, time: "19:50-20:35", cls: "S", room: "501", subj: "英語", teacher: "堀上" },
+    { ...wed, id: 4, time: "19:50-20:35", cls: "B", room: "503", subj: "数学", teacher: "福武" },
+  ];
+  const base = { slots, subjects, biweeklyAnchors: anchors, initDate: WED };
+  const card = (re) => screen.getByRole("button", { name: re });
+  const banner = () => screen.queryByText(/に合同するコマをクリック/);
+
+  function startCombine() {
+    fireEvent.click(card(/18:55-19:40 中3 A 英\/数 福武/));
+    fireEvent.click(screen.getByText("合同にする (1 件候補)"));
+    expect(banner()).toBeTruthy();
+  }
+
+  it("B 週は数学のコマだけが候補で、名前も「数」で出る", () => {
+    const saveAdjustments = vi.fn();
+    renderView({ ...base, saveAdjustments });
+    startCombine();
+    expect(screen.getByText("中3A 数")).toBeTruthy();
+    fireEvent.click(card(/19:50-20:35 中3 B 数学 福武/));
+    expect(banner()).toBeNull();
+    // 吸収された数学のカードはグリッドから消え、受け入れる側に相手が出る
+    expect(screen.getByText("+ 中3B 数学")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /19:50-20:35 中3 B 数学 福武/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /保存/ }));
+    const saved = saveAdjustments.mock.calls[0][0];
+    expect(saved).toEqual([
+      expect.objectContaining({ type: "combine", date: WED, slotId: 1, combineSlotIds: [4] }),
+    ]);
+  });
+
+  it("候補でない英語のコマを押すと、合同にせず合同モードを抜ける", () => {
+    renderView(base);
+    startCombine();
+    fireEvent.click(card(/18:00-18:45 中3 B 英語 堀上/));
+    expect(banner()).toBeNull();
+    expect(screen.queryByText(/\+ 中3B 英語/)).toBeNull();
+    // 合同モードを抜けた後のクリックは通常どおりメニューを開く
+    fireEvent.click(card(/18:00-18:45 中3 B 英語 堀上/));
+    expect(screen.getByText(/合同にする/)).toBeTruthy();
+  });
+
+  it("「合同をやめる」と Esc で抜けられる", () => {
+    renderView(base);
+    startCombine();
+    fireEvent.click(screen.getByRole("button", { name: "合同をやめる" }));
+    expect(banner()).toBeNull();
+
+    startCombine();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(banner()).toBeNull();
+  });
+});
+
 describe("AbsenceWorkflowView の多担任コマ (プレップ)", () => {
   const PREP = {
     id: 5,

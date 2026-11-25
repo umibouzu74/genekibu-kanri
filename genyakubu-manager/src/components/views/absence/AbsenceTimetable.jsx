@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ADJ_COLOR, dateToDay, DEPT_COLOR } from "../../../data";
 import { getDashSections } from "../../../constants/schedule";
 import { ContextMenu } from "../../ContextMenu";
@@ -10,6 +10,7 @@ import { ReschedulePickerPopover } from "./ReschedulePickerPopover";
 import {
   canCombineIncoming,
   canCombineSlots,
+  describeCombineSlot,
   findCombineCandidates,
 } from "../../../utils/absenceHelpers";
 import { isCancelAdjustment } from "../../../utils/slotCancel";
@@ -97,7 +98,29 @@ export function AbsenceTimetable({
   date,
 }) {
   const [ctxMenu, setCtxMenu] = useState(null);
-  const [combineSource, setCombineSource] = useState(null);
+  // 合同モード (相手を選んでいる間)。選び始めた日を一緒に持ち、日付を
+  // 変えたら抜ける (前の日のコマを起点に別の日の合同を作らない)
+  const [combinePick, setCombinePick] = useState(null); // { slot, date }
+  const combineSource =
+    combinePick && combinePick.date === date ? combinePick.slot : null;
+  const setCombineSource = useCallback(
+    (slot) => setCombinePick(slot ? { slot, date } : null),
+    [date]
+  );
+  // 合同の照合と名前はその日の科目で (隔週 "英/数" の B 週は 数)
+  const combineCtx = useMemo(
+    () => ({ date, biweeklyAnchors, holidays, examPeriods }),
+    [date, biweeklyAnchors, holidays, examPeriods]
+  );
+  // Esc で合同モードを抜ける
+  useEffect(() => {
+    if (!combineSource) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setCombinePick(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [combineSource]);
   const [subPicker, setSubPicker] = useState(null); // { slot, anchorRect }
   const [overridePicker, setOverridePicker] = useState(null); // { slot, anchorRect }
   const [reschedulePicker, setReschedulePicker] = useState(null); // { slot, anchorRect }
@@ -687,7 +710,13 @@ export function AbsenceTimetable({
             },
           });
         } else {
-          const candidates = findCombineCandidates(slot, slots, subjects, combineExcluded);
+          const candidates = findCombineCandidates(
+            slot,
+            slots,
+            subjects,
+            combineExcluded,
+            combineCtx
+          );
           items.push({
             label:
               candidates.length > 0
@@ -811,6 +840,8 @@ export function AbsenceTimetable({
       draftApi,
       slots,
       subjects,
+      combineCtx,
+      setCombineSource,
       openIncomingMenu,
       holidayExceptionItems,
     ]
@@ -870,21 +901,35 @@ export function AbsenceTimetable({
         );
         return;
       }
-      if (slot.id === combineSource.id) {
+      // 候補でないコマ (起点のコマ自身・振替で入るコマ・吸収済み・別の教科) を
+      // 押したら合同モードを抜ける。何も起きないと、合同にしてから取り消す
+      // 以外に抜け方が無いように見えた (2026-11-25)。
+      // 振替で入るコマは (日付, コマ) の合同の相手にしない (振替先での合同は
+      // そのカードのメニューから)
+      const current = hostsAbsorbedMap.get(combineSource.id) || [];
+      if (
+        slot.id === combineSource.id ||
+        slot._incoming ||
+        !canCombineSlots(combineSource, slot, subjects, combineCtx) ||
+        combineExcluded.has(slot.id) ||
+        current.includes(slot.id)
+      ) {
         setCombineSource(null);
         return;
       }
-      // 振替で入るコマは (日付, コマ) の合同の相手にしない (振替先での合同は
-      // そのカードのメニューから)
-      if (slot._incoming) return;
-      if (!canCombineSlots(combineSource, slot, subjects)) return;
-      if (combineExcluded.has(slot.id)) return;
-      const current = hostsAbsorbedMap.get(combineSource.id) || [];
-      if (current.includes(slot.id)) return;
       draftApi.setCombine(combineSource.id, [...current, slot.id]);
       setCombineSource(null);
     },
-    [combineSource, subjects, hostsAbsorbedMap, draftApi, combineExcluded, openContextMenu]
+    [
+      combineSource,
+      setCombineSource,
+      subjects,
+      combineCtx,
+      hostsAbsorbedMap,
+      draftApi,
+      combineExcluded,
+      openContextMenu,
+    ]
   );
 
   // 振替で入るコマのカード。見た目は通常のコマのまま、「振替」バッジと
@@ -954,15 +999,13 @@ export function AbsenceTimetable({
         .map((id) => slots.find((x) => x.id === id))
         .filter(Boolean);
       const absorbedLabel = absorbedSlots.length
-        ? `+ ${absorbedSlots
-            .map((a) => `${a.grade}${a.cls && a.cls !== "-" ? a.cls : ""} ${a.subj}`)
-            .join(" / ")}`
+        ? `+ ${absorbedSlots.map((a) => describeCombineSlot(a, combineCtx)).join(" / ")}`
         : null;
 
       const hostId = hostByAbsorbed.get(s.id);
       const hostSlot = hostId != null ? slots.find((x) => x.id === hostId) : null;
       const hostLabel = hostSlot
-        ? `→ ${hostSlot.grade}${hostSlot.cls && hostSlot.cls !== "-" ? hostSlot.cls : ""} ${hostSlot.subj} と合同`
+        ? `→ ${describeCombineSlot(hostSlot, combineCtx)} と合同`
         : null;
 
       // 代行: draft or 既存 (removedSubIds でマーク済みは表示から除外)。
@@ -991,7 +1034,7 @@ export function AbsenceTimetable({
         combineSource != null &&
         combineSource.id !== s.id &&
         !combineExcluded.has(s.id) &&
-        canCombineSlots(combineSource, s, subjects);
+        canCombineSlots(combineSource, s, subjects, combineCtx);
 
       // 合同モード中の非候補は暗く
       const dimmed =
@@ -1103,6 +1146,7 @@ export function AbsenceTimetable({
       holidays,
       examPeriods,
       combineSource,
+      combineCtx,
       subjects,
       sessionCountMap,
       openContextMenu,
@@ -1317,9 +1361,11 @@ export function AbsenceTimetable({
         </div>
       )}
 
-      {/* 合同モードバナー */}
+      {/* 合同モードバナー。やめるボタンは文の直後に置く (右端に寄せると、
+          時間割が横に長い画面では枠の外に隠れて見つけられなかった) */}
       {combineSource && (
         <div
+          role="status"
           style={{
             background: "#fff3cd",
             border: "1px solid #ffc107",
@@ -1328,32 +1374,34 @@ export function AbsenceTimetable({
             marginBottom: 10,
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "4px 12px",
             fontSize: 13,
           }}
         >
           <span>
-            <strong>
-              {combineSource.grade}
-              {combineSource.cls && combineSource.cls !== "-" ? combineSource.cls : ""}{" "}
-              {combineSource.subj}
-            </strong>{" "}
+            <strong>{describeCombineSlot(combineSource, combineCtx)}</strong>{" "}
             に合同するコマをクリック (黄色の破線枠が候補)
           </span>
           <button
             type="button"
             onClick={() => setCombineSource(null)}
             style={{
-              padding: "4px 10px",
-              fontSize: 11,
-              border: "1px solid #ccc",
+              padding: "4px 12px",
+              fontSize: 12,
+              fontWeight: 700,
+              border: "1px solid #c9a227",
               background: "#fff",
+              color: "#6b5200",
               borderRadius: 4,
               cursor: "pointer",
             }}
           >
-            キャンセル
+            合同をやめる
           </button>
+          <span style={{ fontSize: 11, color: "#8a6a20" }}>
+            Esc キー・候補以外のコマを押してもやめられます
+          </span>
         </div>
       )}
 
