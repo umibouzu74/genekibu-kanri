@@ -8,7 +8,9 @@
 //
 // 形 (types.d.ts の SeniorKoshuData):
 //   期 (terms)      … 「高3 Ⅰ期」と、その期の日 (YYYY-MM-DD の並び)
-//   時限 (periods)  … 「予備校３限」と時刻 ("12:25-13:35"。offsiteLessons と同じ形)
+//   時限 (periods)  … 「予備校３限」と時刻 ("12:25-13:35"。offsiteLessons と同じ形) と場所
+//                     (本校 / 亀井町。未設定は名前から: 高校①〜③ = 亀井町、予備校1〜4限 = 本校。
+//                     講習時間割作成が移動時間を見るのに使う = timetable-builder/utils/travel)
 //   担当 (lessons)  … 講師 1 人 × 期 × 時限 × 学年 × 講座名。担当しない日 (skipDates) を
 //                     外せる (理科基礎のように 2 科目を 2 日ずつ受け持つとき)
 // 期と時限を別に持つのは、パンフレットの担当表が「期 × 時限 × 講座 × 講師」の形で、
@@ -28,6 +30,7 @@ import { WEEKDAYS } from "../constants/schools";
 import { fmtDate, fmtMD, isValidDateStr, parseLocalDate } from "./dateHelpers";
 import { normalizeOffsiteTime, offsiteStartText, offsiteTimeRange } from "./offsiteLessons";
 import { parseFlexibleDate, parseTsvTable } from "./specialEventImport";
+import { defaultPlaceForPeriodName, normalizePlace } from "../timetable-builder/utils/places";
 
 export const EMPTY_SENIOR_KOSHU = Object.freeze({ terms: [], periods: [], lessons: [] });
 
@@ -67,7 +70,8 @@ export function migrateSeniorKoshu(raw) {
     if (!p || !isPosInt(p.id) || periodIds.has(p.id) || !str(p.name)) continue;
     periodIds.add(p.id);
     const t = normalizeOffsiteTime(p.time);
-    periods.push({ id: p.id, name: str(p.name), time: t.ok ? t.time : "" });
+    const place = normalizePlace(p.place);
+    periods.push({ id: p.id, name: str(p.name), time: t.ok ? t.time : "", ...(place ? { place } : {}) });
   }
   const lessons = [];
   const lessonIds = new Set();
@@ -109,6 +113,19 @@ export function formatTermDates(dates) {
   return `${md(list[0])}〜${md(list[list.length - 1])} のうち ${list.length}日`;
 }
 
+/**
+ * 時限の場所 (本校 / 亀井町)。画面で選んだ場所が無ければ名前から決まる既定
+ * (高校①〜③ = 亀井町、予備校1〜4限 = 本校、それ以外は "" = 場所なし)
+ */
+export function seniorPeriodPlace(period) {
+  return normalizePlace(period?.place) || defaultPlaceForPeriodName(period?.name);
+}
+
+/** 時限の既定の場所 (名前から。画面の「既定 (亀井町)」の表示に使う) */
+export function seniorPeriodDefaultPlace(period) {
+  return defaultPlaceForPeriodName(period?.name);
+}
+
 /** 担当の種別 (講習時間割作成のプリセットの名前と同じ「期 時限」) */
 export function seniorKoshuKind(item) {
   return [item?.termName, item?.periodName].filter(Boolean).join(" ");
@@ -130,7 +147,7 @@ export function lessonDates(data, lesson) {
 /**
  * 担当を日付ごとの予定に広げる (日付 → 開始時刻 → 講師の順)。
  * @returns {Array<{key: string, lessonId: number, teacher: string, date: string, time: string,
- *   termName: string, periodName: string, grade: string, course: string, memo: string}>}
+ *   termName: string, periodName: string, place: string, grade: string, course: string, memo: string}>}
  */
 export function expandSeniorKoshu(data) {
   const terms = new Map((data?.terms || []).map((t) => [t.id, t]));
@@ -149,6 +166,7 @@ export function expandSeniorKoshu(data) {
         time: period.time || "",
         termName: term.name,
         periodName: period.name,
+        place: seniorPeriodPlace(period),
         grade: l.grade || "",
         course: l.course || "",
         memo: l.memo || "",
@@ -258,8 +276,12 @@ export function removeTerm(data, id) {
   };
 }
 
-/** 時限を作る / 直す。時刻は「12:25-13:35」(全角・「〜」も可) */
-export function upsertPeriod(data, { id = null, name, time }, { idFloor = 0 } = {}) {
+/**
+ * 時限を作る / 直す。時刻は「12:25-13:35」(全角・「〜」も可)。場所は "" (または省略) なら
+ * 名前からの既定に従う (保存しない)。名前からの既定と同じ場所を選んだときも保存しない
+ * (名前を直したら既定に従う)。place を渡さなければ今の場所のまま
+ */
+export function upsertPeriod(data, { id = null, name, time, place }, { idFloor = 0 } = {}) {
   const n = str(name);
   if (!n) return { error: "時限の名前を入れてください" };
   if (data.periods.some((p) => p.id !== id && nameKey(p.name) === nameKey(n))) {
@@ -267,11 +289,21 @@ export function upsertPeriod(data, { id = null, name, time }, { idFloor = 0 } = 
   }
   const t = normalizeOffsiteTime(time);
   if (!t.ok) return { error: t.error };
+  const withPlace = (base, current) => {
+    const chosen = place === undefined ? normalizePlace(current) : normalizePlace(place);
+    const { place: _old, ...rest } = base;
+    return chosen && chosen !== defaultPlaceForPeriodName(n) ? { ...rest, place: chosen } : rest;
+  };
   if (id == null) {
-    const period = { id: nextSeniorId(data.periods, idFloor), name: n, time: t.time };
+    const period = withPlace({ id: nextSeniorId(data.periods, idFloor), name: n, time: t.time }, "");
     return { data: { ...data, periods: [...data.periods, period] }, period };
   }
-  return { data: { ...data, periods: data.periods.map((p) => (p.id === id ? { ...p, name: n, time: t.time } : p)) } };
+  return {
+    data: {
+      ...data,
+      periods: data.periods.map((p) => (p.id === id ? withPlace({ ...p, name: n, time: t.time }, p.place) : p)),
+    },
+  };
 }
 
 /** 時限を消す (その時限の担当も消える) */

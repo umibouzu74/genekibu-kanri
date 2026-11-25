@@ -66,7 +66,15 @@ export default function SeniorKoshuImport() {
           {plan.unchanged > 0 && ` (取り込み済み ${plan.unchanged} 件)`}
         </li>
         {changed > 0 && <li>新しく取り込む: <b>{changed} 件</b></li>}
-        {plan.changedIds.length > 0 && <li>本体で変わった (入れ直す): <b>{plan.changedIds.length} 件</b></li>}
+        {plan.changedIds.length - plan.placeOnlyIds.length > 0 && (
+          <li>本体で変わった (入れ直す): <b>{plan.changedIds.length - plan.placeOnlyIds.length} 件</b></li>
+        )}
+        {plan.placeOnlyIds.length > 0 && (
+          <li>
+            場所 (本校 / 亀井町) を入れる (入れ直す): <b>{plan.placeOnlyIds.length} 件</b>
+            <span className="text-builder-ink-muted"> (場所の欄ができる前に取り込んだもの。移動時間のチェックに使います)</span>
+          </li>
+        )}
         {plan.staleIds.length > 0 && <li>本体に無くなった (消す): <b>{plan.staleIds.length} 件</b></li>}
       </ul>
       {plan.manualDuplicateIds.length > 0 && (

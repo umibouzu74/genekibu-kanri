@@ -5,17 +5,25 @@ import { describeNgViolation, type NgViolationItem } from '../utils/ngViolations
 // の両方で使う。行の「→」でそのセルへ (別のタブなら切り替えて) 飛ぶ。
 // 理由 (他学年セッションのメモと時刻・手動NG・出勤可能調査) を行に書く
 // (tooltip だけにしない — 一覧を眺めて直す道具なので)。
+// 注意 (場所の違う授業との間、utils/travel の TravelCautionItem) の一覧にも使う
+// (reasonPrefix = 「注意」、tone = warning)。
 export default function NgViolationList({
   items,
   onJump,
   activeTabId = null,
   initialLimit = 5,
+  reasonPrefix = 'NG',
+  tone = 'danger',
 }: {
   items: NgViolationItem[];
   onJump: (item: NgViolationItem) => void;
   /** 今のタブ。このタブの行はタブ名を省く */
   activeTabId?: number | null;
   initialLimit?: number;
+  /** 理由の頭の文字 (「NG」「注意」) */
+  reasonPrefix?: string;
+  /** 理由の色 (danger = 赤 / warning = 橙) */
+  tone?: 'danger' | 'warning';
 }) {
   const [expanded, setExpanded] = useState(false);
   const shown = expanded ? items : items.slice(0, initialLimit);
@@ -28,7 +36,7 @@ export default function NgViolationList({
             <span className="flex-1 min-w-0">
               <span className="font-bold text-builder-ink">{text}</span>
               {item.reasons.length > 0 && (
-                <span className="block text-builder-red">NG: {item.reasons.join(' / ')}</span>
+                <span className={`block ${tone === 'warning' ? 'text-builder-orange' : 'text-builder-red'}`}>{reasonPrefix}: {item.reasons.join(' / ')}</span>
               )}
             </span>
             <button

@@ -14,11 +14,16 @@
 //   - それ以外で、講習の最初の日の 14 日前〜最後の日の 14 日後に当たる予定は「日付プールに
 //     無い日」として知らせる (12/24 の高3 Ⅰ期の初日など。外部授業だけの日として足せる)
 //   - 講習の講師にいない名前は取り込まず、名前を出す
+//
+// 場所 (2026-11-25): 本体の時限の場所 (本校 / 亀井町) を place に入れる。講習時間割作成は
+// 場所の違うセッションとの間に移動時間を見る (utils/travel)。場所の欄ができる前に取り込んだ
+// もの (place が無い) は「場所を入れ直す」として入れ直す (placeOnlyIds)
 
 import type { ExternalSession, ExternalSessionDraft, Project } from '../types';
 import { projectBaseYmd, resolveDateLabelsYmd, sessionDateLabels } from './courseDates';
 import { externalSessionContentKey } from './externalSessionShape';
 import { ymdToLabel } from './dateGenerate';
+import { normalizePlace } from './places';
 
 /** 本体の expandSeniorKoshu の 1 件 (必要なところだけ) */
 export interface SeniorKoshuItemLike {
@@ -28,6 +33,8 @@ export interface SeniorKoshuItemLike {
   time: string; // "12:25-13:35" / "12:25" / ""
   termName: string;
   periodName: string;
+  /** 時限の場所 (本体の seniorPeriodPlace。"" = 場所なし) */
+  place?: string;
   grade?: string;
   course?: string;
 }
@@ -41,6 +48,8 @@ export interface SeniorKoshuImportPlan {
   unchanged: number;
   /** 前に取り込んだもので、本体で変わったもの (消して入れ直す) */
   changedIds: number[];
+  /** changedIds のうち、場所が入っていないだけのもの (場所の欄ができる前に取り込んだ) */
+  placeOnlyIds: number[];
   /** 前に取り込んだもので、本体から無くなったもの (消す) */
   staleIds: number[];
   /** 手で入れたもので、講師・日・時刻が取り込む予定と同じもの (置き換える候補) */
@@ -76,6 +85,7 @@ export function seniorKoshuSessionDraft(item: SeniorKoshuItemLike, dateLabel: st
   const t = parseTime(item.time);
   const memo = [item.termName, item.periodName].filter(Boolean).join(' ');
   const course = [item.grade, item.course].filter(Boolean).join(' ');
+  const place = normalizePlace(item.place);
   return {
     date: dateLabel,
     teacherName: item.teacher,
@@ -83,6 +93,7 @@ export function seniorKoshuSessionDraft(item: SeniorKoshuItemLike, dateLabel: st
     memo,
     ...(course ? { course } : {}),
     ...(t ? { startTime: t.start, ...(t.end ? { endTime: t.end } : {}) } : {}),
+    ...(place ? { place } : {}),
     source: 'seniorKoshu',
     sourceKey: item.key,
   };
@@ -102,6 +113,7 @@ export function planSeniorKoshuImport(
     toAdd: [],
     unchanged: 0,
     changedIds: [],
+    placeOnlyIds: [],
     staleIds: [],
     manualDuplicateIds: [],
     unknownTeachers: [],
@@ -164,6 +176,9 @@ export function planSeniorKoshuImport(
       plan.unchanged++;
     } else {
       plan.changedIds.push(s.id);
+      if (!normalizePlace(s.place) && p.place && externalSessionContentKey({ ...s, place: p.place }) === externalSessionContentKey(p)) {
+        plan.placeOnlyIds.push(s.id);
+      }
       plan.toAdd.push(p);
     }
   }

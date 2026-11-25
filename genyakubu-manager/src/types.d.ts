@@ -463,6 +463,9 @@ export interface SeniorKoshuPeriod {
   id: number;
   name: string; // "予備校３限"
   time: string; // "12:25-13:35" (読めない時刻は "")
+  // 場所 ("本校" / "亀井町"、任意)。無ければ名前から (高校①〜③ = 亀井町、予備校1〜4限 = 本校。
+  // utils/seniorKoshu.seniorPeriodPlace)。講習時間割作成が移動時間を見るのに使う
+  place?: string;
 }
 export interface SeniorKoshuLesson {
   id: number;

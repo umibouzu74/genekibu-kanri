@@ -222,6 +222,30 @@ export interface ExternalSession {
   source?: 'seniorKoshu';
   /** 取り込んだ元の予定のキー (本体の expandSeniorKoshu の key = 担当 id:日付) */
   sourceKey?: string;
+  /**
+   * 授業の場所 (「本校」「亀井町」、任意。2026-11-25)。講習時間割作成のタブ (中学の講習) は
+   * 本校なので、場所の違うセッションとの間は移動時間を見る (utils/travel)。本体の「高校・予備校の
+   * 講習」から取り込むと時限の場所が入る。無ければ時間の重なりだけを見る (utils/places.sessionPlace)
+   */
+  place?: string;
+}
+
+/** 場所の組の移動時間 (片道・分。順不同) */
+export interface TravelRoute {
+  a: string;
+  b: string;
+  minutes: number;
+}
+
+/**
+ * 場所の間の移動時間の設定 (2026-11-25、Project.travel)。未設定は本校⇄亀井町 30 分・
+ * 注意 60 分 (utils/places.DEFAULT_TRAVEL)。判定は utils/travel
+ */
+export interface TravelSettings {
+  /** 場所の組ごとの移動時間。表に無い組は移動を見ない (時間の重なりだけ) */
+  routes: TravelRoute[];
+  /** 場所の違う授業の間がこの分数未満なら注意 (移動時間未満は NG)。「間に 1 コマ分」の目安 */
+  cautionMinutes: number;
 }
 
 /** 登録前の他学年セッション (id は reducer が振る) */
@@ -354,6 +378,8 @@ export interface Project {
   dayStreakRules?: DayStreakRule[];
   /** B3: 所属が予備校部の講師を既定で「控えめ」にする (講師ごとの使い方が優先) */
   yobikoReserve?: boolean;
+  /** 場所の間の移動時間 (任意。未設定 = 既定の本校⇄亀井町 30 分・注意 60 分) */
+  travel?: TravelSettings;
   generationSeed?: number;
 }
 

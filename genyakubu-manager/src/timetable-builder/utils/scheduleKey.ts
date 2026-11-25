@@ -24,6 +24,7 @@
 // frameShape / regularLink) だけ。dateLabelUnify の依存も dateGenerate / labelRefs /
 // availabilityShape の無依存モジュールのみ。
 import { normalizeDayStreakRules, normalizeRegularLink } from './regularLink';
+import { isDefaultTravelSettings, normalizePlace, normalizeTravelSettings } from './places';
 import { clampGenerationParam } from './generationParams';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { unifyDateLabelWeekdays } from './dateLabelUnify';
@@ -587,6 +588,31 @@ export function migrateProject(project: any): Project {
         return rest;
       }),
     };
+  }
+
+  // 場所 (任意、2026-11-25): 文字列でない・空白だけは落とし、前後の空白を落とす
+  const placeNeedsFix = (s: any) => 'place' in s && (!s.place || s.place !== normalizePlace(s.place));
+  if (result.externalSessions.some(placeNeedsFix)) {
+    result = {
+      ...result,
+      externalSessions: result.externalSessions.map((s: any) => {
+        if (!placeNeedsFix(s)) return s;
+        const place = normalizePlace(s.place);
+        const { place: _place, ...rest } = s;
+        return place ? { ...rest, place } : rest;
+      }),
+    };
+  }
+
+  // 場所の間の移動時間 (任意、2026-11-25): 形を成さない・既定と同じなら持たない
+  if ('travel' in result) {
+    const travel = normalizeTravelSettings(result.travel);
+    if (!travel || isDefaultTravelSettings(travel)) {
+      const { travel: _t, ...rest } = result;
+      result = rest;
+    } else if (JSON.stringify(travel) !== JSON.stringify(result.travel)) {
+      result = { ...result, travel };
+    }
   }
 
   // externalSessionPresets が未設定 / 型崩れの場合は空配列で初期化 (他学年

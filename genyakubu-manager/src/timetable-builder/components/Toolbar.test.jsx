@@ -4,6 +4,7 @@ import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import Toolbar from './Toolbar';
 import { ProjectContext } from '../contexts/projectContextValue';
 import { UIContext } from '../contexts/uiContextValue';
+import { EMPTY_PLANNING, PlanningContext } from '../contexts/planningContextValue';
 import { makeKey } from '../utils/scheduleKey';
 
 // jsdom は scrollIntoView 未実装なので prototype に spy を生やす。
@@ -43,7 +44,7 @@ const defaultAnalysis = () => ({
 // 必要な context value を mock してから Toolbar を render する。
 // projectOverrides.analysis は defaultAnalysis() に対する shallow merge
 // (violations 等の必須フィールドを毎テストで書き直さなくて良いように)。
-function renderToolbar({ projectOverrides = {}, uiOverrides = {}, props = {} } = {}) {
+function renderToolbar({ projectOverrides = {}, uiOverrides = {}, props = {}, planning = EMPTY_PLANNING } = {}) {
   const { analysis: analysisOverride, ...restProjectOverrides } = projectOverrides;
   const projectValue = {
     analysis: { ...defaultAnalysis(), ...analysisOverride },
@@ -86,11 +87,13 @@ function renderToolbar({ projectOverrides = {}, uiOverrides = {}, props = {} } =
   };
 
   const utils = render(
-    <ProjectContext.Provider value={projectValue}>
-      <UIContext.Provider value={uiValue}>
-        <Toolbar {...defaultProps} />
-      </UIContext.Provider>
-    </ProjectContext.Provider>,
+    <PlanningContext.Provider value={planning}>
+      <ProjectContext.Provider value={projectValue}>
+        <UIContext.Provider value={uiValue}>
+          <Toolbar {...defaultProps} />
+        </UIContext.Provider>
+      </ProjectContext.Provider>
+    </PlanningContext.Provider>,
   );
   return { ...utils, projectValue, uiValue, props: defaultProps };
 }
@@ -665,5 +668,40 @@ describe('Toolbar — 講師通算上限超の popover 表示 (L3b)', () => {
     fireEvent.click(badge);
     expect(screen.getByText(/講師通算上限超/)).toBeInTheDocument();
     expect(screen.getByText(/9\/8/)).toBeInTheDocument();
+  });
+});
+
+describe('Toolbar — 注意 (本校 ⇄ 亀井町の移動、違反には数えない)', () => {
+  const caution = {
+    tabId: 1, tabName: 'メイン', key: makeKey(4, 4, 1), dateLabel: '1/6(水)', periodLabel: '夜3限 (20:20~21:10)',
+    classLabels: ['1A'], subject: '英語', teacher: '半田', labels: ['移動30分', '亀井町から戻り'],
+    reasons: ['移動30分: 高1・高2 Ⅱ期 高校② 18:20〜19:50 (亀井町) のあと 30分'],
+  };
+  const planning = { ...EMPTY_PLANNING, travelCautionList: [caution] };
+
+  it('違反が無くても注意があれば「注意 N件」を出し、内訳の「注意」の項目に理由つきで並べる', () => {
+    renderToolbar({ planning, projectOverrides: { project: { snapshots: [], teachers: [], activeTabId: 1 } } });
+    expect(screen.queryByText(/✨ OK/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /注意 1件/ }));
+    const dialog = screen.getByRole('dialog', { name: '注意の内訳' });
+    expect(dialog.textContent).toContain('注意 (1件、違反には数えません)');
+    expect(dialog.textContent).toContain('1/6(水) 夜3限 1A 英語 半田');
+    expect(dialog.textContent).toContain('注意: 移動30分: 高1・高2 Ⅱ期 高校② 18:20〜19:50 (亀井町) のあと 30分');
+  });
+
+  it('違反があるときは件数に注意を足さない (⚠️ N件 ・注意M)', () => {
+    renderToolbar({
+      planning,
+      projectOverrides: {
+        analysis: {
+          errorKeys: ['k1'],
+          violations: { ...defaultAnalysis().violations, teacherConflict: { count: 1, firstKey: 'k1' } },
+        },
+      },
+    });
+    const btn = screen.getByRole('button', { name: /⚠️ 1件 ・注意1/ });
+    // 講師重複だけでも、注意があれば即スクロールせずに内訳を開く
+    fireEvent.click(btn);
+    expect(screen.getByRole('dialog', { name: '違反の内訳' }).textContent).toContain('注意 (1件');
   });
 });

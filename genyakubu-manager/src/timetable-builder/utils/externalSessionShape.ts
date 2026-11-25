@@ -23,11 +23,11 @@ export function isExternalOnlyDate(d: Entity | DateEntity | null | undefined): b
 }
 
 type SessionLike = Pick<ExternalSession, 'date' | 'teacherName'> &
-  Partial<Pick<ExternalSession, 'label' | 'memo' | 'course' | 'startTime' | 'endTime'>>;
+  Partial<Pick<ExternalSession, 'label' | 'memo' | 'course' | 'startTime' | 'endTime' | 'place'>>;
 
-/** 同じ内容か (重複登録を飛ばす) の判定キー */
+/** 同じ内容か (重複登録を飛ばす) の判定キー (場所も含む。場所の無いものは従来と同じキー) */
 export function externalSessionContentKey(s: SessionLike): string {
-  return JSON.stringify([
+  const key: string[] = [
     s.date,
     s.teacherName,
     s.label || '',
@@ -35,7 +35,10 @@ export function externalSessionContentKey(s: SessionLike): string {
     s.course || '',
     s.startTime || '',
     s.endTime || '',
-  ]);
+  ];
+  const place = typeof s.place === 'string' ? s.place.trim() : '';
+  if (place) key.push(place);
+  return JSON.stringify(key);
 }
 
 /** 講座名の正規化 (前後の空白を落とす。文字列でなければ空) */

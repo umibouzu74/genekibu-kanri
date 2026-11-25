@@ -3,6 +3,7 @@ import { useProjectContext } from '../../contexts/projectContextValue';
 import { useUI } from '../../contexts/uiContextValue';
 import { effectiveConfigForTab, makeNgKey, makeExternalKey } from '../../utils/scheduleKey';
 import { autoNgSourceLabel, computeAutoNgEntries, describeRegularBusy } from '../../utils/autoNg';
+import { describeTravelHit } from '../../utils/travel';
 import { computePresetMemoBackfill } from '../../utils/presetMemoBackfill';
 import { computePresetRenameSyncIds, presetSessionLabel } from '../../utils/presetRenameSync';
 import { getPeriodTimeRange, parseHHmm } from '../../utils/timeRange';
@@ -16,6 +17,8 @@ import type { NgViolationItem } from '../../utils/ngViolations';
 import SessionCsvImport from './SessionCsvImport';
 import OffsiteImport from './OffsiteImport';
 import SeniorKoshuImport from './SeniorKoshuImport';
+import TravelSettingsPanel from './TravelSettingsPanel';
+import { BUILDER_TAB_PLACE, sessionPlace } from '../../utils/places';
 import DraftNumberInput from './DraftNumberInput';
 import DraftLineInput from './DraftLineInput';
 import { computeCourseSplit, externalSessionContentKey, isExternalOnlyDate, sessionDisplayLabel } from '../../utils/externalSessionShape';
@@ -680,6 +683,8 @@ export default function AbsenceNgPanel({ onCloseModal }: { onCloseModal?: () => 
       {/* 本体の「高校・予備校の講習」「他校舎の授業」から講師不在を取り込む (予定があるときだけ出る) */}
       <SeniorKoshuImport />
       <OffsiteImport />
+      {/* 本校 ⇄ 亀井町の移動時間 (場所の違う他学年セッションとの間の NG・注意) */}
+      <TravelSettingsPanel />
 
       {/* 表での一括登録: 他学年セッション (時刻つき) と NG 日時 (時限指定, E2a) */}
       <div className="mb-4 space-y-2">
@@ -1262,7 +1267,19 @@ function DateSection({
                               >🎓本体</span>
                             )}
                           </td>
-                          <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{timeText}</td>
+                          <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">
+                            {timeText}
+                            {/* 本校以外の場所 (亀井町) は移動時間を見る (utils/travel) */}
+                            {(() => {
+                              const place = sessionPlace(s);
+                              return place && place !== BUILDER_TAB_PLACE ? (
+                                <span
+                                  className="ml-1 px-1 rounded bg-builder-warning-soft text-[10px] text-builder-orange"
+                                  title={`${place}の授業です。${BUILDER_TAB_PLACE}のコマとの間が移動時間に足りなければ NG、注意の分数に足りなければ注意になります`}
+                                >@{place}</span>
+                              ) : null;
+                            })()}
+                          </td>
                           <td className="border border-builder-ink-ghost p-1 bg-builder-surface text-builder-ink">{s.memo || '-'}</td>
                           <td className="border border-builder-ink-ghost p-0.5 bg-builder-surface text-builder-ink">
                             {s.source === 'seniorKoshu' ? (
@@ -1345,7 +1362,7 @@ function DateSection({
                               const autoEntry = autoEntries?.get(k);
                               const isAutoNg = !!autoEntry;
                               // 出勤可能調査の × だけが由来の自動NG は「調」(他学年セッション・通常授業との重なりは「自」)
-                              const isSurveyOnly = isAutoNg && autoEntry.sessions.length === 0 && !autoEntry.regular?.length && !!autoEntry.availability;
+                              const isSurveyOnly = isAutoNg && autoEntry.sessions.length === 0 && !autoEntry.regular?.length && !autoEntry.travel?.length && !!autoEntry.availability;
                               const cellClass = isManualNg
                                 ? 'bg-builder-red text-white font-bold'
                                 : isAutoNg
@@ -1368,6 +1385,10 @@ function DateSection({
                               if (isAutoNg && autoEntry.regular?.length) {
                                 // 本体の通常授業と時刻が重なる / 接する (この画面では直せない。本体の時間割・代行・振替から導出)
                                 tooltipParts.push(`自動NG (${[...new Set(autoEntry.regular.map(describeRegularBusy))].join(', ')})`);
+                              }
+                              if (isAutoNg && autoEntry.travel?.length) {
+                                // 場所の違う他学年セッション (亀井町) との間が移動時間に足りない
+                                tooltipParts.push(`自動NG (${[...new Set(autoEntry.travel.map(describeTravelHit))].join(', ')})`);
                               }
                               if (isAutoNg && autoEntry.availability) {
                                 tooltipParts.push('出勤可能調査で × (🙋 出勤可能調査で変更)');

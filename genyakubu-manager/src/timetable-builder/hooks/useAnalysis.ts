@@ -13,6 +13,7 @@ import { EMPTY_REGULAR_BUSY, computeAutoNgByTeacher } from '../utils/autoNg';
 import type { RegularBusy } from '../utils/autoNg';
 import { answeredTeacherNames, computeSurveyDays } from '../utils/availability';
 import { buildFixSuggestions } from '../utils/fixSuggestions';
+import { resolveTravelSettings } from '../utils/places';
 import { computeNgViolationList } from '../utils/ngViolations';
 
 const DEFAULT_MAX_DAILY_HOURS = 6;
@@ -48,14 +49,17 @@ export function useAnalysis(
   // 出す必要がある) で、subset だとタブを切り替えるたびに表示が変わり、
   // 一括登録プレビューの件数ともズレていた。キーはラベルベースなので
   // superset にしても既存の参照先 (可視セルの NG 判定) には影響しない。
+  // 場所の間の移動時間 (亀井町の高校①〜③との間。utils/travel)。自動NG に合流する
+  const travel = useMemo(() => resolveTravelSettings(project), [project.travel]); // eslint-disable-line react-hooks/exhaustive-deps
   const autoNgByTeacher = useMemo(
     () => computeAutoNgByTeacher(
       project.teachers,
       project.externalSessions || [],
       project.periods || [],
       regularBusy,
+      travel,
     ),
-    [project.teachers, project.externalSessions, project.periods, regularBusy],
+    [project.teachers, project.externalSessions, project.periods, regularBusy, travel],
   );
 
   // 出勤可能調査に回答済みの講師 (今の調査の対象マスに記号が 1 つでもある人)。
@@ -90,8 +94,9 @@ export function useAnalysis(
       externalSessions: project.externalSessions || [],
       dates: project.dates, periods: project.periods,
       regularBusy,
+      travel,
     }),
-    [project.tabs, globalUsage, project.teachers, project.externalSessions, project.dates, project.periods, regularBusy],
+    [project.tabs, globalUsage, project.teachers, project.externalSessions, project.dates, project.periods, regularBusy, travel],
   );
 
   const maxDailyHours = project.maxDailyHours ?? DEFAULT_MAX_DAILY_HOURS;
@@ -141,8 +146,8 @@ export function useAnalysis(
   );
 
   const analysis = useMemo(
-    () => ({ ...activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds, surveyAnsweredTeachers, ngViolationList, regularBusy }),
-    [activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds, surveyAnsweredTeachers, ngViolationList, regularBusy],
+    () => ({ ...activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds, surveyAnsweredTeachers, ngViolationList, regularBusy, travel }),
+    [activeAnalysis, teacherDailyCounts, tabErrorCounts, violations, infeasibilities, autoNgByTeacher, incompleteDateIds, surveyAnsweredTeachers, ngViolationList, regularBusy, travel],
   );
 
   const dashboard = useMemo(

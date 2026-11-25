@@ -181,3 +181,24 @@ describe("SeniorKoshuView", () => {
     expect(onSelectTeacher).toHaveBeenCalledWith("伊藤");
   });
 });
+
+describe("SeniorKoshuView — 時限の場所 (2026-11-25)", () => {
+  it("時限の一覧に場所を出し、直すときに場所を選べる (既定は名前から)", () => {
+    renderView({
+      initial: {
+        ...DATA,
+        periods: [...DATA.periods, { id: 2, name: "高校①", time: "16:40-18:10" }],
+      },
+    });
+    const periods = screen.getByRole("region", { name: /時限/ });
+    expect(periods.textContent).toContain("@本校");
+    expect(periods.textContent).toContain("@亀井町");
+    fireEvent.click(screen.getByRole("button", { name: "時限「高校①」を直す" }));
+    const select = screen.getByRole("combobox", { name: "時限の場所" });
+    expect(select.value).toBe("");
+    expect(within(select).getByRole("option", { name: "既定 (亀井町)" })).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: "本校" } });
+    fireEvent.click(within(periods).getByRole("button", { name: "直す" }));
+    expect(latest.periods.find((p) => p.id === 2).place).toBe("本校");
+  });
+});

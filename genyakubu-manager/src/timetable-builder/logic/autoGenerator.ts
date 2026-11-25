@@ -4,9 +4,11 @@
 // v3 スキーマ: config.dates/periods/classes は { id, label } の配列。
 // スケジュールキーは ID ベース。ラベルが必要な関数 (NG slot / combined group /
 // externalCounts) には label を渡す。
-import { makeKey, makeExternalKey, findCombinedGroup, effectiveConfigForTab } from '../utils/scheduleKey';
+import { makeKey, makeExternalKey, makeNgKey, findCombinedGroup, effectiveConfigForTab } from '../utils/scheduleKey';
 import { forEachCountedAssignment } from '../utils/tabUsage';
 import { computeAutoNgByTeacher } from '../utils/autoNg';
+import { resolveTravelSettings } from '../utils/places';
+import { computeTravelCautions, hasReturnCaution } from '../utils/travel';
 import { quotasForClass } from '../utils/subjectQuota';
 import {
   canTeachSubject,
@@ -251,12 +253,24 @@ export function generateSinglePattern({
   // 自動NG (他学年セッションと時限の時間重複から派生) を pre-compute。
   // solver の NG 判定でも手動NGと同等に扱う。通常授業との講師の重なり
   // (planning.regularBusy。メイン側で解いたもの) もここで合流する。
+  const travel = resolveTravelSettings(project);
   const autoNgByTeacher = computeAutoNgByTeacher(
     project.teachers,
     project.externalSessions || [],
     currentConfig.periods,
     planning?.regularBusy,
+    travel,
   );
+  // 予備校部の講師が場所の違う授業 (亀井町) のあとに本校のコマへ戻る組み方は、できるだけ
+  // 避ける (NG ではないので試す順を後ろへ回すだけ。utils/travel)
+  const returnCautions = computeTravelCautions(
+    project.teachers,
+    project.externalSessions || [],
+    currentConfig.periods,
+    travel,
+    planning?.returnTeachers ? new Set(planning.returnTeachers) : null,
+  );
+  const avoidReturn = (name: string, ngKey: string) => hasReturnCaution(returnCautions.get(name)?.get(ngKey));
 
   // H2: 他タブの確定割当 (同時限 busy + 日次コマ数)
   const otherTabs = collectOtherTabsUsage(project, activeTab.id, combinedGroups, DAILY_LIMIT_EXEMPT_TEACHER);
@@ -588,16 +602,20 @@ export function generateSinglePattern({
         );
 
         // 試す順: 普段の担当 (B1、クラス × 科目) → 優先クラス → 標準 → 控えめ (B3)
-        // → 未定。控えめは「ほかで埋まらないときだけ」なので最後に回す (試す順を
-        // 変えるだけで、解けるかどうかは変えない = ROADMAP L3c の範囲)
+        // → 亀井町から戻り (予備校部、utils/travel) → 未定。控えめは「ほかで埋まらない
+        // ときだけ」なので最後に回す (試す順を変えるだけで、解けるかどうかは変えない =
+        // ROADMAP L3c の範囲)。戻りも同じく NG ではないので、普段の担当でも後ろへ回すだけ
         const usual = usualFor(c.id, s);
+        const ngKey = makeNgKey(d.label, p.label);
         const usualGroup: Teacher[] = [];
         const priorityGroup: Teacher[] = [];
         const neutralGroup: Teacher[] = [];
         const reserveGroup: Teacher[] = [];
+        const returnGroup: Teacher[] = [];
         const placeholderGroup: Teacher[] = [];
         validT.forEach(t => {
           if (t.name === DAILY_LIMIT_EXEMPT_TEACHER) placeholderGroup.push(t);
+          else if (avoidReturn(t.name, ngKey)) returnGroup.push(t);
           else if (usual.includes(t.name)) usualGroup.push(t);
           else if (usageOf(t.name) === 'reserve') reserveGroup.push(t);
           else if (t.priorityClasses?.includes(c.label)) priorityGroup.push(t);
@@ -615,6 +633,7 @@ export function generateSinglePattern({
           ...seededShuffle(priorityGroup, rng),
           ...seededShuffle(neutralGroup, rng),
           ...seededShuffle(reserveGroup, rng),
+          ...seededShuffle(returnGroup, rng),
           ...placeholderGroup,
         ];
         // 合同の別クラスに講師が確定済みなら、その講師以外は候補にしない

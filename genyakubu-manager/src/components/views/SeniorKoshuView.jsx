@@ -11,6 +11,7 @@ import { WEEKDAYS } from "../../constants/schools";
 import { fiscalYearOf } from "../../utils/teacherAffiliations";
 import { compareTeacherNames } from "../../utils/teacherKana";
 import { formatOffsiteTime, offsiteTimeRange } from "../../utils/offsiteLessons";
+import { KOSHU_PLACES } from "../../timetable-builder/utils/places";
 import {
   SENIOR_KOSHU_TEMPLATE,
   addSeniorLessons,
@@ -21,6 +22,8 @@ import {
   parseSeniorKoshuImport,
   removePeriod,
   removeTerm,
+  seniorPeriodDefaultPlace,
+  seniorPeriodPlace,
   toggleLessonSkip,
   updateSeniorLesson,
   upsertPeriod,
@@ -155,6 +158,7 @@ export function SeniorKoshuView({
           (時間割にコマの無い先生もサイドバーに並びます)。講習時間割作成 (中学の講習) では、⚙ 設定 → 📅 講師不在・NG の
           「🎓 本体の『高校・予備校の講習』を取り込む」を押すと、講師の不在 (自動NG) として入ります。期 (日程) と時限 (時刻) を
           作ってから担当を入れます。パンフレットの担当表は「📋 表でまとめて登録」で貼れます。
+          時限の場所 (本校 / 亀井町) は、講習時間割作成 (本校) で移動時間を見るのに使います (高校①〜③ は亀井町、予備校1〜4限は本校が既定)。
         </p>
         <PrintButton />
       </div>
@@ -230,6 +234,9 @@ export function SeniorKoshuView({
                   <div style={{ display: "flex", gap: 6, alignItems: "baseline", flexWrap: "wrap" }}>
                     <b style={{ fontSize: 13 }}>{p.name}</b>
                     <span style={{ fontSize: 12, color: p.time ? "#555" : "#c03030" }}>{p.time ? formatOffsiteTime(p.time) : "時刻なし"}</span>
+                    <span style={hint} title="講習時間割作成 (本校) で移動時間を見るのに使います">
+                      {seniorPeriodPlace(p) ? `@${seniorPeriodPlace(p)}` : "場所なし"}
+                    </span>
                     {isAdmin && (
                       <span className="no-print" style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
                         <button type="button" style={smallBtn} onClick={() => setEditPeriodId(p.id)} aria-label={`時限「${p.name}」を直す`}>直す</button>
@@ -464,19 +471,21 @@ function TermEditor({ data, onSave, today, term = null, onDone, idFloors }) {
   );
 }
 
-// 時限を作る / 直す: 名前 + 時刻
+// 時限を作る / 直す: 名前 + 時刻 + 場所 ("" = 名前からの既定)
 function PeriodEditor({ data, onSave, period = null, onDone, idFloors }) {
   const toasts = useToasts();
   const [name, setName] = useState(period?.name || "");
   const [time, setTime] = useState(period?.time || "");
+  const [place, setPlace] = useState(period?.place || "");
   const [error, setError] = useState(null);
+  const defaultPlace = seniorPeriodDefaultPlace({ name });
   const submit = () => {
-    const r = upsertPeriod(data, { id: period?.id ?? null, name, time });
+    const r = upsertPeriod(data, { id: period?.id ?? null, name, time, place });
     if (r.error) {
       setError(r.error);
       return;
     }
-    onSave((prev) => upsertPeriod(prev, { id: period?.id ?? null, name, time }, { idFloor: idFloors?.periods }).data || prev);
+    onSave((prev) => upsertPeriod(prev, { id: period?.id ?? null, name, time, place }, { idFloor: idFloors?.periods }).data || prev);
     toasts.success(period ? `時限「${name.trim()}」を直しました` : `時限「${name.trim()}」を作りました`);
     onDone();
   };
@@ -491,10 +500,21 @@ function PeriodEditor({ data, onSave, period = null, onDone, idFloors }) {
           <span style={S.formLabel}>時刻</span>
           <input value={time} onChange={(e) => setTime(e.target.value)} placeholder="例: 12:25-13:35" style={{ ...S.input, width: 140 }} aria-label="時限の時刻" />
         </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={S.formLabel}>場所</span>
+          <select value={place} onChange={(e) => setPlace(e.target.value)} style={{ ...S.input, width: "auto" }} aria-label="時限の場所">
+            <option value="">{defaultPlace ? `既定 (${defaultPlace})` : "既定 (場所なし)"}</option>
+            {KOSHU_PLACES.map((pl) => <option key={pl} value={pl}>{pl}</option>)}
+          </select>
+        </label>
         <button type="button" style={primaryBtn} onClick={submit}>{period ? "直す" : "作る"}</button>
         <button type="button" style={smallBtn} onClick={onDone}>やめる</button>
       </div>
       {error && <div role="alert" style={{ color: "#c03030", fontSize: 12, marginTop: 6 }}>{error}</div>}
+      <div style={{ ...hint, marginTop: 6 }}>
+        場所は講習時間割作成 (中学の講習 = 本校) で移動時間を見るのに使います。「既定」は名前から決まります
+        (高校①〜③ = 亀井町、予備校1〜4限 = 本校、それ以外は場所なし = 時間の重なりだけを見ます)。直したら講習時間割作成で取り込み直してください。
+      </div>
     </div>
   );
 }

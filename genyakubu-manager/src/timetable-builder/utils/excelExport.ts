@@ -18,6 +18,7 @@ import { quotaForClass } from './subjectQuota';
 import { computeGlobalUsage, makeSubjectOrderMarker } from './analysisHelpers';
 import { computeAutoNgByTeacher } from './autoNg';
 import type { RegularBusy } from './autoNg';
+import { resolveTravelSettings } from './places';
 import { getPeriodTimeRange, getSessionTimeRange } from './timeRange';
 import { sortPoolDatesByCalendar } from './dateGenerate';
 import { computePresetMemoBackfill } from './presetMemoBackfill';
@@ -219,6 +220,7 @@ export function buildScheduleWorkbook(project: Project, { regularBusy = null }: 
       cleaned.externalSessions || [],
       periods,
       regularBusy,
+      resolveTravelSettings(project),
     );
 
     // N5a: タイトル行。シートを単体で印刷・配布しても「何の・いつの時間割か」
@@ -375,6 +377,7 @@ export function computeSubjectStats(project: Project, subject: string, { regular
     project.externalSessions || [],
     project.periods || [],
     regularBusy,
+    resolveTravelSettings(project),
   );
 
   (project.tabs || []).forEach(tab => {

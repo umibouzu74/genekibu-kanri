@@ -176,6 +176,8 @@ export default function Toolbar({
   const ngCountInList = ngList ? (violations.teacherNgAssigned?.count || 0) : 0;
   // B2: 連続出勤日数の上限を超えたところ (全タブ。本体の所属で対象を決める)
   const streakItems = planning.streakViolations;
+  // 注意 (違反には数えない): 場所の違う授業 (亀井町) との間が短い / 予備校部の亀井町から戻り
+  const cautionItems = planning.travelCautionList || [];
   const totalViolationCount =
     popoverRows.reduce((s, r) => s + r.count, 0) + ngCountInList + teacherOverItems.length +
     teacherOverTotalItems.length + countedInfeasItems.length + streakItems.length;
@@ -190,6 +192,7 @@ export default function Toolbar({
     teacherOverItems.length === 0 &&
     teacherOverTotalItems.length === 0 &&
     streakItems.length === 0 &&
+    cautionItems.length === 0 &&
     countedInfeasItems.length === 0;
 
   return (
@@ -207,33 +210,47 @@ export default function Toolbar({
           <div className="h-full bg-builder-blue transition-all duration-500" style={{ width: `${dashboard.progress}%` }}></div>
         </div>
         <div className="text-sm font-bold text-builder-blue w-12 text-right">{dashboard.progress}%</div>
-        {totalViolationCount > 0 ? (
+        {totalViolationCount > 0 || cautionItems.length > 0 ? (
           <div className="relative ml-2" ref={popoverRef}>
-            <button
-              type="button"
-              onClick={() => {
-                if (isOnlyTeacherConflict) {
-                  scrollToKey(violations.teacherConflict.firstKey);
-                  return;
-                }
-                setPopoverOpen((v) => !v);
-              }}
-              aria-haspopup="dialog"
-              aria-expanded={popoverOpen}
-              className="text-xs bg-builder-danger-soft text-builder-red px-2 py-1 rounded border border-builder-danger-border font-bold animate-pulse hover:bg-builder-danger-border"
-              title="違反の内訳を開く"
-            >
-              ⚠️ {totalViolationCount}件
-            </button>
+            {totalViolationCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (isOnlyTeacherConflict) {
+                    scrollToKey(violations.teacherConflict.firstKey);
+                    return;
+                  }
+                  setPopoverOpen((v) => !v);
+                }}
+                aria-haspopup="dialog"
+                aria-expanded={popoverOpen}
+                className="text-xs bg-builder-danger-soft text-builder-red px-2 py-1 rounded border border-builder-danger-border font-bold animate-pulse hover:bg-builder-danger-border"
+                title="違反の内訳を開く"
+              >
+                ⚠️ {totalViolationCount}件{cautionItems.length > 0 ? ` ・注意${cautionItems.length}` : ''}
+              </button>
+            ) : (
+              // 違反は無いが注意がある (移動30分・亀井町から戻り)。注意は違反の件数に数えない
+              <button
+                type="button"
+                onClick={() => setPopoverOpen((v) => !v)}
+                aria-haspopup="dialog"
+                aria-expanded={popoverOpen}
+                className="text-xs bg-builder-warning-soft text-builder-orange px-2 py-1 rounded border border-builder-warning-border font-bold hover:bg-builder-warning-border"
+                title="注意の内訳を開く (違反には数えません)"
+              >
+                🚗 注意 {cautionItems.length}件
+              </button>
+            )}
             {popoverOpen && (
               <div
                 role="dialog"
-                aria-label="違反の内訳"
+                aria-label={totalViolationCount > 0 ? '違反の内訳' : '注意の内訳'}
                 // right-0: バッジは進捗バーの右端にあるので、左揃えだと内訳の大半が
                 // 画面の外にはみ出していた (横スクロールも出ていた)
                 className="absolute z-50 top-full right-0 mt-1 w-80 max-h-96 overflow-y-auto bg-builder-surface border border-builder-border rounded shadow-lg p-3 text-builder-ink"
               >
-                <div className="text-xs font-bold text-builder-ink-muted mb-2">違反の内訳</div>
+                <div className="text-xs font-bold text-builder-ink-muted mb-2">{totalViolationCount > 0 ? '違反の内訳' : '注意の内訳'}</div>
                 <ul className="space-y-1.5 text-xs">
                   {popoverRows.map((row) => (
                     <li key={row.kind} className="flex items-center justify-between gap-2">
@@ -327,6 +344,25 @@ export default function Toolbar({
                           </li>
                         ))}
                       </ul>
+                    </li>
+                  )}
+                  {cautionItems.length > 0 && (
+                    <li className="pt-1.5 mt-1.5 border-t border-builder-border first:pt-0 first:mt-0 first:border-t-0">
+                      <div className="font-bold mb-1 text-builder-orange">
+                        注意 ({cautionItems.length}件、違反には数えません)
+                      </div>
+                      <div className="mb-1 text-[11px] text-builder-ink-muted">
+                        亀井町など場所の違う授業との間が短いコマ (移動◯分) と、予備校部の先生が亀井町のあとに本校へ戻るコマ (亀井町から戻り)
+                      </div>
+                      <div className="pl-2">
+                        <NgViolationList
+                          items={cautionItems}
+                          activeTabId={project?.activeTabId ?? null}
+                          reasonPrefix="注意"
+                          tone="warning"
+                          onJump={(it) => { jumpToCell(it.tabId, it.key); setPopoverOpen(false); }}
+                        />
+                      </div>
                     </li>
                   )}
                   {teacherOverTotalItems.length > 0 && (

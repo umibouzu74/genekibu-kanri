@@ -1131,3 +1131,43 @@ describe('generateSinglePattern — 通常授業との重なり (regularBusy)', 
     expect(free.solution[makeKey(1, 1, 1)].teacher).toBe('石原');
   });
 });
+
+// ─── 場所の違う授業との間 (亀井町、utils/travel、2026-11-25) ─────────────
+describe('generateSinglePattern — 本校 ⇄ 亀井町の移動', () => {
+  const T = (name) => ({ name, subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] });
+  const YORU1 = '夜1限 (18:30~19:20)';
+  const YORU3 = '夜3限 (20:20~21:10)';
+  const kamei = (teacherName, startTime, endTime, id = 1) => ({
+    id, date: '1/4(月)', teacherName, label: '', memo: '高1・高2 Ⅱ期 高校①', startTime, endTime, place: '亀井町',
+  });
+
+  it('移動時間に足りないコマには入れない (NG:移動 = ハード制約)', () => {
+    const project = makeProject({ teachers: [T('石原'), T('河野')], dates: ['1/4(月)'], periods: [YORU1] });
+    project.externalSessions = [kamei('石原', '16:40', '18:10')];
+    for (let seed = 1; seed <= 5; seed++) {
+      const r = generateSinglePattern({ project, activeTabId: 1, seed });
+      expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('河野');
+    }
+    const only = makeProject({ teachers: [T('石原')], dates: ['1/4(月)'], periods: [YORU1] });
+    only.externalSessions = project.externalSessions;
+    const blocked = generateSinglePattern({ project: only, activeTabId: 1, seed: 1 });
+    expect(blocked.solution?.[makeKey(1, 1, 1)]?.teacher).not.toBe('石原');
+    // 移動時間を短くすれば入れる (設定に従う)
+    only.travel = { routes: [{ a: '本校', b: '亀井町', minutes: 15 }], cautionMinutes: 60 };
+    expect(generateSinglePattern({ project: only, activeTabId: 1, seed: 1 }).solution[makeKey(1, 1, 1)].teacher).toBe('石原');
+  });
+
+  it('予備校部の講師の「亀井町から戻り」は後回し (ほかに入れる人がいれば避ける。いなければ入れる)', () => {
+    const project = makeProject({ teachers: [T('半田'), T('河野')], dates: ['1/4(月)'], periods: [YORU3] });
+    project.externalSessions = [kamei('半田', '16:40', '18:10')];
+    const planning = { returnTeachers: ['半田'], usual: { '1:英語': ['半田'] } };
+    for (let seed = 1; seed <= 5; seed++) {
+      // 普段の担当でも、戻りのコマは後ろへ回す
+      const r = generateSinglePattern({ project, activeTabId: 1, seed, planning });
+      expect(r.solution[makeKey(1, 1, 1)].teacher).toBe('河野');
+    }
+    const only = makeProject({ teachers: [T('半田')], dates: ['1/4(月)'], periods: [YORU3] });
+    only.externalSessions = project.externalSessions;
+    expect(generateSinglePattern({ project: only, activeTabId: 1, seed: 1, planning }).solution[makeKey(1, 1, 1)].teacher).toBe('半田');
+  });
+});

@@ -820,6 +820,45 @@ Provider、読むのは `planningContextValue.usePlanning`)。自動作成は wo
 - 本体の月間には何も足さない (通常授業は既に出ている。`builderLessons` は触らない)。
   1 日のコマ数の上限 (その日◯/◯) にも通常授業は数えない (要件が出たら)
 
+## 講習の本校 ⇄ 亀井町の移動時間 (2026-11-25)
+
+高1・高2 の講習 (本体の「高校・予備校の講習」の高校①〜③) は亀井町、中学の講習 (講習時間割作成の
+タブ) と高3 の予備校コマ (予備校1〜4限) は本校。車で約 20 分かかるので、同じ講師・同じ日に場所の
+違う授業があるとき、前の授業の終わりから次の授業の始まりまでの間で決める。
+
+- **場所の決まりは無依存の `timetable-builder/utils/places.ts`** (場所の呼び方「本校」「亀井町」は
+  通常時間割作成の校舎間の移動と同じ。`KOSHU_PLACES`・`BUILDER_TAB_PLACE` = 本校・名前からの既定
+  `defaultPlaceForPeriodName`・移動時間の設定 `Project.travel` の形)。本体の `utils/seniorKoshu` と
+  scheduleKey.migrateProject から使うので、ここに scheduleKey などの import を足さない (循環)
+- 本体の時限は `SeniorKoshuPeriod.place` (任意)。無ければ名前から (高校①〜③ = 亀井町、予備校1〜4限 =
+  本校、ほかは場所なし)。**既定と同じ場所は保存しない** (`upsertPeriod`)。`expandSeniorKoshu` の予定に
+  `place` が入り、取り込み (`seniorKoshuImport`) が他学年セッションの `ExternalSession.place` に写す。
+  同じ内容の判定 (`externalSessionContentKey`) は場所も見る (場所の無いものは従来と同じキー)。
+  場所の欄の前に取り込んだもの (place なし) は `places.sessionPlace` がメモの最後の語 (時限の名前) から
+  当て、取り込みの画面は「場所を入れる」(`placeOnlyIds`) として入れ直す。**手入力のセッションの場所は
+  推し量らない**
+- 判定は `utils/travel.ts` の 1 か所。間が移動時間 (既定 30 分) 未満 = **NG**、注意の分数 (既定 60 分) 未満 =
+  **注意** (違反に数えない)。時間が重なるものは他学年の自動NG (sessions) のまま (移動に数えない)。端が
+  接する (間 0 分) のは移動の NG。終了時刻の無いセッションは前のコマへの移動だけ。**同じ場所どうし・
+  場所なし・移動時間の表に無い組は移動を見ない** (時間の重なりだけ)
+- **NG への合流は `autoNg.computeAutoNgByTeacher` の 1 か所** (`AutoNgEntry.travel`、短い表示「移動」、
+  理由 `travel.describeTravelHit`)。候補・違反の内訳・自動作成・Excel の ⚠NG・未充填の診断・セルの表は
+  これを通る。**呼び出し側は第 5 引数に `places.resolveTravelSettings(project)` を渡す** (省略は既定の
+  30 分。渡し忘れると、設定を変えたときにそこだけ 30 分のまま)
+- **注意は `travel.computeTravelCautions`** (「移動30分」と「亀井町から戻り」)。「戻り」は本体の所属が予備校部
+  (`planningHints.returnCautionTeachers`、連続出勤日数の上限の「予備校部」と同じ) の講師が、場所の違う授業の
+  **あと**の本校のコマに入るとき (間の分数によらない)。現役部の先生には出さない。NG の時限には注意を
+  付けない。画面は作業領域で 1 回だけ作る (`usualTeachersContext` → `planning.travelCautions` /
+  `travelCautionList`)。⚠ の内訳は NG と別の「注意」の項目 (違反の件数に足さない。違反が無くても注意が
+  あれば「🚗 注意 N件」)。セルの注意の帯は紙面に出さない
+- 自動作成は「戻り」のコマでその講師を**後回し** (普段の担当でも。`planning.returnTeachers` → worker が
+  `computeTravelCautions` で解く)。NG にはしない (ほかに入れる人がいなければ入れる)。30〜60 分の注意は
+  順を変えない (「入れてよい」)
+- 所属は本体の `builderTeacherCategories` (App)。**高校・予備校の講習だけの先生も名前に入れてある**
+  (時間割にコマが無くても予備校部の既定が引けるように)
+- 範囲外 (2026-11-25): 「高校・予備校の講習」の画面の中の移動 (予備校4限 → 高校①)・他校舎の授業
+  (村上高松) への移動。場所は `KOSHU_PLACES` に、移動時間は `TravelSettings.routes` に足せる形にしてある
+
 ## 講習のクラスの丸ごと合同・セルの表 (2026-10-31)
 
 - **丸ごと合同 (B4)**: `ClassEntity.mergedInto` = 同じタブの相手のクラス id (3A404 →

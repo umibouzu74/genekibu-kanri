@@ -15,7 +15,10 @@ import {
   timeRangesOverlapOrTouch,
 } from './timeRange';
 import { availabilityNgKeys, isSurveyTeacher } from './availability';
-import type { Entity, ExternalSession, Teacher } from '../types';
+import { DEFAULT_TRAVEL } from './places';
+import { computeTravelHits, isTravelNg } from './travel';
+import type { TravelHit } from './travel';
+import type { Entity, ExternalSession, Teacher, TravelSettings } from '../types';
 
 /**
  * 本体の通常授業で、その日その講師が塾で教えている 1 コマ (utils/regularBusy が
@@ -54,6 +57,11 @@ export interface AutoNgEntry {
   sessions: ExternalSession[];
   availability?: boolean;
   regular?: RegularBusyItem[];
+  /**
+   * 場所の違う他学年セッション (亀井町の高校①〜③) との間が移動時間に足りない
+   * (utils/travel、2026-11-25)。時間は重なっていない (重なれば sessions)
+   */
+  travel?: TravelHit[];
 }
 
 // 自動NG の由来の短い表示 ("他学年" / "不在" / "通常" / "調査" / "他学年・通常・調査")。
@@ -62,6 +70,7 @@ export function autoNgSourceLabel(entry: AutoNgEntry | null | undefined): string
   if (!entry) return '';
   const parts: string[] = [];
   if (entry.sessions.length > 0) parts.push('他学年');
+  if (entry.travel?.length) parts.push('移動');
   if (entry.regular?.some(r => r.absence)) parts.push('不在');
   if (entry.regular?.some(r => !r.absence)) parts.push('通常');
   if (entry.availability) parts.push('調査');
@@ -150,6 +159,24 @@ function mergeRegularBusy(
   }
 }
 
+// 1 講師について、場所の違う他学年セッションとの間が移動時間に足りない時限を
+// entries に足す (utils/travel)。時間の重なるものは computeAutoNgEntries が拾う。
+function mergeTravelNg(
+  entries: AutoNgEntries,
+  teacherName: string,
+  externalSessions: ExternalSession[] | null | undefined,
+  periods: Entity[] | null | undefined,
+  travel: TravelSettings,
+): void {
+  for (const [key, hits] of computeTravelHits(teacherName, externalSessions, periods, travel)) {
+    const ng = hits.filter(isTravelNg);
+    if (ng.length === 0) continue;
+    const existing = entries.get(key);
+    if (!existing) entries.set(key, { sessions: [], travel: ng });
+    else existing.travel = [...(existing.travel || []), ...ng];
+  }
+}
+
 // 講師名 → 自動NG entries (上記 Map) の二段 Map をプロジェクト全体で構築。
 // NgSettings / ScheduleCell など複数箇所で使うため、O(teachers × sessions × periods) を一度に。
 //   key: teacherName, value: Map<ngKey, { sessions: [...], availability? }>
@@ -163,16 +190,22 @@ function mergeRegularBusy(
 // **呼び出し側ごとに通常授業を見に行かない** — regularBusy は utils/regularBusy が
 // 本体の判定から解いたものを、作業領域 (ProjectProvider → analysis.regularBusy) が
 // 1 回だけ作って渡す。省略 (単体のテスト・本体のデータ無し) なら従来どおり。
+// 場所の違う他学年セッション (亀井町) との間が移動時間に足りない時限 (2026-11-25) も
+// ここで合流させる。travel はプロジェクトの設定 (places.resolveTravelSettings(project))
+// を渡す。省略なら既定 (本校⇄亀井町 30 分)。
 export function computeAutoNgByTeacher(
   teachers: Teacher[] | null | undefined,
   externalSessions: ExternalSession[] | null | undefined,
   periods: Entity[] | null | undefined,
   regularBusy?: RegularBusy | null,
+  travel: TravelSettings = DEFAULT_TRAVEL,
 ): Map<string, AutoNgEntries> {
   const result = new Map<string, AutoNgEntries>();
   if (!Array.isArray(teachers)) return result;
+  const withSessions = new Set((externalSessions || []).map(s => s?.teacherName));
   for (const t of teachers) {
     const entries = computeAutoNgEntries(t.name, externalSessions, periods);
+    if (withSessions.has(t.name)) mergeTravelNg(entries, t.name, externalSessions, periods, travel);
     if (regularBusy && isSurveyTeacher(t)) mergeRegularBusy(entries, regularBusy[t.name], periods);
     for (const key of isSurveyTeacher(t) ? availabilityNgKeys(t) : []) {
       const existing = entries.get(key);
