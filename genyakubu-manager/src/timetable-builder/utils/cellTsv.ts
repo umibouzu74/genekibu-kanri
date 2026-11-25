@@ -15,6 +15,7 @@ import { effectiveConfigForTab, findCombinedGroup, makeKey, makeNgKey, makeExter
 import { computeGlobalUsage } from './analysisHelpers';
 import { computeAutoNgByTeacher } from './autoNg';
 import type { RegularBusy } from './autoNg';
+import { resolveTravelSettings } from './places';
 import { resolveTeacherDailyLimit } from '../logic/constraints/teacherConstraints';
 import { resolveGenerationParams } from './constants';
 import { parseCsvLine } from './csvImport';
@@ -237,7 +238,7 @@ export function newProblemsAfterWrites(
   if (writes.length === 0) return [];
   const after = projectWithWrites(project, writes);
   const out: string[] = [];
-  const autoNg = computeAutoNgByTeacher(project.teachers, project.externalSessions || [], project.periods || [], regularBusy);
+  const autoNg = computeAutoNgByTeacher(project.teachers, project.externalSessions || [], project.periods || [], regularBusy, resolveTravelSettings(project));
   const teachers = new Map((project.teachers || []).map(t => [t.name, t]));
   const dateLabel = new Map((project.dates || []).map(d => [d.id, d.label]));
   const periodLabel = new Map((project.periods || []).map(p => [p.id, p.label]));

@@ -19,6 +19,7 @@ import {
   seniorKoshuCourse,
   seniorKoshuKind,
   seniorKoshuTeachersFrom,
+  seniorPeriodPlace,
   toggleLessonSkip,
   updateSeniorLesson,
   upsertPeriod,
@@ -214,5 +215,53 @@ describe("表でまとめて登録", () => {
     ];
     expect(dropLessonsCoveredBySeniorKoshu(lessons, items).map((l) => l.key)).toEqual(["ext:2", "ext:3", "k"]);
     expect(dropLessonsCoveredBySeniorKoshu(lessons, [])).toBe(lessons);
+  });
+});
+
+describe("時限の場所 (2026-11-25、講習時間割作成の移動時間)", () => {
+  it("既定は名前から: 高校①〜③ = 亀井町、予備校1〜4限 = 本校 (全角の数字も)、それ以外は場所なし", () => {
+    expect(seniorPeriodPlace({ name: "高校①" })).toBe("亀井町");
+    expect(seniorPeriodPlace({ name: "高校③" })).toBe("亀井町");
+    expect(seniorPeriodPlace({ name: "予備校３限" })).toBe("本校");
+    expect(seniorPeriodPlace({ name: "予備校4限" })).toBe("本校");
+    expect(seniorPeriodPlace({ name: "高校④" })).toBe("");
+    expect(seniorPeriodPlace({ name: "特別講座" })).toBe("");
+    // 画面で選んだ場所が優先
+    expect(seniorPeriodPlace({ name: "高校①", place: "本校" })).toBe("本校");
+  });
+
+  it("担当を日付ごとに広げた予定に場所が入る (講習時間割作成の取り込みが使う)", () => {
+    const d = data();
+    expect(expandSeniorKoshu(d)[0].place).toBe("本校");
+    d.periods[0] = { ...d.periods[0], place: "亀井町" };
+    expect(expandSeniorKoshu(d)[0].place).toBe("亀井町");
+  });
+
+  it("時限を直すときに場所を選べる。既定と同じ・既定 (空) は保存しない", () => {
+    let r = upsertPeriod(EMPTY_SENIOR_KOSHU, { name: "高校①", time: "16:40-18:10" });
+    expect(r.period).toEqual({ id: 1, name: "高校①", time: "16:40-18:10" });
+    r = upsertPeriod(EMPTY_SENIOR_KOSHU, { name: "高校①", time: "16:40-18:10", place: "亀井町" });
+    expect(r.period.place).toBeUndefined();
+    r = upsertPeriod(EMPTY_SENIOR_KOSHU, { name: "高校①", time: "16:40-18:10", place: "本校" });
+    expect(r.period.place).toBe("本校");
+    // place を渡さずに直したら場所はそのまま
+    const kept = upsertPeriod(r.data, { id: 1, name: "高校①", time: "16:50-18:10" });
+    expect(kept.data.periods[0]).toEqual({ id: 1, name: "高校①", time: "16:50-18:10", place: "本校" });
+    // 既定 ("") を選び直すと外れる
+    const back = upsertPeriod(kept.data, { id: 1, name: "高校①", time: "16:50-18:10", place: "" });
+    expect(back.data.periods[0].place).toBeUndefined();
+  });
+
+  it("読み込みで場所の文字を整える (空白だけ・文字列でないものは落とす)", () => {
+    const m = migrateSeniorKoshu({
+      terms: [],
+      periods: [
+        { id: 1, name: "高校①", time: "16:40-18:10", place: " 本校 " },
+        { id: 2, name: "高校②", time: "18:20-19:50", place: "  " },
+        { id: 3, name: "高校③", time: "20:00-21:30", place: 3 },
+      ],
+      lessons: [],
+    });
+    expect(m.periods.map((p) => p.place)).toEqual(["本校", undefined, undefined]);
   });
 });

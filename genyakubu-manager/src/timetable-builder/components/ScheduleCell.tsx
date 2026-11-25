@@ -8,6 +8,7 @@ import { resolveTeacherDailyLimit } from '../logic/constraints/teacherConstraint
 import { groupTeachersBySubject } from '../utils/groupTeachersBySubject';
 import { useLongPress } from '../hooks/useLongPress';
 import { autoNgSourceLabel } from '../utils/autoNg';
+import { describeTravelCaution, travelCautionLabels } from '../utils/travel';
 import { AVAILABILITY_SYMBOL, BLANK_SYMBOL, getAvailabilityMark } from '../utils/availability';
 import { cellMatchesHighlight, type Highlight } from '../utils/highlight';
 import { printTeacherText } from '../utils/printHeader';
@@ -127,6 +128,13 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
     : assignedMark === 'maybe'
       ? 'maybe'
       : (!assignedMark && surveyAnswered?.has(assignedTeacher.name) ? 'blank' : null);
+  // 場所の違う授業 (亀井町) との間の注意 (「移動30分」「亀井町から戻り」、utils/travel)。
+  // NG のセルは NG だけを出す。違反には数えない
+  const travelCautions = assignedTeacher && !isNgAssigned
+    ? planning.travelCautions.get(assignedTeacher.name)?.get(ngKey)
+    : undefined;
+  const travelLabels = travelCautionLabels(travelCautions);
+  const travelTitle = travelCautions ? `注意 (違反には数えません): ${[...new Set(travelCautions.map(describeTravelCaution))].join(' / ')}` : '';
 
   // 合同グループ判定 (label ベース)
   const combinedGroup = entry.subject ? findCombinedGroup(project.combinedGroups, entry.subject, cLabel, dLabel) : null;
@@ -357,6 +365,9 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
                     const limit = resolveTeacherDailyLimit(t, maxDailyHours);
                     const ext = daily.external || 0;
                     const over = entry.teacher !== t.name && daily.total >= limit ? ' 超過' : '';
+                    // 場所の違う授業 (亀井町) との間の注意 (入れてよいが「移動30分」「亀井町から戻り」)
+                    const cautionText = travelCautionLabels(planning.travelCautions.get(t.name)?.get(ngKey)).join('・');
+                    if (cautionText) label += ` [${cautionText}]`;
                     label += ` (${surveyPrefix}その日${daily.total}/${limit}${ext > 0 ? ` 他${ext}` : ''}${over})`;
                   }
                 }
@@ -379,6 +390,16 @@ export default function ScheduleCell({ dateId, periodId, classId, isCompact, onC
         </div>
         {isConflict && !isCompact && <div className="text-[10px] text-builder-red font-bold text-center bg-builder-danger-soft rounded mt-1 border border-builder-danger-border">⚠️ 重複</div>}
         {isNgAssigned && !isConflict && !isCompact && <div className="text-[10px] text-builder-red font-bold text-center bg-builder-danger-soft rounded mt-1 border border-builder-danger-border">⚠️ NG設定違反</div>}
+        {/* 注意 (違反には数えない): 場所の違う授業との間が短い / 予備校部の亀井町から戻り。紙面には出さない */}
+        {travelLabels.length > 0 && (
+          <div
+            className={`text-builder-orange font-bold text-center bg-builder-warning-soft rounded border border-builder-warning-border print:hidden ${isCompact ? "text-[8px] leading-tight mt-px" : "text-[10px] mt-1"}`}
+            title={travelTitle}
+            aria-label={travelTitle}
+          >
+            🚗 {travelLabels.join('・')}
+          </div>
+        )}
       </div>
     </td>
   );

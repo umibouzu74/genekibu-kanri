@@ -14,6 +14,7 @@
 import { effectiveConfigForTab, makeKey, makeNgKey } from './scheduleKey';
 import { formatHHmm, getSessionTimeRange } from './timeRange';
 import { describeRegularBusy } from './autoNg';
+import { describeTravelHit } from './travel';
 import type { AutoNgEntries } from './autoNg';
 import { normalizeSessionCourse } from './externalSessionShape';
 import type { Project, Teacher } from '../types';
@@ -29,7 +30,7 @@ export interface NgViolationItem {
   classLabels: string[];
   subject: string;
   teacher: string;
-  /** NG の理由 (「予備校４限 14:20〜15:30」「通常授業 附中1 数学 19:55-20:55」「手動NG」「出勤可能調査で ×」) */
+  /** NG の理由 (「予備校４限 14:20〜15:30」「通常授業 附中1 数学 19:55-20:55」「移動が間に合わない: …」「手動NG」「出勤可能調査で ×」) */
   reasons: string[];
 }
 
@@ -80,6 +81,11 @@ export function computeNgViolationList(
           // 通常授業との重なり (本体の時間割・代行・振替から導出。utils/regularBusy)
           (auto?.regular || []).forEach(r => {
             const text = describeRegularBusy(r);
+            if (!reasons.includes(text)) reasons.push(text);
+          });
+          // 場所の違う他学年セッション (亀井町) との間が移動時間に足りない (utils/travel)
+          (auto?.travel || []).forEach(h => {
+            const text = describeTravelHit(h);
             if (!reasons.includes(text)) reasons.push(text);
           });
           if (auto?.availability) reasons.push('出勤可能調査で ×');

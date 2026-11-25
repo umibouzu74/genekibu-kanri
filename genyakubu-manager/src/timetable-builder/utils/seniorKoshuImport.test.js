@@ -144,3 +144,54 @@ describe('取り込んだ印 (source / sourceKey)', () => {
     expect(ext.map(l => l.key)).toEqual(['ext:2']);
   });
 });
+
+describe('場所 (2026-11-25)', () => {
+  it('本体の時限の場所を place に入れる (場所なしは持たない)', () => {
+    const plan = planSeniorKoshuImport(base(), [item({ place: '亀井町' }), item({ key: '1:2026-12-26', date: '2026-12-26', place: '' })], today);
+    expect(plan.toAdd[0].place).toBe('亀井町');
+    expect('place' in plan.toAdd[1]).toBe(false);
+    // 取り込んだセッションに場所が残る
+    const p = reduce(base(), { type: 'teacher/replaceExternalSessions', payload: { removeIds: [], items: plan.toAdd } });
+    expect(p.externalSessions[0].place).toBe('亀井町');
+  });
+
+  it('場所の欄ができる前に取り込んだもの (place なし) は「場所を入れる」として入れ直す', () => {
+    const first = planSeniorKoshuImport(base(), [item()], today);
+    const legacy = reduce(base(), { type: 'teacher/replaceExternalSessions', payload: { removeIds: [], items: first.toAdd } });
+    expect(legacy.externalSessions[0].place).toBeUndefined();
+    const plan = planSeniorKoshuImport(legacy, [item({ place: '本校' })], today);
+    expect(plan.changedIds).toEqual([legacy.externalSessions[0].id]);
+    expect(plan.placeOnlyIds).toEqual([legacy.externalSessions[0].id]);
+    // 入れ直した後は取り込み済み
+    const next = reduce(legacy, { type: 'teacher/replaceExternalSessions', payload: { removeIds: plan.changedIds, items: plan.toAdd } });
+    const again = planSeniorKoshuImport(next, [item({ place: '本校' })], today);
+    expect(again.unchanged).toBe(1);
+    expect(again.toAdd).toEqual([]);
+  });
+
+  it('読み込みで場所と移動時間の設定を整える', () => {
+    const p = migrateProject(base({
+      externalSessions: [
+        { id: 1, date: '12/25(金)', teacherName: '滝澤', label: '', memo: '', startTime: '12:25', endTime: '13:35', place: ' 亀井町 ' },
+        { id: 2, date: '12/25(金)', teacherName: '堀上', label: '', memo: '', startTime: '12:25', endTime: '13:35', place: '' },
+      ],
+      travel: { routes: [{ a: '本校', b: '亀井町', minutes: '25' }], cautionMinutes: 60 },
+    }));
+    expect(p.externalSessions.map(s => s.place)).toEqual(['亀井町', undefined]);
+    expect(p.travel).toEqual({ routes: [{ a: '本校', b: '亀井町', minutes: 25 }], cautionMinutes: 60 });
+    // 既定と同じ・崩れた設定は持たない
+    expect('travel' in migrateProject(base({ travel: { routes: [], cautionMinutes: 60 } }))).toBe(false);
+    expect('travel' in migrateProject(base({ travel: 'x' }))).toBe(false);
+  });
+
+  it('移動時間の設定を直す / 既定に戻す (既定と同じなら持たない)', () => {
+    let p = reduce(base(), { type: 'project/setTravel', payload: { travel: { routes: [{ a: '本校', b: '亀井町', minutes: 40 }], cautionMinutes: 60 } } });
+    expect(p.travel.routes[0].minutes).toBe(40);
+    p = reduce(p, { type: 'project/setTravel', payload: { travel: { routes: [{ a: '本校', b: '亀井町', minutes: 30 }], cautionMinutes: 60 } } });
+    expect('travel' in p).toBe(false);
+    p = reduce(p, { type: 'project/setTravel', payload: { travel: { routes: [{ a: '本校', b: '亀井町', minutes: 30 }], cautionMinutes: 90 } } });
+    expect(p.travel.cautionMinutes).toBe(90);
+    p = reduce(p, { type: 'project/setTravel', payload: { travel: null } });
+    expect('travel' in p).toBe(false);
+  });
+});

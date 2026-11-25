@@ -38,9 +38,10 @@ import { framePublishState, isPublishState, leastPublished, projectPublishState,
 import { computeCourseSplit, externalSessionContentKey, isExternalOnlyDate, normalizeSessionCourse } from '../utils/externalSessionShape';
 import { normalizeEventName } from '../utils/eventName';
 import { normalizeDayStreakRules, normalizeRegularLink } from '../utils/regularLink';
+import { isDefaultTravelSettings, normalizePlace, normalizeTravelSettings } from '../utils/places';
 import { applyWritesToSchedule } from '../utils/cellTsv';
 import type { CellWrite } from '../utils/cellTsv';
-import type { DayStreakRule, RegularClassLink, TeacherUsage } from '../types';
+import type { DayStreakRule, RegularClassLink, TeacherUsage, TravelSettings } from '../types';
 import type {
   AvailabilityMark,
   CombinedGroup,
@@ -106,6 +107,7 @@ export type ProjectAction =
   | { type: 'teacher/setUsage'; payload: { name: string; usage: TeacherUsage | null } }
   | { type: 'project/setYobikoReserve'; payload: { value: boolean } }
   | { type: 'project/setDayStreakRules'; payload: { rules: DayStreakRule[] } }
+  | { type: 'project/setTravel'; payload: { travel: TravelSettings | null } }
   | { type: 'teacher/toggleNg'; payload: { idx: number; date: string; period: string } }
   | { type: 'teacher/setNgBatch'; payload: { idxs: number[]; dateLabels: string[]; periodLabels: string[]; value: boolean } }
   | { type: 'teacher/importNg'; payload: { entries: Array<{ name: string; date: string; period: string }> } }
@@ -1346,6 +1348,17 @@ function applyAction(project: Project, action: ProjectAction): Project {
       }
       return { ...project, dayStreakRules: rules };
     }
+    // 場所の間の移動時間 (utils/places)。既定と同じ・null なら持たない (未設定 = 既定)
+    case 'project/setTravel': {
+      const next = normalizeTravelSettings(action.payload.travel);
+      if (!next || isDefaultTravelSettings(next)) {
+        if (!('travel' in project)) return project;
+        const { travel: _t, ...rest } = project;
+        return rest as Project;
+      }
+      if (JSON.stringify(next) === JSON.stringify(project.travel)) return project;
+      return { ...project, travel: next };
+    }
     case 'teacher/toggleNg': {
       const { idx, date, period } = action.payload;
       // idx 不正 (undefined / 範囲外) は no-op。UI 側の teacherIdxByName 解決が
@@ -1591,6 +1604,8 @@ function applyAction(project: Project, action: ProjectAction): Project {
           ns.startTime = it.startTime;
           if (it.endTime) ns.endTime = it.endTime;
         }
+        const place = normalizePlace(it.place);
+        if (place) ns.place = place;
         if (it.source === 'seniorKoshu' && it.sourceKey) {
           ns.source = 'seniorKoshu';
           ns.sourceKey = it.sourceKey;

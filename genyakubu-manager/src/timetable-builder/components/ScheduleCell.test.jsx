@@ -619,3 +619,67 @@ describe('ScheduleCell — 複数選択 (N2a)', () => {
     expect(td.className).not.toContain('opacity-40');
   });
 });
+
+describe('ScheduleCell — 本校 ⇄ 亀井町の移動 (utils/travel)', () => {
+  const teachers = [
+    { name: '石原', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+    { name: '半田', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+    { name: '堀上', subjects: ['英語'], ngSlots: [], ngClasses: [], priorityClasses: [] },
+  ];
+  const k = makeNgKey('12/25(木)', '1限');
+  const kamei = { id: 1, date: '12/25(木)', teacherName: '石原', memo: '高校①', startTime: '16:40', endTime: '18:10', place: '亀井町' };
+  const analysis = {
+    autoNgByTeacher: new Map([
+      ['石原', new Map([[k, { sessions: [], travel: [{ session: kamei, place: '亀井町', direction: 'fromSession', gap: 20, minutes: 30 }] }]])],
+    ]),
+  };
+  const back = { session: { ...kamei, teacherName: '半田', memo: '高校②', startTime: '18:20', endTime: '19:50' }, place: '亀井町', direction: 'fromSession', gap: 30, minutes: 30 };
+  const planning = {
+    ...EMPTY_PLANNING,
+    travelCautions: new Map([['半田', new Map([[k, [{ kind: 'gap', hit: back }, { kind: 'return', hit: back }]]])]]),
+  };
+
+  it('候補: 移動が間に合わない講師は (NG:移動) で選べない、注意の講師は [移動30分・亀井町から戻り] を添えて選べる', () => {
+    renderCell({
+      planning,
+      contextOverrides: {
+        project: { teachers, subjectColors: {}, combinedGroups: [] },
+        currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語' } },
+        analysis,
+      },
+    });
+    const options = Array.from(document.getElementById('select-1-1-1-teacher').options);
+    const opt = (name) => options.find(o => o.value === name);
+    expect(opt('石原').textContent).toBe('石原 (NG:移動)');
+    expect(opt('石原').disabled).toBe(true);
+    expect(opt('半田').textContent).toBe('半田 [移動30分・亀井町から戻り] (その日0/6)');
+    expect(opt('半田').disabled).toBe(false);
+    expect(opt('堀上').textContent).toBe('堀上 (その日0/6)');
+  });
+
+  it('セル: 注意の講師が入っていれば「移動30分・亀井町から戻り」を出す (違反の表示は出さない)', () => {
+    renderCell({
+      planning,
+      contextOverrides: {
+        project: { teachers, subjectColors: {}, combinedGroups: [] },
+        currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '半田' } },
+        analysis,
+      },
+    });
+    expect(document.body.textContent).toContain('🚗 移動30分・亀井町から戻り');
+    expect(document.body.textContent).not.toContain('NG設定違反');
+  });
+
+  it('セル: NG:移動の講師が入っていれば NG設定違反 (注意は出さない)', () => {
+    renderCell({
+      planning,
+      contextOverrides: {
+        project: { teachers, subjectColors: {}, combinedGroups: [] },
+        currentSchedule: { [makeKey(1, 1, 1)]: { subject: '英語', teacher: '石原' } },
+        analysis,
+      },
+    });
+    expect(document.body.textContent).toContain('NG設定違反');
+    expect(document.body.textContent).not.toContain('🚗');
+  });
+});

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { Dispatch } from 'react';
 import type { ProjectAction } from './projectReducer';
-import type { AvailabilityMark, DayStreakRule, ExternalSessionDraft, ExternalSessionPreset, TeacherUsage } from '../types';
+import type { AvailabilityMark, DayStreakRule, ExternalSessionDraft, ExternalSessionPreset, TeacherUsage, TravelSettings } from '../types';
 
 // 講師管理アクションを dispatch でラップする。
 // dispatch は useReducer から得られる安定参照なので、返り値の関数群も
@@ -25,6 +25,8 @@ export function useTeacherActions(dispatch: Dispatch<ProjectAction>) {
     setYobikoReserve: (value: boolean) => dispatch({ type: 'project/setYobikoReserve', payload: { value } }),
     // B2: 連続出勤日数の上限
     setDayStreakRules: (rules: DayStreakRule[]) => dispatch({ type: 'project/setDayStreakRules', payload: { rules } }),
+    // 場所の間の移動時間 (null = 既定に戻す)
+    setTravel: (travel: TravelSettings | null) => dispatch({ type: 'project/setTravel', payload: { travel } }),
     toggleTeacherNg: (idx: number, date: string, period: string) =>
       dispatch({ type: 'teacher/toggleNg', payload: { idx, date, period } }),
     setNgBatch: (idxs: number[], dateLabels: string[], periodLabels: string[], value: boolean) =>

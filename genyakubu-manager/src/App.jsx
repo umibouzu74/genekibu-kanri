@@ -613,6 +613,9 @@ export default function App() {
     const names = new Set(partTimeStaffNames);
     for (const s of slots) for (const t of slotTeacherNamesEver(s)) names.add(t);
     for (const c of teacherAffiliations || []) if (c?.name) names.add(c.name);
+    // 高校・予備校の講習だけの先生 (時間割にコマが無い) も所属を引く。講習時間割作成の
+    // 「亀井町から戻り」(予備校部の先生) は、この人たちの亀井町の授業で決まるため
+    for (const it of seniorKoshuItems) if (it?.teacher) names.add(it.teacher);
     const fy = fiscalYearOf(todayStr);
     const out = {};
     for (const year of [fy - 1, fy, fy + 1]) {
@@ -621,7 +624,7 @@ export default function App() {
       out[year] = m;
     }
     return out;
-  }, [slots, partTimeStaffNames, teacherAffiliations, affiliationIndex, partTimeNameSet, todayStr]);
+  }, [slots, partTimeStaffNames, teacherAffiliations, affiliationIndex, partTimeNameSet, todayStr, seniorKoshuItems]);
   // 講師の所属で今年度「退職・非表示」の講師 (講習時間割作成へ読み取り専用で渡す)
   const retiredTeacherNames = useMemo(
     () => [...retiredNamesForYear(teacherAffiliations, fiscalYearOf(todayStr))],

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPlanningHints, categoriesForSeason, computeStreakViolations, resolveTeacherUsage } from './planningHints';
+import { buildPlanningHints, categoriesForSeason, computeStreakViolations, resolveTeacherUsage, returnCautionTeachers } from './planningHints';
 import { normalizeDayStreakRules } from './regularLink';
 import { makeKey } from './scheduleKey';
 
@@ -73,5 +73,16 @@ describe('組み方の手がかり', () => {
         { maxDays: 2 },
       ])
     ).toEqual([{ id: 1, maxDays: 2, categories: ['yobiko'], fromTime: '18:30' }]);
+  });
+});
+
+describe('亀井町から戻り (予備校部の講師、2026-11-25)', () => {
+  it('所属が予備校部の講師だけを「戻り」を見る講師にし、自動作成の手がかりにも載せる', () => {
+    const teachers = [{ name: '半田' }, { name: '石原' }, { name: '新人' }];
+    const categories = { 半田: 'yobiko', 石原: 'genyakuFull' };
+    expect([...returnCautionTeachers(teachers, categories)]).toEqual(['半田']);
+    const project = { teachers: teachers.map(t => ({ ...t, subjects: [], ngSlots: [], ngClasses: [], priorityClasses: [] })), tabs: [], dates: [], periods: [], subjects: [] };
+    expect(buildPlanningHints(project, 1, null, categories).returnTeachers).toEqual(['半田']);
+    expect(buildPlanningHints(project, 1, null, {}).returnTeachers).toBeUndefined();
   });
 });

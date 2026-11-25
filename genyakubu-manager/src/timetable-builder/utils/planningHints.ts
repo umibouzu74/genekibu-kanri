@@ -202,6 +202,25 @@ export interface PlanningHints {
    * 通常授業と重なる / 接する時限に講師を入れない (ハード制約 = ほかの NG と同じ)
    */
   regularBusy?: RegularBusy;
+  /**
+   * 「亀井町から戻り」を見る講師 (本体の所属が予備校部。returnCautionTeachers)。自動作成は
+   * 場所の違う授業のあとの本校のコマで、この講師を後回しにする (NG にはしない。utils/travel)
+   */
+  returnTeachers?: string[];
+}
+
+/**
+ * 場所の違う授業 (亀井町) のあとに本校のコマへ戻るとき注意を出す講師: 現役部以外 =
+ * 本体の所属が予備校部 (連続出勤日数の上限の「予備校部」と同じ)。現役部の先生は車で
+ * 動けるので、間の分数のルールだけを当てる
+ */
+export function returnCautionTeachers(
+  teachers: readonly Pick<Teacher, 'name'>[] | null | undefined,
+  categories: Record<string, string>,
+): Set<string> {
+  const out = new Set<string>();
+  for (const t of teachers || []) if (t?.name && categories[t.name] === YOBIKO_CATEGORY) out.add(t.name);
+  return out;
 }
 
 export function buildPlanningHints(
@@ -213,6 +232,8 @@ export function buildPlanningHints(
 ): PlanningHints {
   const hints: PlanningHints = {};
   if (regularBusy && Object.keys(regularBusy).length > 0) hints.regularBusy = regularBusy;
+  const back = returnCautionTeachers(project.teachers, categories);
+  if (back.size > 0) hints.returnTeachers = [...back];
   const tab = (project.tabs || []).find(t => t.id === activeTabId);
   if (tab && usualIndex?.hasLinks) {
     const usual: Record<string, string[]> = {};
