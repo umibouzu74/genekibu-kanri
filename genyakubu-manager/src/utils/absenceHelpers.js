@@ -3,6 +3,7 @@
 
 import {
   biweeklyActiveTeacher,
+  getSlotWeekType,
   isBiweekly,
   isSlotForTeacher,
   slotsOnDate,
@@ -124,28 +125,67 @@ export function getAbsentSlotIds(slots, dateStr, absentTeachers, ctx = {}) {
   return out;
 }
 
+// 合同の照合に使う「その日の科目」。隔週コマの "英/数" は担当週で解く
+// (A 週 = 英、B 週 = 数。biweeklyDisplaySubject と同じ定義)。素の科目名を
+// 科目マスタに当てると "英/数" は別名「英」で毎週 英語 になり、B 週の数学の
+// コマに英語のコマが合同候補として並んでいた (2026-11-25)。
+// 週を決められない (隔週の起点が無い) ときは両方の科目を返す (候補を
+// 黙って狭めない)。ctx ({ date, biweeklyAnchors, holidays, examPeriods }) の
+// 日付が無ければ素の科目名のまま (従来どおり)。
+export function combineSubjectsOnDate(slot, ctx = {}) {
+  const raw = slot?.subj || "";
+  if (!ctx?.date || !isBiweekly(slot?.note)) return [raw];
+  const parts = raw.split("/").map((s) => s.trim()).filter(Boolean);
+  if (parts.length <= 1) return [raw];
+  const wt = getSlotWeekType(
+    ctx.date,
+    slot,
+    ctx.biweeklyAnchors,
+    ctx.holidays,
+    ctx.examPeriods
+  );
+  if (wt == null) return parts;
+  return [parts[wt === "A" ? 0 : 1] || parts[parts.length - 1]];
+}
+
+// 画面に出す合同の相手の名前 (「中3A 数」)。科目は combineSubjectsOnDate。
+export function describeCombineSlot(slot, ctx = {}) {
+  if (!slot) return "";
+  const cls = slot.cls && slot.cls !== "-" ? slot.cls : "";
+  return `${slot.grade}${cls} ${combineSubjectsOnDate(slot, ctx).join("/")}`;
+}
+
+// 教科の照合: 科目マスタ経由での subjectId マッチを優先。
+// 双方が未マッチなら文字列完全一致で fallback。
+function sameSubject(aSubj, bSubj, subjects) {
+  const aId = pickSubjectId(aSubj, subjects);
+  const bId = pickSubjectId(bSubj, subjects);
+  if (aId != null && bId != null) return aId === bId;
+  if (aId == null && bId == null) return (aSubj || "") === (bSubj || "");
+  return false;
+}
+
 // 2 つのコマが「右クリック合同候補」として有効かを判定する。
 // 同日・同学年・同教科 (科目IDまたは文字列同一) であれば OK。
 // cls の差異は許容 (S/A/B、文系/理系 の合同を許すため)。
 // 同一スロット / day 違い / grade 違い はすべて false。
-export function canCombineSlots(a, b, subjects = []) {
+// ctx に日付を渡すと、隔週コマはその日の担当週の科目で比べる
+// (combineSubjectsOnDate)。日付のある画面 (欠勤組み換え) は必ず渡すこと。
+export function canCombineSlots(a, b, subjects = [], ctx = {}) {
   if (!a || !b) return false;
   if (a.id === b.id) return false;
   if (a.day !== b.day) return false;
   if (a.grade !== b.grade) return false;
 
-  // 教科の照合: 科目マスタ経由での subjectId マッチを優先。
-  // 双方が未マッチなら文字列完全一致で fallback。
-  const aId = pickSubjectId(a.subj, subjects);
-  const bId = pickSubjectId(b.subj, subjects);
-  if (aId != null && bId != null) return aId === bId;
-  if (aId == null && bId == null) return (a.subj || "") === (b.subj || "");
-  return false;
+  const aSubjs = combineSubjectsOnDate(a, ctx);
+  const bSubjs = combineSubjectsOnDate(b, ctx);
+  return aSubjs.some((x) => bSubjs.some((y) => sameSubject(x, y, subjects)));
 }
 
 // 振替先で合同にできるか (振替で同じ日へ入ってきたコマ同士)。
 // 振替元の曜日が違っても同じ日に来ているので曜日は問わない。学年・教科の
-// 照合は canCombineSlots と同じ。
+// 照合は canCombineSlots と同じ (振替で入るコマの科目は振替元の日で
+// 解決済みなので ctx は要らない)。
 export function canCombineIncoming(a, b, subjects = []) {
   if (!a || !b) return false;
   return canCombineSlots({ ...a, day: "" }, { ...b, day: "" }, subjects);
@@ -153,13 +193,19 @@ export function canCombineIncoming(a, b, subjects = []) {
 
 // 同日のコマ群から、与えられたスロットに対する合同候補を返す。
 // 候補は canCombineSlots に通ったコマ全て。既に別の combine adjustment で
-// 吸収されているコマは除外する (`absorbedSlotIds`)。
-export function findCombineCandidates(slot, daySlots, subjects = [], absorbedSlotIds = new Set()) {
+// 吸収されているコマは除外する (`absorbedSlotIds`)。ctx は canCombineSlots と同じ。
+export function findCombineCandidates(
+  slot,
+  daySlots,
+  subjects = [],
+  absorbedSlotIds = new Set(),
+  ctx = {}
+) {
   return daySlots.filter(
     (o) =>
       o.id !== slot.id &&
       !absorbedSlotIds.has(o.id) &&
-      canCombineSlots(slot, o, subjects)
+      canCombineSlots(slot, o, subjects, ctx)
   );
 }
 
