@@ -10,6 +10,7 @@ const GRADE_ORDER = [
   "高1", "高2", "高3",
   "中1-3",
   "高1高2",
+  "高1-3",
 ];
 
 const CLS_ORDER = [

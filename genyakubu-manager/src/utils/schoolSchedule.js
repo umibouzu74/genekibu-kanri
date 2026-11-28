@@ -24,6 +24,10 @@ import { compareJa } from "./sortJa";
 import { eachDateStrInRange, fmtMD } from "./dateHelpers";
 import { normalizeExamDates } from "./migrate";
 import { HIGH_GRADES } from "../constants/schools";
+import { expandGradeRange } from "./timetable";
+
+// 共通学年「高1-3」は高1〜高3 として見る (学年の絞り込み・模試の色分け)
+const expandGrades = (grades) => (grades || []).flatMap((g) => expandGradeRange(String(g)));
 
 export const MOCK_EVENT_TYPE = "mock";
 export const OPTIONAL_MOCK_TAG = "希望者";
@@ -126,7 +130,7 @@ export function normalizeSchoolFilter(raw) {
 export function gradeMatches(targetGrades, gradeKey) {
   const want = SCHOOL_GRADE_FILTERS.find((g) => g.key === gradeKey)?.grades;
   if (!want) return true;
-  const grades = targetGrades || [];
+  const grades = expandGrades(targetGrades);
   if (grades.length === 0) return true;
   return grades.some((g) => want.includes(g));
 }
@@ -307,7 +311,7 @@ export function describeSchoolBadge(badge, ds) {
 
 /** 模試の色分け: 高1・2 を含む / 高3 のみ / 学年の記載なし (それ以外もここ) */
 export function mockGradeClass(grades) {
-  const g = grades || [];
+  const g = expandGrades(grades);
   if (g.some((x) => x === "高1" || x === "高2")) return "g12";
   if (g.includes("高3")) return "g3";
   return "all";

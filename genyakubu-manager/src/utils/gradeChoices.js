@@ -8,8 +8,12 @@
 // 中1〜3 から自動で広げると、期末特訓中も実施する中1-3 の土曜プレップまで
 // 止まるので、**共通学年はそれ自体を選んだときだけ**止める。そのために
 // 選択肢に出す。
+//
+// 並び: 中学部 → 高校部 → その他。同じ部の中は既知の共通学年
+// (constants/schools の COMMON_GRADES の順。「高1-3」は「高1高2」の後ろ) →
+// それ以外の文字順。
 
-import { ALL_GRADES } from "../constants/schools";
+import { ALL_GRADES, COMMON_GRADES } from "../constants/schools";
 import { gradeToDept } from "./scheduleHelpers";
 
 const DEPT_ORDER = ["中学部", "高校部"];
@@ -19,9 +23,19 @@ function deptRank(grade) {
   return i < 0 ? DEPT_ORDER.length : i;
 }
 
+function commonRank(grade) {
+  const i = COMMON_GRADES.indexOf(grade);
+  return i < 0 ? COMMON_GRADES.length : i;
+}
+
+/** 共通学年の並べ替え (部 → 既知の共通学年の順 → 文字順) */
+export function compareCommonGrades(a, b) {
+  return deptRank(a) - deptRank(b) || commonRank(a) - commonRank(b) || a.localeCompare(b, "ja");
+}
+
 /**
  * 時間割のコマにある、標準の学年以外の学年 (共通学年)。並びは
- * 中学部 → 高校部 → その他、同じ部の中は文字順。
+ * 中学部 → 高校部 → その他、同じ部の中は COMMON_GRADES の順 → 文字順。
  * @param {Array<{grade?: string}>} slots
  * @returns {string[]}
  */
@@ -33,7 +47,7 @@ export function extraGradesFromSlots(slots) {
     if (!g || standard.has(g)) continue;
     set.add(g);
   }
-  return [...set].sort((a, b) => deptRank(a) - deptRank(b) || a.localeCompare(b, "ja"));
+  return [...set].sort(compareCommonGrades);
 }
 
 /**
@@ -53,6 +67,18 @@ export function gradeChoices(slots, selected = []) {
     }
   }
   return out;
+}
+
+/**
+ * 自由入力の学年欄の候補 (コマの編集・追加授業の datalist、時間割の対象学年)。
+ * 標準の学年 + 既知の共通学年 (まだどのコマにも無くても出す。初めてその学年の
+ * コマを作るときに選べるように) + コマにあるその他の学年。
+ * @param {Array<{grade?: string}>} [slots]
+ * @returns {string[]}
+ */
+export function gradeSuggestions(slots = []) {
+  const extras = new Set([...COMMON_GRADES, ...extraGradesFromSlots(slots)]);
+  return [...ALL_GRADES, ...[...extras].sort(compareCommonGrades)];
 }
 
 /** 標準の学年ではない (共通学年) か。チップの見た目を分けるのに使う。 */

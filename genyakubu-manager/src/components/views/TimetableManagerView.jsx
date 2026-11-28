@@ -16,6 +16,7 @@ import { CohortCutoffEditor } from "../CohortCutoffEditor";
 import { TimeBulkEditPanel } from "../TimeBulkEditPanel";
 import { CutoffTimeline } from "../CutoffTimeline";
 import { findSlotsOutsideTimetableGrades } from "../../utils/timetable";
+import { gradeSuggestions, isCommonGrade } from "../../utils/gradeChoices";
 import {
   describeChangedTeacherSlot,
   gradesOfTimetable,
@@ -391,6 +392,7 @@ export function TimetableManagerView({
             ackKey={formAckKey}
             setAckKey={setFormAckKey}
             slotCountByTT={slotCountByTT}
+            slots={slots}
           />
         )}
 
@@ -408,6 +410,7 @@ export function TimetableManagerView({
                 ackKey={formAckKey}
                 setAckKey={setFormAckKey}
                 slotCountByTT={slotCountByTT}
+                slots={slots}
               />
             ) : (
               <div
@@ -824,6 +827,7 @@ function TimetableForm({
   ackKey,
   setAckKey,
   slotCountByTT,
+  slots,
 }) {
   const saveEnabled = canSave(checks, ackKey);
   return (
@@ -899,6 +903,13 @@ function TimetableForm({
             </span>
           )}
         </label>
+        {!isDefault && (
+          <GradeToggleChips
+            value={form.grades}
+            onChange={(grades) => setForm({ ...form, grades })}
+            slots={slots}
+          />
+        )}
         <OverlapWarning
           checks={checks}
           ackKey={ackKey}
@@ -923,6 +934,49 @@ function TimetableForm({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// 対象学年の入力欄 (カンマ区切り) に学年を足す / 外すチップ。標準の学年と
+// 共通学年 (中1-3・附中・高1高2・高1-3。点線) を並べる。共通学年は対象学年に
+// 書かなくても、「中1-3」「高1-3」は中1〜3 / 高1〜3 のどれかがあれば当たる
+// (timetable.gradeMatchesTimetable)。「高1高2」はそれ自体を書いたときだけ
+function GradeToggleChips({ value, onChange, slots }) {
+  const picked = parseGradesInput(value);
+  const options = gradeSuggestions(slots);
+  for (const g of picked) if (!options.includes(g)) options.push(g);
+  const toggle = (g) => {
+    const next = picked.includes(g) ? picked.filter((x) => x !== g) : [...picked, g];
+    onChange(next.join(", "));
+  };
+  return (
+    <div role="group" aria-label="対象学年を選ぶ" style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: -2 }}>
+      {options.map((g) => {
+        const sel = picked.includes(g);
+        const common = isCommonGrade(g);
+        return (
+          <button
+            key={g}
+            type="button"
+            aria-pressed={sel}
+            onClick={() => toggle(g)}
+            title={common ? "共通学年 (学年をまたぐコマの学年)" : undefined}
+            style={{
+              fontSize: 11,
+              padding: "2px 8px",
+              borderRadius: 6,
+              cursor: "pointer",
+              background: sel ? "#e3ecfa" : "#fff",
+              color: sel ? "#1a4a8a" : "#888",
+              border: `1px ${common ? "dashed" : "solid"} ${sel ? "#8aa8d8" : "#ccc"}`,
+              fontWeight: sel ? 700 : 400,
+            }}
+          >
+            {g}
+          </button>
+        );
+      })}
     </div>
   );
 }

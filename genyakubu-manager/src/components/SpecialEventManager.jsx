@@ -1,6 +1,5 @@
 import { Fragment, useMemo, useRef, useState } from "react";
 import {
-  ALL_GRADES,
   DEPT_COLOR,
   HIGH_GRADES,
   MIDDLE_GRADES,
@@ -8,6 +7,7 @@ import {
   isValidDateStr,
 } from "../data";
 import { nextNumericId } from "../utils/schema";
+import { gradeChoices, isCommonGrade } from "../utils/gradeChoices";
 import { useToasts } from "../hooks/useToasts";
 import { useRemoveManyWithUndo, useRemoveWithUndo } from "../hooks/useCrudResource";
 import {
@@ -34,6 +34,8 @@ import {
 export function SpecialEventManager({
   specialEvents,
   onSave,
+  // 対象学年のチップに時間割の共通学年 (附中・中1-3・高1高2・高1-3) を出すのに使う
+  slots = [],
   // 講師の月間予定に出す種別 (全員共通の設定、utils/specialEventDisplay)
   display,
   onSaveDisplay,
@@ -89,10 +91,14 @@ export function SpecialEventManager({
     save: onSave,
   });
 
+  // 対象学年の選択肢 = 標準の学年 + 時間割にある共通学年 (休講・テスト期間と同じ)
+  const gradeOptions = useMemo(() => gradeChoices(slots, targetGrades), [slots, targetGrades]);
+
   const toggleGrade = (g) => {
     if (allGrades) {
+      // 全学年 (= 共通学年も含む) からその学年だけ外す
       setAllGrades(false);
-      setTargetGrades(ALL_GRADES.filter((gr) => gr !== g));
+      setTargetGrades(gradeOptions.filter((gr) => gr !== g));
       return;
     }
     const next = targetGrades.includes(g)
@@ -524,13 +530,15 @@ export function SpecialEventManager({
               </button>
             </div>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {ALL_GRADES.map((g) => {
+              {gradeOptions.map((g) => {
                 const dept = gradeToDept(g);
                 const col = DEPT_COLOR[dept] || { b: "#eee", f: "#444" };
                 const sel = isGradeSelected(g);
+                const common = isCommonGrade(g);
                 return (
                   <label
                     key={g}
+                    title={common ? "共通学年のコマ (附中の確認テスト・中1-3 のプレップ・高1-3 の Speaking/Listening など)" : undefined}
                     style={{
                       display: "flex",
                       alignItems: "center",
@@ -541,7 +549,7 @@ export function SpecialEventManager({
                       cursor: "pointer",
                       background: sel ? col.b : "#f5f5f5",
                       color: sel ? col.f : "#aaa",
-                      border: `1px solid ${sel ? col.accent || "#ccc" : "#ddd"}`,
+                      border: `1px ${common ? "dashed" : "solid"} ${sel ? col.accent || "#ccc" : "#ddd"}`,
                       fontWeight: sel ? 700 : 400,
                       transition: "all .15s",
                       userSelect: "none",

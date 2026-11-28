@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  courseGradeMatches,
   effectiveMapping,
   expandGradeLabel,
   gradesOverlap,
@@ -129,6 +130,51 @@ describe("suggestMapping", () => {
     // どの講座の曜日にも入らない (= 予定表の範囲外) ので出さない
     expect(unmatched.map((u) => u.key)).toEqual(["高2|東大京大医進 英語"]);
     expect(unmatched[0].days).toEqual(["水"]);
+  });
+});
+
+describe("suggestMapping: 共通学年「高1-3」(2026-11-28)", () => {
+  // 高1・高2 の予定表と 高3 の予定表の両方に「スピーキング・リスニング」の列がある
+  const sl12 = {
+    ...course("高1・高2|スピーキング・リスニング", { grades: ["高1", "高2"], name: "スピーキング・リスニング", days: [6] }),
+    family: "高1・高2",
+  };
+  const sl3 = {
+    ...course("高3|スピーキング・リスニング", { grades: ["高3"], name: "スピーキング・リスニング", days: [6] }),
+    family: "高3",
+  };
+  const prep = {
+    ...course("高1・高2|高予備プレップ", { grades: ["高1", "高2"], name: "高予備プレップ", days: [6] }),
+    family: "高1・高2",
+  };
+  const slots = [
+    { id: 728, day: "土", grade: "高1-3", subj: "Speaking/Listening", room: "亀63" },
+    { id: 5, day: "土", grade: "高1高2", subj: "高予備プレップ", room: "" },
+  ];
+
+  it("1 つのコマを 高1・高2 の予定表と 高3 の予定表の両方の講座に当てる (どちらつかずにしない)", () => {
+    const { byCourse, unmatched } = suggestMapping([sl12, sl3, prep], slots);
+    expect(byCourse.get(sl12.key)).toEqual({ subjects: ["高1-3|Speaking/Listening"], ambiguous: [] });
+    expect(byCourse.get(sl3.key)).toEqual({ subjects: ["高1-3|Speaking/Listening"], ambiguous: [] });
+    expect(unmatched).toEqual([]);
+  });
+
+  it("高1・高2 の予定表だけでも当たる", () => {
+    const { byCourse } = suggestMapping([sl12, prep], slots);
+    expect(byCourse.get(sl12.key).subjects).toEqual(["高1-3|Speaking/Listening"]);
+  });
+
+  it("「高1高2」は従来どおり 高1・高2 の講座だけ (高3 の講座には入らない)", () => {
+    const prep3 = { ...course("高3|高予備プレップ", { grades: ["高3"], name: "高予備プレップ", days: [6] }), family: "高3" };
+    const { byCourse } = suggestMapping([prep, prep3], slots);
+    expect(byCourse.get(prep.key).subjects).toEqual(["高1高2|高予備プレップ"]);
+    expect(byCourse.get(prep3.key).subjects).toEqual([]);
+  });
+
+  it("対応表の候補でも 高1-3 は 高1・高2 / 高3 のどちらの講座の学年にも入る", () => {
+    expect(courseGradeMatches(sl12, "高1-3")).toBe(true);
+    expect(courseGradeMatches(sl3, "高1-3")).toBe(true);
+    expect(courseGradeMatches(sl3, "高1高2")).toBe(false);
   });
 });
 

@@ -64,7 +64,14 @@ export function SlotForm({ slot, onSave, onCancel, suggestions, timetables, defa
     }
     // 複数講師の区切りを正史の "·" に正規化して保存する (H1f と同じ理由:
     // IME の素の入力は "・" になりがちで、"·" 前提の消費側と食い違う)。
-    onSave(normalizeSlotCountFields({ ...f, teacher: splitTeacherField(f.teacher).join("·") }));
+    onSave(
+      normalizeSlotCountFields({
+        ...f,
+        // 学年は表記で照合する (共通学年「高1-3」など) ので前後の空白を落とす
+        grade: String(f.grade ?? "").trim(),
+        teacher: splitTeacherField(f.teacher).join("·"),
+      })
+    );
   };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
