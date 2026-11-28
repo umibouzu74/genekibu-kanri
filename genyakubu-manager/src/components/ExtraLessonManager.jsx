@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { ALL_GRADES, isValidDateStr, fmtDateWeekday } from "../data";
+import { isValidDateStr, fmtDateWeekday } from "../data";
+import { gradeSuggestions } from "../utils/gradeChoices";
 import { EXTRA_LESSON_COLOR } from "../constants/colors";
 import { nextNumericId } from "../utils/schema";
 import { describeExtraLesson } from "../utils/extraLessons";
@@ -350,7 +351,7 @@ export function ExtraLessonManager({
             <input
               value={grade}
               onChange={(e) => { setGrade(e.target.value); if (error) setError(""); }}
-              placeholder="中3 / 高1高2 など"
+              placeholder="中3 / 高1-3 など"
               aria-label="対象学年"
               aria-invalid={error ? "true" : undefined}
               aria-describedby={error ? "extra-lesson-err" : undefined}
@@ -358,7 +359,7 @@ export function ExtraLessonManager({
               style={{ ...S.input, width: 110 }}
             />
             <datalist id="extra-lesson-grades">
-              {ALL_GRADES.map((g) => (
+              {gradeSuggestions().map((g) => (
                 <option key={g} value={g} />
               ))}
             </datalist>

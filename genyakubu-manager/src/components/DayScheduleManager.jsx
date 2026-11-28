@@ -1,6 +1,7 @@
 import { slotsOnDate } from "../utils/biweekly";
 import { useMemo, useRef, useState } from "react";
 import { ALL_GRADES, gradeToDept, isValidDateStr } from "../data";
+import { extraGradesFromSlots } from "../utils/gradeChoices";
 import { DEPT_COLOR } from "../constants/colors";
 import { nextNumericId } from "../utils/schema";
 import { dateToDay, fmtDateWeekday } from "../utils/dateHelpers";
@@ -69,14 +70,12 @@ export function DayScheduleManager({
   const toasts = useToasts();
   const removeWithUndo = useRemoveWithUndo({ list: daySchedules, save: onSave });
 
-  // 学年チップ: ALL_GRADES + コマに現れるその他の学年 (「附中」等の特設)。
-  const gradeOptions = useMemo(() => {
-    const extras = [...new Set(slots.map((s) => s.grade))].filter(
-      (g) => g && !ALL_GRADES.includes(g)
-    );
-    extras.sort();
-    return [...ALL_GRADES, ...extras];
-  }, [slots]);
+  // 学年チップ: ALL_GRADES + コマに現れるその他の学年 (「附中」「高1-3」等の
+  // 共通学年。並びは utils/gradeChoices = 休講・テスト期間と同じ)。
+  const gradeOptions = useMemo(
+    () => [...ALL_GRADES, ...extraGradesFromSlots(slots)],
+    [slots]
+  );
   const fuzokuGrades = useMemo(
     () => gradeOptions.filter((g) => g.startsWith("附")),
     [gradeOptions]

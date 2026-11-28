@@ -528,3 +528,51 @@ describe("buildDayPlans (確認済みを除いたとき)", () => {
     expect(p.moves).toHaveLength(1);
   });
 });
+
+// ─── 共通学年「高1-3」(土曜の Speaking/Listening、2026-11-28) ─────────────
+
+// 高1・高2 の予定表の「スピーキング・リスニング」列 (土曜に ●)
+function speakingSheet() {
+  return makeSheet("2026 H1H2【11-12月】", (s) => {
+    s.set(1, 1, "2026年度 【高1・高2ゼミ】 11月～12月予定表");
+    const blocks = [
+      { dayCol: 1, month: 11 },
+      { dayCol: 6, month: 12 },
+    ];
+    for (const b of blocks) {
+      const c0 = b.dayCol + 2;
+      s.set(4, c0, "高1・高2");
+      s.set(6, c0, "スピーキング・リスニング");
+      const map = s.month({ year: 2026, month: b.month, dayCol: b.dayCol, firstRow: 7, labelRow: 3 });
+      for (const [iso, r] of map) {
+        if (weekdayIndexOf(iso) === 6 && iso <= "2026-12-19") s.set(r, c0, "●");
+      }
+    }
+  });
+}
+const SL_SLOTS = [
+  { id: 728, day: "土", time: "18:30-19:30", grade: "高1-3", subj: "Speaking/Listening", room: "亀63", teacher: "本澤" },
+];
+
+function runSpeaking(sysOpts = {}) {
+  const merged = mergeHighSchoolSheets([{ name: "11-12月", parsed: parseHighSchoolSheet(speakingSheet()) }]);
+  const mapping = effectiveMapping(suggestMapping(merged.courses.values(), SL_SLOTS).byCourse, {});
+  const sys = makeSys({ slots: SL_SLOTS, ...sysOpts });
+  return { mapping, ...compareSchedules({ merged, mapping, slots: SL_SLOTS, sys }) };
+}
+
+describe("共通学年「高1-3」の Speaking/Listening を高1・高2 の予定表と比べる", () => {
+  it("予定表の列が高1-3 のコマに当たり、土曜の授業が食い違わない", () => {
+    const { mapping, findings } = runSpeaking();
+    const [m] = [...mapping.values()];
+    expect(m.subjects).toEqual(["高1-3|Speaking/Listening"]);
+    expect(findings.filter((f) => f.date <= "2026-12-19")).toEqual([]);
+  });
+
+  it("高3 だけの休講では止まらず、高校部の休講なら止まる (予定表は授業あり → 食い違い)", () => {
+    const only3 = [{ id: 1, date: "2026-12-05", scope: ["高校部"], targetGrades: ["高3"], subjKeywords: [] }];
+    expect(runSpeaking({ holidays: only3 }).findings.filter((f) => f.date === "2026-12-05")).toEqual([]);
+    const high = [{ id: 1, date: "2026-12-05", scope: ["高校部"], targetGrades: [], subjKeywords: [] }];
+    expect(runSpeaking({ holidays: high }).findings.filter((f) => f.date === "2026-12-05").length).toBe(1);
+  });
+});

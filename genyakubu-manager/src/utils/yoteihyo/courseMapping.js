@@ -2,7 +2,9 @@
 // 予定表の講座 (「高1 高松西高校」「高3 ● 共通テスト英語(ハイレベル)」) が
 // システムのどのコマ (学年 × 科目名) に当たるかを推定する。推定は手がかり:
 //
-//   - 学年: 講座の学年 (「高1・高2」なら 高1 / 高2 / 高1高2 のどれか)
+//   - 学年: 講座の学年 (「高1・高2」なら 高1 / 高2 / 高1高2 のどれか)。範囲の
+//     共通学年「高1-3」は 高1・高2 の講座にも 高3 の講座にも入り、予定表
+//     (学年の組) ごとに当てる (土曜の Speaking/Listening)
 //   - 曜日: 予定表でその講座の授業がある曜日だけ
 //   - 校舎: 「本校」「亀井町」が分かっていれば教室 (「亀…」) で絞る
 //   - 名前: コマの科目名の頭の語 (「高松西」「東大京大医進」「共テ」…) が
@@ -155,16 +157,33 @@ export function systemGradesFor(course) {
   return out;
 }
 
+// 学年をまたぐ範囲の学年 (共通学年「高1-3」)。1 つのコマが 高1・高2 の予定表の
+// 講座にも 高3 の予定表の講座にも当たる (土曜の Speaking/Listening)。
+// 「高1高2」は範囲の書き方ではないので従来どおり 高1・高2 の講座だけ
+function isSpanningGrade(grade) {
+  return expandGradeRange(String(grade || "")).length > 1;
+}
+
+// 高校部の講座の学年に、そのコマの学年が入るか。「高1-3」は 高1〜高3 の
+// どれかが講座の学年にあれば入る
+function highGradeHit(course, grade) {
+  if (systemGradesFor(course).has(grade)) return true;
+  if (!isSpanningGrade(grade)) return false;
+  const gs = course.grades || [];
+  return expandGradeRange(grade).some((g) => gs.includes(g));
+}
+
 /**
  * その学年のコマが講座の学年に入るか (対応表の候補・「予定表と違う学年のコマ」の印)。
  * 中学部のコースは「中1-3」のような共通学年も重なれば入る (☆ プレップ)。
+ * 高校部も「高1-3」のような範囲の共通学年は重なれば入る。
  */
 export function courseGradeMatches(course, grade) {
   if (course?.dept === "中学部") {
     const grades = course.shared ? course.sheetGrades || [] : course.grades || [];
     return middleGradeHit(grade, grades);
   }
-  return systemGradesFor(course).has(grade);
+  return highGradeHit(course, grade);
 }
 
 function campusOk(course, slot) {
@@ -291,27 +310,35 @@ function suggestHighMapping(list, slots) {
   const inScope = new Set(); // 予定表の学年・曜日に入るグループ
 
   for (const [gk, g] of groups) {
-    let best = 0;
-    let winners = [];
+    // 学年をまたぐコマ (「高1-3」) は予定表 (学年の組 = family) ごとに当てる。
+    // 高1・高2 の予定表の講座と 高3 の予定表の講座の両方に同じコマが当たる。
+    // それ以外のコマは従来どおり全部の講座の中で 1 つだけ
+    const spanning = isSpanningGrade(g.grade);
+    const buckets = new Map(); // family → { best, winners }
     for (const c of list) {
-      if (!systemGradesFor(c).has(g.grade)) continue;
+      if (!highGradeHit(c, g.grade)) continue;
       if (!weekdays.get(c.key).includes(g.day)) continue;
       inScope.add(gk);
       if (!g.slots.some((s) => campusOk(c, s))) continue;
       const isMark = g.subj.includes("マークテスト");
       if ((c.mode === "mark") !== isMark) continue;
       const score = c.mode === "mark" ? 1 : matchScore(c.name, g.subj);
-      if (score > best) {
-        best = score;
-        winners = [c];
-      } else if (score > 0 && score === best) {
-        winners.push(c);
+      const bk = spanning ? c.family || (c.grades || []).join("・") : "";
+      if (!buckets.has(bk)) buckets.set(bk, { best: 0, winners: [] });
+      const b = buckets.get(bk);
+      if (score > b.best) {
+        b.best = score;
+        b.winners = [c];
+      } else if (score > 0 && score === b.best) {
+        b.winners.push(c);
       }
     }
-    if (!winners.length) continue;
-    assigned.get(winners[0].key).add(g.key);
-    if (winners.length > 1) for (const w of winners) ambiguous.get(w.key).add(g.key);
-    taken.add(gk);
+    for (const { winners } of buckets.values()) {
+      if (!winners.length) continue;
+      assigned.get(winners[0].key).add(g.key);
+      if (winners.length > 1) for (const w of winners) ambiguous.get(w.key).add(g.key);
+      taken.add(gk);
+    }
   }
 
   // 名前で 1 つも当たらなかった講座 (「土曜コース」など) は、校舎が分かって
@@ -320,7 +347,7 @@ function suggestHighMapping(list, slots) {
     if (assigned.get(c.key).size || !c.campus || c.mode === "mark") continue;
     for (const [gk, g] of groups) {
       if (taken.has(gk) || g.subj.includes("マークテスト")) continue;
-      if (!systemGradesFor(c).has(g.grade) || !weekdays.get(c.key).includes(g.day)) continue;
+      if (!highGradeHit(c, g.grade) || !weekdays.get(c.key).includes(g.day)) continue;
       if (!g.slots.every((s) => campusOk(c, s))) continue;
       assigned.get(c.key).add(g.key);
       taken.add(gk);

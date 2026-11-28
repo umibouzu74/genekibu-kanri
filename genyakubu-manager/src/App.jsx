@@ -684,6 +684,22 @@ export default function App() {
   }, []);
 
   // ─── CRUD hooks ───────────────────────────────────────────────────
+  // コマの学年を変えたとき (高3 → 高1-3 など) の第N回の確かめに使う材料
+  // (useSessionCtx と同じ。utils/slotGradeChange)
+  const slotEditSessionBase = useMemo(
+    () => ({
+      classSets,
+      timetables,
+      holidays,
+      examPeriods,
+      specialEvents,
+      biweeklyAnchors,
+      sessionOverrides,
+      daySchedules,
+      adjustments,
+    }),
+    [classSets, timetables, holidays, examPeriods, specialEvents, biweeklyAnchors, sessionOverrides, daySchedules, adjustments]
+  );
   const slotsCrud = useSlotsCrud({
     slots,
     saveSlots,
@@ -698,6 +714,13 @@ export default function App() {
     saveSessionOverrides,
     holidays,
     saveHolidays,
+    // 学年を変えたらコース別終講日・予定表チェックの講座の対応を引き継ぐ
+    displayCutoff,
+    saveDisplayCutoff,
+    courseMapping: yoteihyoCourseMapping,
+    saveCourseMapping: saveYoteihyoCourseMapping,
+    sessionBase: slotEditSessionBase,
+    today: todayStr,
   });
   const subsCrud = useSubsCrud({ subs, saveSubs });
   // cascade と同じ対象 (代行・調整・回数補正・旧式の授業セット) を、反映後の
@@ -1887,6 +1910,7 @@ export default function App() {
               <SpecialEventManager
                 specialEvents={specialEvents}
                 onSave={saveSpecialEvents}
+                slots={slots}
                 display={specialEventDisplay}
                 onSaveDisplay={saveSpecialEventDisplay}
                 isAdmin={isAdmin}

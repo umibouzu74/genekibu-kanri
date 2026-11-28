@@ -5,6 +5,17 @@ import { nextNumericId } from "../utils/schema";
 import { sortJa } from "../utils/sortJa";
 import { sortTeacherNames } from "../utils/teacherKana";
 import { BEHAVIOR } from "../constants/layout";
+import { COMMON_GRADES } from "../constants/schools";
+import {
+  applyCohortCarryOver,
+  applyMappingCarryOver,
+  isGradeOnlyChange,
+  planCohortCarryOver,
+  planMappingCarryOver,
+  sessionNumberChanges,
+} from "../utils/slotGradeChange";
+import { fmtMDWeekday } from "../utils/dateHelpers";
+import { formatSessionNumber } from "../utils/sessionCount";
 
 // Slot の CRUD ロジック + SlotForm 用のサジェスト生成をまとめたフック。
 // App 本体から約 120 行削減する。
@@ -22,6 +33,15 @@ export function useSlotsCrud({
   saveSessionOverrides,
   holidays = [],
   saveHolidays,
+  // コマの学年を変えたときの引き継ぎ (utils/slotGradeChange)。displayCutoff は
+  // 読み込み後に時間割を補ったもの (App の displayCutoff)、sessionBase は
+  // 回数計算の材料 (useSessionCtx と同じ)。渡さなければ引き継がない
+  displayCutoff = null,
+  saveDisplayCutoff,
+  courseMapping = [],
+  saveCourseMapping,
+  sessionBase = null,
+  today = null,
 }) {
   const toasts = useToasts();
   const confirm = useConfirm();
@@ -42,6 +62,9 @@ export function useSlotsCrud({
       if (s.subj) subjs.add(s.subj);
       if (s.teacher) teachers.add(s.teacher);
     }
+    // 共通学年 (中1-3・附中・高1高2・高1-3) はまだどのコマにも無くても候補に
+    // 出す (初めてその学年のコマを作る / 学年を付け替えるときに選べるように)
+    for (const g of COMMON_GRADES) grades.add(g);
     for (const subj of subjects) if (subj.name) subjs.add(subj.name);
     for (const ps of partTimeStaff) if (ps.name) teachers.add(ps.name);
     return {
@@ -90,12 +113,77 @@ export function useSlotsCrud({
       );
     }
 
+    // 学年だけを変えた (高3 → 高1-3 など) ときは、学年をキーにしている設定を
+    // 引き継ぐ (コース別終講日・予定表チェックの講座の対応)。第N回が変わるなら
+    // 保存の前に知らせる (学年グループ・休講・テスト期間の当たり方が変わるため)
+    let cohortPlan = null;
+    let mappingPlan = null;
+    if (editSlot !== "new" && editSlot) {
+      const before = slots.find((s) => s.id === editSlot.id) || editSlot;
+      const after = { ...f, id: before.id };
+      if (isGradeOnlyChange(before, after)) {
+        cohortPlan = saveDisplayCutoff
+          ? planCohortCarryOver({ before, after, slots, cohorts: displayCutoff?.cohorts })
+          : null;
+        mappingPlan = saveCourseMapping
+          ? planMappingCarryOver({ before, after, slots, mapping: courseMapping })
+          : null;
+        const changes =
+          sessionBase && today
+            ? sessionNumberChanges({
+                before,
+                after,
+                slots,
+                base: { ...sessionBase, displayCutoff },
+                afterDisplayCutoff: cohortPlan ? applyCohortCarryOver(displayCutoff, cohortPlan) : displayCutoff,
+                today,
+              })
+            : [];
+        if (changes.length > 0) {
+          const fmt = (n) => (n > 0 ? formatSessionNumber(n) : "なし");
+          const list = changes
+            .slice(0, 8)
+            .map((c) => `・${fmtMDWeekday(c.date)}: ${fmt(c.before)} → ${fmt(c.after)}`)
+            .join("\n");
+          const ok = await confirm({
+            title: "第N回が変わります",
+            message:
+              `学年を「${before.grade}」から「${after.grade}」に変えると、このコマの回数が次のように変わります` +
+              `（学年グループの開始日・学年を指定した休講やテスト期間の当たり方が変わるため）:\n\n${list}` +
+              (changes.length > 8 ? `\n ほか ${changes.length - 8} 日` : "") +
+              "\n\n続き番号のままにするには、保存した後に回数補正（第N回調整）かコマの「数え始め」で直してください。このまま保存しますか？",
+            okLabel: "このまま保存する",
+          });
+          if (!ok) return;
+        }
+      }
+    }
+
     if (editSlot === "new") {
       saveSlots([...slots, { ...f, id: nextId() }]);
       toasts.success("コマを追加しました");
     } else {
       saveSlots(slots.map((s) => (s.id === editSlot.id ? { ...f, id: s.id } : s)));
-      toasts.success("コマを更新しました");
+      const carried = [];
+      if (cohortPlan && cohortPlan.mode !== "none") {
+        saveDisplayCutoff((prev) => applyCohortCarryOver(prev, cohortPlan));
+        carried.push(`コース別終講日 ${fmtMDWeekday(cohortPlan.to.date)}`);
+      }
+      if (mappingPlan) {
+        saveCourseMapping((prev) => applyMappingCarryOver(prev, mappingPlan));
+        carried.push(`予定表チェックの講座の対応 ${mappingPlan.courses.length} 件`);
+      }
+      if (carried.length > 0) {
+        toasts.success(`コマを更新しました。${carried.join("・")}を「${f.grade}」に引き継ぎました`);
+      } else {
+        toasts.success("コマを更新しました");
+      }
+      if (cohortPlan?.mode === "none") {
+        toasts.info(
+          `「${editSlot.grade}」のときのコース別終講日 (${fmtMDWeekday(cohortPlan.from.date)}) は、` +
+            "新しい学年ではどのコースにも入らないため引き継いでいません。必要なら時間割管理 → コース別終講日で設定してください"
+        );
+      }
     }
     setEditSlot(null);
   };
